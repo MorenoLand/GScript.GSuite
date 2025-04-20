@@ -1,0 +1,11 @@
+GANI0001
+SPRITE    0 realtreeshadow2.png    0    0  162   87 shadow
+SPRITE    1 trees_palm2.png    0    0  242  228 trees_palm
+
+SINGLEDIRECTION
+DEFAULTHEAD head19.png
+DEFAULTBODY body.png
+
+ANI
+   0 -62 -19,    1 -97 -182
+ANIEND

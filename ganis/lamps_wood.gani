@@ -1,0 +1,47 @@
+SPRITE    0         SPRITES    0    0   24   12 shadow
+SPRITE   20  lamps_wood.png    0    0  128  128 lamp
+
+SCRIPT
+if (created || playerenters) {
+  if (lighteffectsenabled) {
+    showimg 0,light2.png,playerx-2.6,playery-6.2;
+    changeimgcolors 0,1,.6,.6,.99;
+    changeimgvis 0,3;
+  }
+  setzoom();
+  showimg 1,2002_32x32sprites-flame.png,playerx+.5,playery-3.5;
+  changeimgvis 1,3;
+  setimg();
+  timeout = .2;
+}
+if (timeout) {
+  setzoom();
+  setimg();
+  playsound();
+  timeout = .2;
+}
+function setzoom() {
+  if (lighteffectsenabled) {
+    changeimgzoom 0,random(1.4,1.6);
+  }
+}
+function setimg() {
+  changeimgpart 1,int(random(0,3))*32,this.cnt*32,32,32;
+  this.cnt = (this.cnt+1)%5;
+}
+function playsound() {
+  this.soundc += 0.2;
+  if (this.soundc>=2) {
+    this.soundc = 0;
+    play fire_torch#v(int(random(0,3))).wav;
+  }
+}
+SCRIPTEND
+
+SINGLEDIRECTION
+
+ANI
+  20   8 -76
+
+ANIEND
+

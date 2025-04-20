@@ -1,0 +1,67 @@
+SPRITE    0         SPRITES    0    0   24   12 shadow
+SPRITE   20    block.png    0    0   32   32 gold ball
+SPRITE   40           ATTR1    0    0   48   48 hat up
+SPRITE   41           ATTR1   48    0   48   48 hat left
+SPRITE   42           ATTR1   96    0   48   48 hat down
+SPRITE   43           ATTR1  144    0   48   48 hat right
+SPRITE   44           ATTR1    0   48   48   48 hat pull up
+SPRITE   45           ATTR1   48   48   48   48 hat pull left
+SPRITE   46           ATTR1   96   48   48   48 hat pull down
+SPRITE   47           ATTR1  144   48   48   48 hat pull right
+SPRITE   48           ATTR1    0   96   48   48 hat dead
+SPRITE  102            HEAD    0   64   32   32 head down
+SPRITE  106            HEAD    0  208   32   32 head pulling down
+SPRITE  226            BODY   64  192   32   32 body sword1 down
+SPRITE  262            BODY   64  480   32   32 body hands down
+SPRITE  266            BODY   64  512   32   32 body carrying1 down
+
+CONTINUOUS
+SINGLEDIRECTION
+DEFAULTATTR1 hat0.png
+DEFAULTHEAD head19.png
+DEFAULTBODY body.png
+
+ANI
+   0  12  34,  266   8  16,  106   8  -1,   42   0 -19,   20   8 -16,  262   8   0
+PLAYSOUND chest.wav 1.5 2
+
+   0  12  34,  266   8  16,  106   8  -1,   20   8 -18,   42   0 -19,  262   8   0
+
+   0  12  34,  266   8  16,  106   8  -1,   42   0 -19,   20   8 -20,  262   8   0
+
+   0  12  34,  266   8  16,  106   8  -1,   42   0 -19,   20   8 -22,  262   8   0
+
+   0  12  34,  266   8  16,  106   8  -1,   42   0 -19,   20   8 -23,  262   8   0
+
+   0  12  34,  266   8  16,  106   8  -1,   42   0 -19,   20   8 -24,  262   8   0
+
+   0  12  34,  266   8  16,  106   8  -1,   42   0 -19,   20   8 -25,  262   8   0
+
+   0  12  34,  266   8  16,  106   8  -1,   42   0 -19,   20   8 -24,  262   8   0
+
+   0  12  34,  266   8  16,  106   8  -1,   42   0 -19,   20   8 -23,  262   8   0
+
+   0  12  34,  266   8  16,  106   8  -1,   42   0 -19,   20   8 -22,  262   8   0
+
+   0  12  34,  226   8  16,  106   8  -1,   42   0 -19,   20   8 -20
+
+   0  12  34,  226   8  16,  106   8  -1,   42   0 -19,   20   8 -18
+
+   0  12  34,  226   8  16,  102   8   3,   42   0 -15,   20   8 -16
+
+   0  12  34,  226   8  16,  102   8   3,   42   0 -15,   20   8 -14
+
+   0  12  34,  226   8  16,  102   8   3,   42   0 -15,   20   8 -11
+
+   0  12  34,  226   8  16,  102   8   3,   42   0 -15,   20   8  -8
+
+   0  12  34,  226   8  16,  102   8   3,   42   0 -15,   20   8  -5
+
+   0  12  34,  226   8  16,  102   8   3,   42   0 -15,   20   8  -2
+
+   0  12  34,  226   8  16,  102   8   3,   42   0 -15,   20   8   1
+
+   0  12  34,  226   8  16,  102   8   3,   42   0 -15,   20   8   2
+WAIT 10
+
+ANIEND

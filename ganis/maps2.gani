@@ -1,0 +1,43 @@
+SPRITE    0         SPRITES    0    0   24   12 shadow
+SPRITE   20     ganimap.png    0    0   32   32 map sprite (0, 0)
+SPRITE   21     ganimap.png   32    0   32   32 map sprite (1, 0)
+SPRITE   22     ganimap.png    0   32   32   32 map sprite (0, 1)
+SPRITE   23     ganimap.png   32   32   32   32 map sprite (1, 1)
+SPRITE   40           ATTR1    0    0   48   48 hat up
+SPRITE   41           ATTR1   48    0   48   48 hat left
+SPRITE   42           ATTR1   96    0   48   48 hat down
+SPRITE   43           ATTR1  144    0   48   48 hat right
+SPRITE   44           ATTR1    0   48   48   48 hat pull up
+SPRITE   45           ATTR1   48   48   48   48 hat pull left
+SPRITE   46           ATTR1   96   48   48   48 hat pull down
+SPRITE   47           ATTR1  144   48   48   48 hat pull right
+SPRITE   48           ATTR1    0   96   48   48 hat dead
+SPRITE  100            HEAD    0    0   32   32 head up
+SPRITE  260            BODY    0  480   32   32 body hands up
+SPRITE  264            BODY    0  512   32   32 body carrying1 up
+
+LOOP
+CONTINUOUS
+SINGLEDIRECTION
+DEFAULTATTR1 hat0.png
+DEFAULTHEAD head19.png
+DEFAULTBODY body.png
+
+ANI
+   0  12  34,   20   7  -6,  264   7  16,  260   7  -1,  100   7   2,   40  -1 -16
+
+   0  12  34,   20   7  -6,  264   7  16,  260   7  -1,  100   8   2,   40   0 -16
+
+   0  12  34,   20   7  -6,  264   7  16,  260   7  -1,  100   9   2,   40   1 -16
+
+   0  12  34,   20   7  -6,  264   7  16,  260   7  -1,  100  10   2,   40   2 -16
+
+   0  12  34,   20   7  -6,  264   7  16,  260   7  -1,  100  10   1,   40   2 -17
+
+   0  12  34,   20   7  -6,  264   7  16,  260   7  -1,  100   9   1,   40   1 -17
+
+   0  12  34,   20   7  -6,  264   7  16,  260   7  -1,  100   8   1,   40   0 -17
+
+   0  12  34,   20   7  -6,  264   7  16,  260   7  -1,  100   8   1,   40   0 -17
+
+ANIEND

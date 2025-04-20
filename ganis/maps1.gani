@@ -1,0 +1,67 @@
+SPRITE    0         SPRITES    0    0   24   12 shadow
+SPRITE   20     ganimap.png    0    0   32   32 map sprite (0, 0)
+SPRITE   21     ganimap.png   32    0   32   32 map sprite (1, 0)
+SPRITE   22     ganimap.png    0   32   32   32 map sprite (0, 1)
+SPRITE   23     ganimap.png   32   32   32   32 map sprite (1, 1)
+SPRITE   40           ATTR1    0    0   48   48 hat up
+SPRITE   41           ATTR1   48    0   48   48 hat left
+SPRITE   42           ATTR1   96    0   48   48 hat down
+SPRITE   43           ATTR1  144    0   48   48 hat right
+SPRITE   44           ATTR1    0   48   48   48 hat pull up
+SPRITE   45           ATTR1   48   48   48   48 hat pull left
+SPRITE   46           ATTR1   96   48   48   48 hat pull down
+SPRITE   47           ATTR1  144   48   48   48 hat pull right
+SPRITE   48           ATTR1    0   96   48   48 hat dead
+SPRITE  100            HEAD    0    0   32   32 head up
+SPRITE  101            HEAD    0   32   32   32 head left
+SPRITE  102            HEAD    0   64   32   32 head down
+SPRITE  103            HEAD    0   96   32   32 head right
+SPRITE  200            BODY    0    0   32   32 body up
+SPRITE  201            BODY   32    0   32   32 body left
+SPRITE  202            BODY   64    0   32   32 body down
+SPRITE  203            BODY   96    0   32   32 body right
+SPRITE  204            BODY    0   32   32   32 body walking1 up
+SPRITE  205            BODY   32   32   32   32 body walking1 left
+SPRITE  206            BODY   64   32   32   32 body walking1 down
+SPRITE  207            BODY   96   32   32   32 body walking1 right
+SPRITE  208            BODY    0   64   32   32 body walking2 up
+SPRITE  209            BODY   32   64   32   32 body walking2 left
+SPRITE  210            BODY   64   64   32   32 body walking2 down
+SPRITE  211            BODY   96   64   32   32 body walking2 right
+SPRITE  212            BODY    0   96   32   32 body walking3 up
+SPRITE  213            BODY   32   96   32   32 body walking3 left
+SPRITE  214            BODY   64   96   32   32 body walking3 down
+SPRITE  215            BODY   96   96   32   32 body walking3 right
+SPRITE  216            BODY    0  128   32   32 body walking4 up
+SPRITE  217            BODY   32  128   32   32 body walking4 left
+SPRITE  218            BODY   64  128   32   32 body walking4 down
+SPRITE  219            BODY   96  128   32   32 body walking4 right
+SPRITE  220            BODY    0  160   32   32 body walking5 up
+SPRITE  221            BODY   32  160   32   32 body walking5 left
+SPRITE  222            BODY   64  160   32   32 body walking5 down
+SPRITE  223            BODY   96  160   32   32 body walking5 right
+SPRITE  260            BODY    0  480   32   32 body hands up
+SPRITE  264            BODY    0  512   32   32 body carrying1 up
+
+SINGLEDIRECTION
+SETBACKTO maps2
+DEFAULTATTR1 hat0.png
+DEFAULTHEAD head19.png
+DEFAULTBODY body.png
+
+ANI
+   0  12  34,  202   8  16,  102   8   1,   42   0 -17
+
+   0  12  34,  206   9  16,  102   8   1,   42   0 -17
+
+   0  12  34,  206   9  16,  103   8   2,   43   4 -16
+
+   0  12  34,  207   7  18,  103   8   1,   43   4 -17
+
+   0  12  34,  219   7  16,  100  10   3,   40   2 -15
+
+   0  12  34,  204   7  16,  100   7   3,   40  -1 -15
+
+   0  12  34,   20   7  -6,  264   7  16,  260   7  -1,  100   7   2,   40  -1 -16
+
+ANIEND

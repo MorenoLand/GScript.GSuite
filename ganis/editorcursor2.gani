@@ -1,0 +1,16 @@
+SPRITE    0         SPRITES    0    0   24   12 shadow
+SPRITE    1 editorcursor.png    0    0   64   64 cursor
+SPRITE    2 editorcursor.png   64    0   64   64 cursor2
+
+LOOP
+CONTINUOUS
+SINGLEDIRECTION
+
+ANI
+   0  12  34,    2  -8   0
+WAIT 2
+
+   0  12  34,    1  -8   0
+WAIT 2
+
+ANIEND
