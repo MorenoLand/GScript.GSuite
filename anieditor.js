@@ -4112,6 +4112,10 @@ window.addEventListener("load", async () => {
     };
 
     document.addEventListener("keydown", (e) => {
+        const activeElement = document.activeElement;
+        if (activeElement && (activeElement.tagName === "INPUT" || activeElement.tagName === "TEXTAREA" || activeElement.tagName === "SELECT" || activeElement.contentEditable === "true")) {
+            return;
+        }
         if (e.ctrlKey && e.key === "z" && !e.shiftKey) {
             e.preventDefault();
             undo();
