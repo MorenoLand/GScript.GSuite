@@ -573,126 +573,8 @@ function getSpriteImage(sprite) {
 }
 
 async function loadLocalImages() {
-    const fallbackImages = [
-        "2002_32x32sprites-flame.png",
-        "arrowsbox.png",
-        "baddyblue.png",
-        "baddydragon.png",
-        "baddygold.png",
-        "baddygray.png",
-        "baddyhare.png",
-        "baddylizardon.png",
-        "baddyninja.png",
-        "baddyoctopus.png",
-        "baddyred.png",
-        "baddytest.png",
-        "bcalarmclock.png",
-        "bigshield.png",
-        "block.png",
-        "bluelampani.mng",
-        "bluelampani2.mng",
-        "blueletters.png",
-        "body.png",
-        "body2.png",
-        "body3.png",
-        "body4.png",
-        "bomb1.png",
-        "bomb2.png",
-        "brother1.png",
-        "brother2.png",
-        "bshield0.png",
-        "chest.png",
-        "chestopen.png",
-        "door.png",
-        "door1.png",
-        "editorcursor.png",
-        "emoticon_AFK_stay.mng",
-        "emoticon_BRB_stay.mng",
-        "emoticon_conf.png",
-        "emoticon_Dgrin.png",
-        "emoticon_Eyes.mng",
-        "emoticon_Frown.png",
-        "emoticon_Grr.png",
-        "emoticon_Heart.png",
-        "emoticon_Idea.png",
-        "emoticon_jpm_stay.mng",
-        "emoticon_kitty.png",
-        "emoticon_LOL.mng",
-        "emoticon_Maybe.png",
-        "emoticon_Ncool.png",
-        "emoticon_Ohh.png",
-        "emoticon_Ptongue.mng",
-        "emoticon_Qphone_stay.png",
-        "emoticon_ROFL.mng",
-        "emoticon_Smile.png",
-        "emoticon_Tears.mng",
-        "emoticon_Umad.png",
-        "emoticon_Vsorry.mng",
-        "emoticon_Wink.png",
-        "emoticon_XX.png",
-        "emoticon_Yummy.png",
-        "emoticon_Zzz_stay.mng",
-        "emoticonbubbles.png",
-        "emoticonmicro.png",
-        "emotions_template.png",
-        "g4_animation_fire.gif",
-        "g4_particle_bluelight.png",
-        "g4_particle_bluex.png",
-        "g4_particle_bubble.png",
-        "g4_particle_cloud.png",
-        "g4_particle_halo.png",
-        "g4_particle_leaf.png",
-        "g4_particle_minus.png",
-        "g4_particle_ring.png",
-        "g4_particle_sbubble.png",
-        "g4_particle_smoke.png",
-        "g4_particle_spark.png",
-        "g4_particle_sun.png",
-        "g4_particle_tornado.png",
-        "g4_particle_whitespot.png",
-        "g4_particle_x.png",
-        "g4_particle_yellowlight.png",
-        "gate1.png",
-        "gate2.png",
-        "ghostanimation.png",
-        "ghostshadow.png",
-        "graal2002letters.png",
-        "gralats.png",
-        "hat0.png",
-        "hat1.png",
-        "hat2.png",
-        "haticon.png",
-        "head0.png",
-        "head19.png",
-        "head23.png",
-        "headnpc.png",
-        "khairs0.png",
-        "khead0.png",
-        "klegs0.png",
-        "kmarms100.png",
-        "kmbody100.png",
-        "lamps_wood.png",
-        "letters.png",
-        "light2.png",
-        "opps.png",
-        "pics1.png",
-        "ride.png",
-        "ride2.png",
-        "ride3.png",
-        "shield1.png",
-        "shield2.png",
-        "shield3.png",
-        "skip_icon.png",
-        "skip.png",
-        "sprites.png",
-        "state.png",
-        "sword1.png",
-        "treeview_foldericons.png",
-        "tutorial_arrowdown.png"
-    ];
-
+    const fallbackImages = ["2002_32x32sprites-flame.png","arrowsbox.png","baddyblue.png","baddydragon.png","baddygold.png","baddygray.png","baddyhare.png","baddylizardon.png","baddyninja.png","baddyoctopus.png","baddyred.png","baddytest.png","bcalarmclock.png","bigshield.png","block.png","bluelampani.mng","bluelampani2.mng","blueletters.png","body.png","body2.png","body3.png","body4.png","bomb1.png","bomb2.png","brother1.png","brother2.png","bshield0.png","chest.png","chestopen.png","door.png","door1.png","editorcursor.png","emoticon_AFK_stay.mng","emoticon_BRB_stay.mng","emoticon_conf.png","emoticon_Dgrin.png","emoticon_Eyes.mng","emoticon_Frown.png","emoticon_Grr.png","emoticon_Heart.png","emoticon_Idea.png","emoticon_jpm_stay.mng","emoticon_kitty.png","emoticon_LOL.mng","emoticon_Maybe.png","emoticon_Ncool.png","emoticon_Ohh.png","emoticon_Ptongue.mng","emoticon_Qphone_stay.png","emoticon_ROFL.mng","emoticon_Smile.png","emoticon_Tears.mng","emoticon_Umad.png","emoticon_Vsorry.mng","emoticon_Wink.png","emoticon_XX.png","emoticon_Yummy.png","emoticon_Zzz_stay.mng","emoticonbubbles.png","emoticonmicro.png","emotions_template.png","g4_animation_fire.gif","g4_particle_bluelight.png","g4_particle_bluex.png","g4_particle_bubble.png","g4_particle_cloud.png","g4_particle_halo.png","g4_particle_leaf.png","g4_particle_minus.png","g4_particle_ring.png","g4_particle_sbubble.png","g4_particle_smoke.png","g4_particle_spark.png","g4_particle_sun.png","g4_particle_tornado.png","g4_particle_whitespot.png","g4_particle_x.png","g4_particle_yellowlight.png","gate1.png","gate2.png","ghostanimation.png","ghostshadow.png","graal2002letters.png","gralats.png","hat0.png","hat1.png","hat2.png","haticon.png","head0.png","head19.png","head23.png","headnpc.png","khairs0.png","khead0.png","klegs0.png","kmarms100.png","kmbody100.png","lamps_wood.png","letters.png","light2.png","opps.png","pics1.png","ride.png","ride2.png","ride3.png","shield1.png","shield2.png","shield3.png","skip_icon.png","skip.png","sprites.png","state.png","sword1.png","treeview_foldericons.png","tutorial_arrowdown.png"];
     let imageFiles = [];
-
     try {
         const response = await fetch('images/');
         if (response.ok) {
@@ -700,7 +582,6 @@ async function loadLocalImages() {
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
             const links = doc.querySelectorAll('a[href]');
-
             for (const link of links) {
                 const href = link.getAttribute('href');
                 if (href && !href.endsWith('/') && !href.startsWith('?') && !href.startsWith('#') && !href.startsWith('../')) {
@@ -714,24 +595,25 @@ async function loadLocalImages() {
     } catch (e) {
         console.warn('Dynamic image loading failed, using fallback list');
     }
-
-    if (imageFiles.length === 0) {
-        imageFiles = fallbackImages;
-    }
-
-    for (const fileName of imageFiles) {
-        if (!imageLibrary.has(fileName.toLowerCase())) {
-            try {
-                const img = new Image();
-                await new Promise((resolve, reject) => {
-                    img.onload = resolve;
-                    img.onerror = () => reject(new Error(`Image ${fileName} not found`));
+    if (imageFiles.length === 0) imageFiles = fallbackImages;
+    const chunkSize = 10;
+    for (let i = 0; i < imageFiles.length; i += chunkSize) {
+        const chunk = imageFiles.slice(i, i + chunkSize);
+        await Promise.all(chunk.map(fileName => {
+            if (!imageLibrary.has(fileName.toLowerCase())) {
+                return new Promise(resolve => {
+                    const img = new Image();
+                    img.onload = () => {
+                        imageLibrary.set(fileName.toLowerCase(), img);
+                        resolve();
+                    };
+                    img.onerror = () => resolve();
                     img.src = `images/${fileName}`;
                 });
-                imageLibrary.set(fileName.toLowerCase(), img);
-            } catch (e) {
             }
-        }
+            return Promise.resolve();
+        }));
+        await new Promise(resolve => setTimeout(resolve, 0));
     }
 }
 
@@ -2695,16 +2577,32 @@ setInterval(() => {
     }
 }, 10000);
 window.addEventListener("load", async () => {
+    const loadingDiv = document.createElement("div");
+    loadingDiv.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:18px;z-index:99999;";
+    loadingDiv.textContent = "Loading AniEditor...";
+    document.body.appendChild(loadingDiv);
+    await new Promise(resolve => setTimeout(resolve, 0));
     resizeCanvas();
     window.addEventListener("resize", resizeCanvas);
-    await loadLocalImages();
+    const criticalImages = ["sprites.png", "body.png", "head19.png", "shield1.png"];
+    for (const fileName of criticalImages) {
+        if (!imageLibrary.has(fileName.toLowerCase())) {
+            try {
+                const img = new Image();
+                await new Promise((resolve, reject) => {
+                    img.onload = resolve;
+                    img.onerror = () => reject(new Error(`Image ${fileName} not found`));
+                    img.src = `images/${fileName}`;
+                });
+                imageLibrary.set(fileName.toLowerCase(), img);
+            } catch (e) {}
+        }
+    }
     await refreshLocalFileCache();
     resizeCanvas();
     const restored = await restoreSession();
     if (!restored) {
-        if (animations.length === 0) {
-            initNewAnimation();
-        }
+        if (animations.length === 0) initNewAnimation();
         updateTabs();
         updateUIVisibility();
     } else {
@@ -2726,10 +2624,6 @@ window.addEventListener("load", async () => {
                 timelineContainer.style.height = "192px";
                 timelineContainer.style.flex = "0 0 192px";
                 timelineContainer.style.minHeight = "100px";
-                const timelineHeader = document.querySelector(".timeline-header");
-                const playbackControls = document.querySelector(".playback-controls");
-                setTimeout(() => {
-                }, 100);
             }
             if (timelineView) {
                 timelineView.style.display = "block";
@@ -2745,6 +2639,10 @@ window.addEventListener("load", async () => {
             }
         }, 200);
     }
+    loadLocalImages().then(() => {
+        console.log("Background image loading complete");
+    });
+    document.body.removeChild(loadingDiv);
     const spriteList = document.getElementById("spritesList");
     const spriteEditPanel = document.getElementById("spriteEditPanel");
     const spriteSplitterHandle = document.getElementById("spriteSplitterHandle");
