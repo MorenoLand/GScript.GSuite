@@ -304,6 +304,7 @@ let onionSkinEnabled = false;
 let undoStack = [];
 let undoIndex = -1;
 let maxUndo = 50;
+let historyLoggingEnabled = true;
 let dragStartState = null;
 let clipboardFrame = null;
 let clipboardSprite = null;
@@ -322,6 +323,53 @@ let leftCenterSplitterDragging = false;
 let centerRightSplitterDragging = false;
 let canvasTimelineSplitterDragging = false;
 let activeContextMenu = null;
+
+function createSliderSync(numberId, sliderId, getter, setter, onChange = () => {}, undoDesc = "") {
+    const numberEl = document.getElementById(numberId);
+    const sliderEl = document.getElementById(sliderId);
+    if (!numberEl || !sliderEl) return;
+
+    const performChange = (val, saveUndo = false) => {
+        const oldState = saveUndo ? serializeAnimationState() : null;
+        setter(val);
+        sliderEl.value = val;
+        onChange();
+        if (saveUndo) {
+            const newState = serializeAnimationState();
+            const desc = typeof undoDesc === 'function' ? undoDesc() : (undoDesc || `${numberId}`);
+            addUndoCommand({
+                description: desc,
+                oldState: oldState,
+                newState: newState,
+                undo: () => restoreAnimationState(oldState),
+                redo: () => restoreAnimationState(newState)
+            });
+        }
+    };
+
+    numberEl.onchange = (e) => {
+        const val = parseFloat(e.target.value) || 0;
+        performChange(val, true);
+    };
+
+    numberEl.oninput = (e) => {
+        const val = parseFloat(e.target.value) || 0;
+        performChange(val, false);
+    };
+
+    sliderEl.oninput = (e) => {
+        const val = parseFloat(e.target.value) || 0;
+        setter(val);
+        numberEl.value = val;
+        onChange();
+    };
+
+    sliderEl.onchange = (e) => {
+        const val = parseFloat(e.target.value) || 0;
+        performChange(val, true);
+    };
+}
+
 document.addEventListener("contextmenu", (e) => {
     if (activeContextMenu) {
         e.preventDefault();
@@ -1636,6 +1684,11 @@ function updateItemSettings() {
         if (itemXScaleSlider) itemXScaleSlider.disabled = true;
         if (itemYScaleSlider) itemYScaleSlider.disabled = true;
         if (itemRotationSlider) itemRotationSlider.disabled = true;
+        const itemLayer = document.getElementById("itemLayer");
+        if (itemLayer) {
+            itemLayer.value = "";
+            itemLayer.disabled = true;
+        }
         return;
     }
     if (isSound) {
@@ -1663,6 +1716,11 @@ function updateItemSettings() {
         if (itemXScaleSlider) itemXScaleSlider.disabled = true;
         if (itemYScaleSlider) itemYScaleSlider.disabled = true;
         if (itemRotationSlider) itemRotationSlider.disabled = true;
+        const itemLayer = document.getElementById("itemLayer");
+        if (itemLayer) {
+            itemLayer.value = "0";
+            itemLayer.disabled = true;
+        }
     } else {
         document.getElementById("itemSpriteID").value = piece.spriteIndex === SPRITE_INDEX_STRING ? piece.spriteName : String(piece.spriteIndex);
         if (itemX) {
@@ -1702,6 +1760,13 @@ function updateItemSettings() {
         if (itemRotationSlider) {
             itemRotationSlider.value = rotation;
             itemRotationSlider.disabled = false;
+        }
+        const itemLayer = document.getElementById("itemLayer");
+        if (itemLayer) {
+            const pieceIndex = pieces.findIndex(p => p === piece || p.id === piece.id);
+            itemLayer.value = pieceIndex >= 0 ? pieceIndex : 0;
+            itemLayer.disabled = false;
+            itemLayer.max = pieces.length - 1;
         }
     }
 }
@@ -2018,9 +2083,18 @@ function updateHistoryMenu() {
     }
     if (btnToolbarUndo) btnToolbarUndo.disabled = undoIndex < 0;
     if (btnToolbarRedo) btnToolbarRedo.disabled = undoIndex >= undoStack.length - 1;
+
+    const historyLoggingToggle = document.getElementById("historyLoggingToggle");
+    if (historyLoggingToggle) {
+        historyLoggingToggle.checked = historyLoggingEnabled;
+        historyLoggingToggle.onchange = () => {
+            historyLoggingEnabled = historyLoggingToggle.checked;
+        };
+    }
 }
 
 function addUndoCommand(command) {
+    if (!historyLoggingEnabled) return;
     undoStack = undoStack.slice(0, undoIndex + 1);
     undoStack.push(command);
     if (undoStack.length > maxUndo) {
@@ -3090,229 +3164,80 @@ window.addEventListener("load", async () => {
             }
         }
     };
-    const itemXScaleEl = document.getElementById("itemXScale");
-    const itemXScaleSliderEl = document.getElementById("itemXScaleSlider");
-    if (itemXScaleEl) {
-        itemXScaleEl.onchange = (e) => {
-            const pieceId = document.getElementById("itemsCombo").value;
-            const frame = currentAnimation.getFrame(currentFrame);
-            if (frame && pieceId) {
-                const actualDir = getDirIndex(currentDir);
-                const pieces = frame.pieces[actualDir] || [];
-                const piece = pieces.find(p => p.id === pieceId);
-                if (piece) {
-                    const oldState = serializeAnimationState();
-                    piece.xscale = parseFloat(e.target.value) || 1.0;
-                    if (itemXScaleSliderEl) itemXScaleSliderEl.value = piece.xscale;
-                    const newState = serializeAnimationState();
-                    const sprite = currentAnimation.getAniSprite(piece.spriteIndex, piece.spriteName || "");
-                    const spriteName = sprite && sprite.comment ? `"${sprite.comment}"` : `Sprite ${piece.spriteIndex}`;
-                    addUndoCommand({
-                        description: `Change ${spriteName} X Scale`,
-                        oldState: oldState,
-                        newState: newState,
-                        undo: () => restoreAnimationState(oldState),
-                        redo: () => restoreAnimationState(newState)
-                    });
-                    redraw();
-                    saveSession();
-                }
+    const getCurrentPiece = () => {
+        const pieceId = document.getElementById("itemsCombo").value;
+        const frame = currentAnimation?.getFrame(currentFrame);
+        if (frame && pieceId) {
+            const actualDir = getDirIndex(currentDir);
+            const pieces = frame.pieces[actualDir] || [];
+            return pieces.find(p => p.id === pieceId);
+        }
+        return null;
+    };
+
+    const getSpriteName = (piece) => {
+        const sprite = currentAnimation.getAniSprite(piece.spriteIndex, piece.spriteName || "");
+        return sprite && sprite.comment ? `"${sprite.comment}"` : `Sprite ${piece.spriteIndex}`;
+    };
+
+    createSliderSync("itemXScale", "itemXScaleSlider",
+        () => getCurrentPiece()?.xscale || 1.0,
+        (val) => { const piece = getCurrentPiece(); if (piece) piece.xscale = val; },
+        () => { redraw(); saveSession(); },
+        () => {
+            const piece = getCurrentPiece();
+            return piece ? `Change ${getSpriteName(piece)} X Scale` : "Change Item X Scale";
+        }
+    );
+    createSliderSync("itemYScale", "itemYScaleSlider",
+        () => getCurrentPiece()?.yscale || 1.0,
+        (val) => { const piece = getCurrentPiece(); if (piece) piece.yscale = val; },
+        () => { redraw(); saveSession(); },
+        () => {
+            const piece = getCurrentPiece();
+            return piece ? `Change ${getSpriteName(piece)} Y Scale` : "Change Item Y Scale";
+        }
+    );
+    createSliderSync("itemRotation", "itemRotationSlider",
+        () => getCurrentPiece()?.rotation || 0,
+        (val) => { const piece = getCurrentPiece(); if (piece) piece.rotation = val; },
+        () => { redraw(); saveSession(); },
+        () => {
+            const piece = getCurrentPiece();
+            return piece ? `Change ${getSpriteName(piece)} Rotation` : "Change Item Rotation";
+        }
+    );
+
+    document.getElementById("itemLayer").onchange = (e) => {
+        const pieceId = document.getElementById("itemsCombo").value;
+        const frame = currentAnimation.getFrame(currentFrame);
+        if (frame && pieceId) {
+            const actualDir = getDirIndex(currentDir);
+            const pieces = frame.pieces[actualDir] || [];
+            const pieceIndex = pieces.findIndex(p => p.id === pieceId);
+            const newLayer = Math.max(0, Math.min(pieces.length - 1, parseInt(e.target.value) || 0));
+
+            if (pieceIndex >= 0 && pieceIndex !== newLayer) {
+                const oldState = serializeAnimationState();
+                const piece = pieces[pieceIndex];
+                pieces.splice(pieceIndex, 1);
+                pieces.splice(newLayer, 0, piece);
+                const newState = serializeAnimationState();
+                const spriteName = getSpriteName(piece);
+                addUndoCommand({
+                    description: `Change ${spriteName} Layer`,
+                    oldState: oldState,
+                    newState: newState,
+                    undo: () => restoreAnimationState(oldState),
+                    redo: () => restoreAnimationState(newState)
+                });
+                redraw();
+                updateItemsCombo();
+                updateItemSettings();
+                saveSession();
             }
-        };
-    }
-    if (itemXScaleSliderEl) {
-        itemXScaleSliderEl.oninput = (e) => {
-            const pieceId = document.getElementById("itemsCombo").value;
-            const frame = currentAnimation.getFrame(currentFrame);
-            if (frame && pieceId) {
-                const actualDir = getDirIndex(currentDir);
-                const pieces = frame.pieces[actualDir] || [];
-                const piece = pieces.find(p => p.id === pieceId);
-                if (piece) {
-                    piece.xscale = parseFloat(e.target.value) || 1.0;
-                    if (itemXScaleEl) itemXScaleEl.value = piece.xscale;
-                    redraw();
-                    saveSession();
-                }
-            }
-        };
-        itemXScaleSliderEl.onchange = (e) => {
-            const pieceId = document.getElementById("itemsCombo").value;
-            const frame = currentAnimation.getFrame(currentFrame);
-            if (frame && pieceId) {
-                const actualDir = getDirIndex(currentDir);
-                const pieces = frame.pieces[actualDir] || [];
-                const piece = pieces.find(p => p.id === pieceId);
-                if (piece) {
-                    const oldState = serializeAnimationState();
-                    piece.xscale = parseFloat(e.target.value) || 1.0;
-                    if (itemXScaleEl) itemXScaleEl.value = piece.xscale;
-                    const newState = serializeAnimationState();
-                    const sprite = currentAnimation.getAniSprite(piece.spriteIndex, piece.spriteName || "");
-                    const spriteName = sprite && sprite.comment ? `"${sprite.comment}"` : `Sprite ${piece.spriteIndex}`;
-                    addUndoCommand({
-                        description: `Change ${spriteName} X Scale`,
-                        oldState: oldState,
-                        newState: newState,
-                        undo: () => restoreAnimationState(oldState),
-                        redo: () => restoreAnimationState(newState)
-                    });
-                    redraw();
-                    saveSession();
-                }
-            }
-        };
-    }
-    const itemYScaleEl = document.getElementById("itemYScale");
-    const itemYScaleSliderEl = document.getElementById("itemYScaleSlider");
-    if (itemYScaleEl) {
-        itemYScaleEl.onchange = (e) => {
-            const pieceId = document.getElementById("itemsCombo").value;
-            const frame = currentAnimation.getFrame(currentFrame);
-            if (frame && pieceId) {
-                const actualDir = getDirIndex(currentDir);
-                const pieces = frame.pieces[actualDir] || [];
-                const piece = pieces.find(p => p.id === pieceId);
-                if (piece) {
-                    const oldState = serializeAnimationState();
-                    piece.yscale = parseFloat(e.target.value) || 1.0;
-                    if (itemYScaleSliderEl) itemYScaleSliderEl.value = piece.yscale;
-                    const newState = serializeAnimationState();
-                    const sprite = currentAnimation.getAniSprite(piece.spriteIndex, piece.spriteName || "");
-                    const spriteName = sprite && sprite.comment ? `"${sprite.comment}"` : `Sprite ${piece.spriteIndex}`;
-                    addUndoCommand({
-                        description: `Change ${spriteName} Y Scale`,
-                        oldState: oldState,
-                        newState: newState,
-                        undo: () => restoreAnimationState(oldState),
-                        redo: () => restoreAnimationState(newState)
-                    });
-                    redraw();
-                    saveSession();
-                }
-            }
-        };
-    }
-    if (itemYScaleSliderEl) {
-        itemYScaleSliderEl.oninput = (e) => {
-            const val = parseFloat(e.target.value) || 1.0;
-            if (itemYScaleEl) itemYScaleEl.value = val;
-            const pieceId = document.getElementById("itemsCombo").value;
-            const frame = currentAnimation.getFrame(currentFrame);
-            if (frame && pieceId) {
-                const actualDir = getDirIndex(currentDir);
-                const pieces = frame.pieces[actualDir] || [];
-                const piece = pieces.find(p => p.id === pieceId);
-                if (piece) {
-                    piece.yscale = val;
-                    redraw();
-                    saveSession();
-                }
-            }
-        };
-        itemYScaleSliderEl.onchange = (e) => {
-            const val = parseFloat(e.target.value) || 1.0;
-            if (itemYScaleEl) itemYScaleEl.value = val;
-            const pieceId = document.getElementById("itemsCombo").value;
-            const frame = currentAnimation.getFrame(currentFrame);
-            if (frame && pieceId) {
-                const actualDir = getDirIndex(currentDir);
-                const pieces = frame.pieces[actualDir] || [];
-                const piece = pieces.find(p => p.id === pieceId);
-                if (piece) {
-                    const oldState = serializeAnimationState();
-                    piece.yscale = val;
-                    const newState = serializeAnimationState();
-                    const sprite = currentAnimation.getAniSprite(piece.spriteIndex, piece.spriteName || "");
-                    const spriteName = sprite && sprite.comment ? `"${sprite.comment}"` : `Sprite ${piece.spriteIndex}`;
-                    addUndoCommand({
-                        description: `Change ${spriteName} Y Scale`,
-                        oldState: oldState,
-                        newState: newState,
-                        undo: () => restoreAnimationState(oldState),
-                        redo: () => restoreAnimationState(newState)
-                    });
-                    redraw();
-                    saveSession();
-                }
-            }
-        };
-    }
-    const itemRotationEl = document.getElementById("itemRotation");
-    const itemRotationSliderEl = document.getElementById("itemRotationSlider");
-    if (itemRotationEl) {
-        itemRotationEl.onchange = (e) => {
-            const pieceId = document.getElementById("itemsCombo").value;
-            const frame = currentAnimation.getFrame(currentFrame);
-            if (frame && pieceId) {
-                const actualDir = getDirIndex(currentDir);
-                const pieces = frame.pieces[actualDir] || [];
-                const piece = pieces.find(p => p.id === pieceId);
-                if (piece) {
-                    const oldState = serializeAnimationState();
-                    piece.rotation = parseFloat(e.target.value) || 0.0;
-                    if (itemRotationSliderEl) itemRotationSliderEl.value = piece.rotation;
-                    const newState = serializeAnimationState();
-                    const sprite = currentAnimation.getAniSprite(piece.spriteIndex, piece.spriteName || "");
-                    const spriteName = sprite && sprite.comment ? `"${sprite.comment}"` : `Sprite ${piece.spriteIndex}`;
-                    addUndoCommand({
-                        description: `Change ${spriteName} Rotation`,
-                        oldState: oldState,
-                        newState: newState,
-                        undo: () => restoreAnimationState(oldState),
-                        redo: () => restoreAnimationState(newState)
-                    });
-                    redraw();
-                    saveSession();
-                }
-            }
-        };
-    }
-    if (itemRotationSliderEl) {
-        itemRotationSliderEl.oninput = (e) => {
-            const val = parseFloat(e.target.value) || 0.0;
-            if (itemRotationEl) itemRotationEl.value = val;
-            const pieceId = document.getElementById("itemsCombo").value;
-            const frame = currentAnimation.getFrame(currentFrame);
-            if (frame && pieceId) {
-                const actualDir = getDirIndex(currentDir);
-                const pieces = frame.pieces[actualDir] || [];
-                const piece = pieces.find(p => p.id === pieceId);
-                if (piece) {
-                    piece.rotation = val;
-                    redraw();
-                    saveSession();
-                }
-            }
-        };
-        itemRotationSliderEl.onchange = (e) => {
-            const val = parseFloat(e.target.value) || 0.0;
-            if (itemRotationEl) itemRotationEl.value = val;
-            const pieceId = document.getElementById("itemsCombo").value;
-            const frame = currentAnimation.getFrame(currentFrame);
-            if (frame && pieceId) {
-                const actualDir = getDirIndex(currentDir);
-                const pieces = frame.pieces[actualDir] || [];
-                const piece = pieces.find(p => p.id === pieceId);
-                if (piece) {
-                    const oldState = serializeAnimationState();
-                    piece.rotation = val;
-                    const newState = serializeAnimationState();
-                    const sprite = currentAnimation.getAniSprite(piece.spriteIndex, piece.spriteName || "");
-                    const spriteName = sprite && sprite.comment ? `"${sprite.comment}"` : `Sprite ${piece.spriteIndex}`;
-                    addUndoCommand({
-                        description: `Change ${spriteName} Rotation`,
-                        oldState: oldState,
-                        newState: newState,
-                        undo: () => restoreAnimationState(oldState),
-                        redo: () => restoreAnimationState(newState)
-                    });
-                    redraw();
-                    saveSession();
-                }
-            }
-        };
-    }
+        }
+    };
     document.getElementById("duration").onchange = (e) => {
         const frame = currentAnimation.getFrame(currentFrame);
         if (frame) {
@@ -3388,192 +3313,24 @@ window.addEventListener("load", async () => {
             saveSession();
         }
     };
-    document.getElementById("xScale").onchange = (e) => {
-        if (editingSprite) {
-            console.log("xScale onchange triggered, saving session...");
-            const oldState = serializeAnimationState();
-            editingSprite.xscale = parseFloat(e.target.value) || 1.0;
-            document.getElementById("xScaleSlider").value = editingSprite.xscale;
-            editingSprite.updateBoundingBox();
-            const newState = serializeAnimationState();
-            const spriteName = editingSprite.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite.index}`;
-            addUndoCommand({
-                description: `Change ${spriteName} X Scale`,
-                oldState: oldState,
-                newState: newState,
-                undo: () => restoreAnimationState(oldState),
-                redo: () => restoreAnimationState(newState)
-            });
-            redraw();
-            drawSpritePreview();
-            saveSession(true);
-        }
-    };
-    document.getElementById("xScale").oninput = (e) => {
-        if (editingSprite) {
-            editingSprite.xscale = parseFloat(e.target.value) || 1.0;
-            document.getElementById("xScaleSlider").value = editingSprite.xscale;
-            editingSprite.updateBoundingBox();
-            redraw();
-            drawSpritePreview();
-        }
-    };
-    document.getElementById("xScaleSlider").oninput = (e) => {
-        if (editingSprite) {
-            editingSprite.xscale = parseFloat(e.target.value) || 1.0;
-            document.getElementById("xScale").value = editingSprite.xscale;
-            editingSprite.updateBoundingBox();
-            redraw();
-            drawSpritePreview();
-            saveSession(true);
-        }
-    };
-    document.getElementById("xScaleSlider").onchange = (e) => {
-        if (editingSprite) {
-            const oldState = serializeAnimationState();
-            editingSprite.xscale = parseFloat(e.target.value) || 1.0;
-            document.getElementById("xScale").value = editingSprite.xscale;
-            editingSprite.updateBoundingBox();
-            const newState = serializeAnimationState();
-            const spriteName = editingSprite.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite.index}`;
-            addUndoCommand({
-                description: `Change ${spriteName} X Scale`,
-                oldState: oldState,
-                newState: newState,
-                undo: () => restoreAnimationState(oldState),
-                redo: () => restoreAnimationState(newState)
-            });
-            redraw();
-            drawSpritePreview();
-            saveSession(true);
-        }
-    };
-    document.getElementById("yScale").onchange = (e) => {
-        if (editingSprite) {
-            const oldState = serializeAnimationState();
-            editingSprite.yscale = parseFloat(e.target.value) || 1.0;
-            document.getElementById("yScaleSlider").value = editingSprite.yscale;
-            editingSprite.updateBoundingBox();
-            const newState = serializeAnimationState();
-            const spriteName = editingSprite.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite.index}`;
-            addUndoCommand({
-                description: `Change ${spriteName} Y Scale`,
-                oldState: oldState,
-                newState: newState,
-                undo: () => restoreAnimationState(oldState),
-                redo: () => restoreAnimationState(newState)
-            });
-            redraw();
-            drawSpritePreview();
-            saveSession(true);
-        }
-    };
-    document.getElementById("yScale").oninput = (e) => {
-        if (editingSprite) {
-            editingSprite.yscale = parseFloat(e.target.value) || 1.0;
-            document.getElementById("yScaleSlider").value = editingSprite.yscale;
-            editingSprite.updateBoundingBox();
-            redraw();
-            drawSpritePreview();
-        }
-    };
-    document.getElementById("yScaleSlider").oninput = (e) => {
-        if (editingSprite) {
-            const val = parseFloat(e.target.value) || 1.0;
-            editingSprite.yscale = val;
-            const yScaleInput = document.getElementById("yScale");
-            if (yScaleInput) yScaleInput.value = val;
-            editingSprite.updateBoundingBox();
-            redraw();
-            drawSpritePreview();
-            saveSession(true);
-        }
-    };
-    document.getElementById("yScaleSlider").onchange = (e) => {
-        if (editingSprite) {
-            const oldState = serializeAnimationState();
-            const val = parseFloat(e.target.value) || 1.0;
-            editingSprite.yscale = val;
-            const yScaleInput = document.getElementById("yScale");
-            if (yScaleInput) yScaleInput.value = val;
-            editingSprite.updateBoundingBox();
-            const newState = serializeAnimationState();
-            const spriteName = editingSprite.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite.index}`;
-            addUndoCommand({
-                description: `Change ${spriteName} Y Scale`,
-                oldState: oldState,
-                newState: newState,
-                undo: () => restoreAnimationState(oldState),
-                redo: () => restoreAnimationState(newState)
-            });
-            redraw();
-            drawSpritePreview();
-            saveSession(true);
-        }
-    };
-    document.getElementById("rotation").onchange = (e) => {
-        if (editingSprite) {
-            const oldState = serializeAnimationState();
-            editingSprite.rotation = parseFloat(e.target.value) || 0;
-            document.getElementById("rotationSlider").value = editingSprite.rotation;
-            editingSprite.updateBoundingBox();
-            const newState = serializeAnimationState();
-            const spriteName = editingSprite.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite.index}`;
-            addUndoCommand({
-                description: `Change ${spriteName} Rotation`,
-                oldState: oldState,
-                newState: newState,
-                undo: () => restoreAnimationState(oldState),
-                redo: () => restoreAnimationState(newState)
-            });
-            redraw();
-            drawSpritePreview();
-            saveSession(true);
-        }
-    };
-    document.getElementById("rotation").oninput = (e) => {
-        if (editingSprite) {
-            editingSprite.rotation = parseFloat(e.target.value) || 0;
-            document.getElementById("rotationSlider").value = editingSprite.rotation;
-            editingSprite.updateBoundingBox();
-            redraw();
-            drawSpritePreview();
-        }
-    };
-    document.getElementById("rotationSlider").oninput = (e) => {
-        if (editingSprite) {
-            const val = parseFloat(e.target.value) || 0;
-            editingSprite.rotation = val;
-            const rotationInput = document.getElementById("rotation");
-            if (rotationInput) rotationInput.value = val;
-            editingSprite.updateBoundingBox();
-            redraw();
-            drawSpritePreview();
-            saveSession(true);
-        }
-    };
-    document.getElementById("rotationSlider").onchange = (e) => {
-        if (editingSprite) {
-            const oldState = serializeAnimationState();
-            const val = parseFloat(e.target.value) || 0;
-            editingSprite.rotation = val;
-            const rotationInput = document.getElementById("rotation");
-            if (rotationInput) rotationInput.value = val;
-            editingSprite.updateBoundingBox();
-            const newState = serializeAnimationState();
-            const spriteName = editingSprite.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite.index}`;
-            addUndoCommand({
-                description: `Change ${spriteName} Rotation`,
-                oldState: oldState,
-                newState: newState,
-                undo: () => restoreAnimationState(oldState),
-                redo: () => restoreAnimationState(newState)
-            });
-            redraw();
-            drawSpritePreview();
-            saveSession(true);
-        }
-    };
+    createSliderSync("xScale", "xScaleSlider",
+        () => editingSprite?.xscale || 1.0,
+        (val) => { if (editingSprite) { editingSprite.xscale = val; editingSprite.updateBoundingBox(); } },
+        () => { redraw(); drawSpritePreview(); saveSession(true); },
+        `Change ${editingSprite.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite.index}`} X Scale`
+    );
+    createSliderSync("yScale", "yScaleSlider",
+        () => editingSprite?.yscale || 1.0,
+        (val) => { if (editingSprite) { editingSprite.yscale = val; editingSprite.updateBoundingBox(); } },
+        () => { redraw(); drawSpritePreview(); saveSession(true); },
+        `Change ${editingSprite.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite.index}`} Y Scale`
+    );
+    createSliderSync("rotation", "rotationSlider",
+        () => editingSprite?.rotation || 0,
+        (val) => { if (editingSprite) { editingSprite.rotation = val; editingSprite.updateBoundingBox(); } },
+        () => { redraw(); drawSpritePreview(); saveSession(true); },
+        `Change ${editingSprite.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite.index}`} Rotation`
+    );
     document.getElementById("spriteLeft").onchange = (e) => {
         if (editingSprite) {
             const oldState = serializeAnimationState();
@@ -4883,6 +4640,7 @@ window.addEventListener("load", async () => {
     addWheelHandler("#itemXScaleSlider", (e) => document.getElementById("itemXScaleSlider").oninput(e), 0.1);
     addWheelHandler("#itemYScaleSlider", (e) => document.getElementById("itemYScaleSlider").oninput(e), 0.1);
     addWheelHandler("#itemRotationSlider", (e) => document.getElementById("itemRotationSlider").oninput(e), 1);
+    addWheelHandler("#itemLayer", (e) => document.getElementById("itemLayer").onchange(e));
     let isPanning = false;
     let panStartX = 0, panStartY = 0;
     mainCanvas.onmousedown = (e) => {
