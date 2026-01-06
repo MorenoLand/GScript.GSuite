@@ -168,6 +168,9 @@ class Animation {
         this.defaultImages = new Map();
         this.nextSpriteIndex = 0;
         this.boundingBox = {x: 0, y: 0, width: 0, height: 0};
+        this.undoStack = [];
+        this.undoIndex = -1;
+        this.historyLoggingEnabled = true;
     }
     getAniSprite(index, name) {
         if (this.sprites.has(index)) return this.sprites.get(index);
@@ -301,10 +304,28 @@ let workingDirectory = "";
 let lastWorkingDirectory = localStorage.getItem("ganiEditorLastWorkingDir") || "";
 let lastOpenDirectory = localStorage.getItem("ganiEditorLastOpenDir") || "";
 let onionSkinEnabled = false;
-let undoStack = [];
-let undoIndex = -1;
 let maxUndo = 50;
-let historyLoggingEnabled = true;
+function getCurrentUndoStack() {
+    if (!currentAnimation) return [];
+    if (!currentAnimation.undoStack) currentAnimation.undoStack = [];
+    return currentAnimation.undoStack;
+}
+function getCurrentUndoIndex() {
+    if (!currentAnimation) return -1;
+    if (currentAnimation.undoIndex === undefined) currentAnimation.undoIndex = -1;
+    return currentAnimation.undoIndex;
+}
+function setCurrentUndoIndex(value) {
+    if (currentAnimation) currentAnimation.undoIndex = value;
+}
+function getCurrentHistoryLoggingEnabled() {
+    if (!currentAnimation) return true;
+    if (currentAnimation.historyLoggingEnabled === undefined) currentAnimation.historyLoggingEnabled = true;
+    return currentAnimation.historyLoggingEnabled;
+}
+function setCurrentHistoryLoggingEnabled(value) {
+    if (currentAnimation) currentAnimation.historyLoggingEnabled = value;
+}
 let dragStartState = null;
 let clipboardFrame = null;
 let clipboardSprite = null;
@@ -317,6 +338,7 @@ let insertPiece = null;
 let lastMouseX = 0;
 let lastMouseY = 0;
 let boxSelectStart = null;
+let boxSelectEnd = null;
 let isBoxSelecting = false;
 let spriteSplitterDragging = false;
 let leftCenterSplitterDragging = false;
@@ -385,6 +407,11 @@ let spritePreviewCanvas = document.getElementById("spritePreviewCanvas");
 const ctx = mainCanvas.getContext("2d");
 let timelineCtx = timelineCanvas ? timelineCanvas.getContext("2d") : null;
 const previewCtx = spritePreviewCanvas.getContext("2d");
+let dragFrame = -1;
+let dragStartX = 0;
+let dragThreshold = 5;
+let isDraggingFrame = false;
+let dragCurrentX = 0;
 let timelineScrollX = 0;
 let timelineTotalWidth = 0;
 const leftPanel = document.querySelector(".left-panel");
@@ -426,17 +453,26 @@ function resizeCanvas() {
         }
     }
 
-    mainCanvas.width = containerWidth * dpr;
-    mainCanvas.height = containerHeight * dpr;
-    mainCanvas.style.width = containerWidth + "px";
-    mainCanvas.style.height = containerHeight + "px";
+    const canvasContainer = document.querySelector(".canvas-container");
+    if (canvasContainer) {
+        canvasContainer.style.width = "100%";
+        canvasContainer.style.height = "100%";
+    }
+    
+    const actualWidth = Math.max(containerWidth, centerPanel.clientWidth || containerWidth);
+    const actualHeight = Math.max(containerHeight, centerPanel.clientHeight || containerHeight);
+    
+    mainCanvas.width = actualWidth * dpr;
+    mainCanvas.height = actualHeight * dpr;
+    mainCanvas.style.width = "100%";
+    mainCanvas.style.height = "100%";
     mainCanvas.style.position = "absolute";
     mainCanvas.style.top = "0";
-    mainCanvas.style.left = leftPanel.offsetWidth + "px";
-    mainCanvas.style.zIndex = "-2";
+    mainCanvas.style.left = "0";
+    mainCanvas.style.zIndex = "1";
     const canvasControls = document.querySelector(".canvas-controls");
     if (canvasControls) {
-        canvasControls.style.left = leftPanel.offsetWidth + 10 + "px";
+        canvasControls.style.left = "10px";
     }
     ctx.scale(dpr, dpr);
     const timelineView = timelineCanvas.parentElement;
@@ -669,9 +705,12 @@ function redraw() {
     const ctx = mainCtx;
     const width = mainCanvas.width / dpr;
     const height = mainCanvas.height / dpr;
-    ctx.clearRect(0, 0, mainCanvas.width / dpr, mainCanvas.height / dpr);
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, mainCanvas.width, mainCanvas.height);
     ctx.fillStyle = backgroundColor;
     ctx.fillRect(0, 0, width, height);
+    ctx.restore();
     if (!currentAnimation) {
         drawTimeline();
         return;
@@ -722,15 +761,12 @@ function redraw() {
     ctx.restore();
     drawTimeline();
     if (editingSprite) drawSpritePreview();
-    if (isBoxSelecting && boxSelectStart) {
-        const rect = mainCanvas.getBoundingClientRect();
+    if (isBoxSelecting && boxSelectStart && boxSelectEnd) {
         const zoom = zoomFactors[zoomLevel] || 1.0;
-        const mouseX = (lastMouseX || 0) - rect.left;
-        const mouseY = (lastMouseY || 0) - rect.top;
         const screenX1 = boxSelectStart.x * zoom + width / 2 + panX;
         const screenY1 = boxSelectStart.y * zoom + height / 2 + panY;
-        const screenX2 = mouseX;
-        const screenY2 = mouseY;
+        const screenX2 = boxSelectEnd.x * zoom + width / 2 + panX;
+        const screenY2 = boxSelectEnd.y * zoom + height / 2 + panY;
         ctx.strokeStyle = "#00ff00";
         ctx.lineWidth = 1;
         ctx.setLineDash([5, 5]);
@@ -838,7 +874,8 @@ function drawTimeline() {
     timelineCtx.fillRect(0, 0, width, height);
     if (currentAnimation.frames.length === 0) return;
     const headerHeight = 20;
-    const buttonHeight = 96;
+    const isTouch = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+    const buttonHeight = isTouch ? 96 : 110;
     let totalTime = 0;
     for (const frame of currentAnimation.frames) totalTime += frame.duration;
     let x = 2;
@@ -846,7 +883,8 @@ function drawTimeline() {
     timelineCtx.textAlign = "center";
     timelineCtx.textBaseline = "top";
     const minFrameWidth = 48;
-    const pixelsPerMs = 1;
+    const getPixelsPerMs = () => window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 1 : 1.5;
+    const pixelsPerMs = getPixelsPerMs();
     let totalTimelineWidth = 2;
     for (let i = 0; i < currentAnimation.frames.length; i++) {
         const frame = currentAnimation.frames[i];
@@ -860,6 +898,7 @@ function drawTimeline() {
 
     let currentX = 2 - timelineScrollX;
     for (let i = 0; i < currentAnimation.frames.length; i++) {
+        if (isDraggingFrame && dragFrame === i) continue;
         const frame = currentAnimation.frames[i];
         const frameWidth = Math.max(frame.duration * pixelsPerMs, minFrameWidth);
         const frameStartX = currentX;
@@ -951,6 +990,76 @@ function drawTimeline() {
             timelineCtx.strokeRect(x, headerHeight + 0.5, frameWidth, buttonHeight);
         }
         currentX += frameWidth;
+    }
+    if (isDraggingFrame && dragFrame >= 0 && dragFrame < currentAnimation.frames.length) {
+        const frame = currentAnimation.frames[dragFrame];
+        const frameWidth = Math.max(frame.duration * pixelsPerMs, minFrameWidth);
+        const dragX = dragCurrentX - frameWidth / 2;
+        const selected = dragFrame === currentFrame;
+        const actualDir = getDirIndex(currentDir);
+        const pieces = frame.pieces[actualDir] || [];
+        timelineCtx.globalAlpha = 0.7;
+        timelineCtx.fillStyle = selected ? "#006400" : "#8b0000";
+        timelineCtx.beginPath();
+        const rx = 10, ry = 10;
+        const w = frameWidth - 4;
+        const h = buttonHeight;
+        timelineCtx.moveTo(dragX + 0.5 + rx, headerHeight + 0.5);
+        timelineCtx.lineTo(dragX + 0.5 + w - rx, headerHeight + 0.5);
+        timelineCtx.quadraticCurveTo(dragX + 0.5 + w, headerHeight + 0.5, dragX + 0.5 + w, headerHeight + 0.5 + ry);
+        timelineCtx.lineTo(dragX + 0.5 + w, headerHeight + 0.5 + h - ry);
+        timelineCtx.quadraticCurveTo(dragX + 0.5 + w, headerHeight + 0.5 + h, dragX + 0.5 + w - rx, headerHeight + 0.5 + h);
+        timelineCtx.lineTo(dragX + 0.5 + rx, headerHeight + 0.5 + h);
+        timelineCtx.quadraticCurveTo(dragX + 0.5, headerHeight + 0.5 + h, dragX + 0.5, headerHeight + 0.5 + h - ry);
+        timelineCtx.lineTo(dragX + 0.5, headerHeight + 0.5 + ry);
+        timelineCtx.quadraticCurveTo(dragX + 0.5, headerHeight + 0.5, dragX + 0.5 + rx, headerHeight + 0.5);
+        timelineCtx.closePath();
+        timelineCtx.fill();
+        const clipX = dragX + 0.5 + 2;
+        const clipY = headerHeight + 14;
+        const clipW = frameWidth - 4;
+        const clipH = buttonHeight - 30;
+        timelineCtx.save();
+        timelineCtx.beginPath();
+        timelineCtx.rect(clipX, clipY, clipW, clipH);
+        timelineCtx.clip();
+        if (pieces.length > 0) {
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const piece of pieces) {
+                if (piece.type === "sprite") {
+                    const bb = piece.getBoundingBox(currentAnimation);
+                    minX = Math.min(minX, bb.x);
+                    minY = Math.min(minY, bb.y);
+                    maxX = Math.max(maxX, bb.x + bb.width);
+                    maxY = Math.max(maxY, bb.y + bb.height);
+                } else if (piece.type === "sound") {
+                    minX = Math.min(minX, piece.xoffset);
+                    minY = Math.min(minY, piece.yoffset);
+                    maxX = Math.max(maxX, piece.xoffset + 16);
+                    maxY = Math.max(maxY, piece.yoffset + 16);
+                }
+            }
+            if (minX !== Infinity) {
+                const frameWidth2 = maxX - minX;
+                const frameHeight2 = maxY - minY;
+                const frameCenterX = (minX + maxX) / 2;
+                const frameCenterY = (minY + maxY) / 2;
+                const previewCenterX = clipX + clipW / 2;
+                const previewCenterY = clipY + clipH / 2;
+                const scale = Math.min((clipW - 4) / Math.max(frameWidth2, 1), (clipH - 4) / Math.max(frameHeight2, 1), 0.5);
+                timelineCtx.save();
+                timelineCtx.translate(previewCenterX, previewCenterY);
+                timelineCtx.scale(scale, scale);
+                timelineCtx.translate(-frameCenterX, -frameCenterY);
+                drawFrame(timelineCtx, frame, currentDir);
+                timelineCtx.restore();
+            }
+        }
+        timelineCtx.restore();
+        timelineCtx.fillStyle = "#ffffff";
+        timelineCtx.fillText(String(dragFrame), dragX + frameWidth / 2, headerHeight + 1);
+        timelineCtx.fillText(`${frame.duration} ms`, dragX + frameWidth / 2, headerHeight + buttonHeight - 16);
+        timelineCtx.globalAlpha = 1.0;
     }
     const startX = Math.floor(-2 / 50) * 50;
     timelineCtx.fillStyle = "#808080";
@@ -1457,6 +1566,38 @@ function updateSpritesList() {
             e.stopImmediatePropagation();
             showSpriteContextMenu(e, sprite);
         };
+        let spriteItemTouchTimer = null;
+        let spriteItemTouchMoved = false;
+        item.addEventListener("touchstart", (e) => {
+            spriteItemTouchMoved = false;
+            spriteItemTouchTimer = setTimeout(() => {
+                if (!spriteItemTouchMoved) {
+                    e.preventDefault();
+                    const rect = item.getBoundingClientRect();
+                    const fakeEvent = {
+                        clientX: rect.left + rect.width / 2,
+                        clientY: rect.top + rect.height / 2,
+                        preventDefault: () => {},
+                        stopPropagation: () => {},
+                        stopImmediatePropagation: () => {}
+                    };
+                    showSpriteContextMenu(fakeEvent, sprite);
+                }
+            }, 500);
+        }, {passive: true});
+        item.addEventListener("touchmove", () => {
+            spriteItemTouchMoved = true;
+            if (spriteItemTouchTimer) {
+                clearTimeout(spriteItemTouchTimer);
+                spriteItemTouchTimer = null;
+            }
+        }, {passive: true});
+        item.addEventListener("touchend", () => {
+            if (spriteItemTouchTimer) {
+                clearTimeout(spriteItemTouchTimer);
+                spriteItemTouchTimer = null;
+            }
+        }, {passive: true});
         item.draggable = true;
         item.ondragstart = (e) => {
             e.dataTransfer.setData("spriteIndex", sprite.index);
@@ -1522,6 +1663,40 @@ function updateSpritesList() {
                 showSpritesListContextMenu(e);
             }
         };
+        let spritesListTouchTimer = null;
+        let spritesListTouchMoved = false;
+        spritesList.addEventListener("touchstart", (e) => {
+            if (e.target === spritesList || e.target.parentElement === spritesList) {
+                spritesListTouchMoved = false;
+                spritesListTouchTimer = setTimeout(() => {
+                    if (!spritesListTouchMoved) {
+                        e.preventDefault();
+                        const rect = spritesList.getBoundingClientRect();
+                        const fakeEvent = {
+                            clientX: rect.left + rect.width / 2,
+                            clientY: rect.top + rect.height / 2,
+                            preventDefault: () => {},
+                            stopPropagation: () => {},
+                            stopImmediatePropagation: () => {}
+                        };
+                        showSpritesListContextMenu(fakeEvent);
+                    }
+                }, 500);
+            }
+        }, {passive: true});
+        spritesList.addEventListener("touchmove", () => {
+            spritesListTouchMoved = true;
+            if (spritesListTouchTimer) {
+                clearTimeout(spritesListTouchTimer);
+                spritesListTouchTimer = null;
+            }
+        }, {passive: true});
+        spritesList.addEventListener("touchend", () => {
+            if (spritesListTouchTimer) {
+                clearTimeout(spritesListTouchTimer);
+                spritesListTouchTimer = null;
+            }
+        }, {passive: true});
     }
 }
 
@@ -1763,7 +1938,8 @@ function updateItemSettings() {
         }
         const itemLayer = document.getElementById("itemLayer");
         if (itemLayer) {
-            const pieceIndex = pieces.findIndex(p => p === piece || p.id === piece.id);
+            const pieceId = combo ? combo.value : null;
+            const pieceIndex = pieceId ? pieces.findIndex(p => p.id === pieceId) : -1;
             itemLayer.value = pieceIndex >= 0 ? pieceIndex : 0;
             itemLayer.disabled = false;
             itemLayer.max = pieces.length - 1;
@@ -1852,11 +2028,14 @@ function updateSoundsList() {
             if (isEditing) {
                 const input = document.createElement("input");
                 input.value = sound.fileName;
-                input.style.background = "transparent";
-                input.style.border = "1px solid #777";
-                input.style.color = "#e0e0e0";
+                input.style.background = "#2b2b2b";
+                input.style.border = "2px solid #4472C4";
+                input.style.color = "#ffffff";
                 input.style.width = "100%";
                 input.style.outline = "none";
+                input.style.padding = "2px 4px";
+                input.style.fontWeight = "bold";
+                input.style.caretColor = "#ffffff";
                 input.onkeydown = (e) => {
                     if (e.key === "Enter") {
                         finishEditing();
@@ -1866,10 +2045,12 @@ function updateSoundsList() {
                 };
                 input.onblur = finishEditing;
                 input.onclick = (e) => e.stopPropagation();
+                li.style.userSelect = "text";
+                li.style.background = "#1a4d7a";
+                li.style.border = "1px solid #4472C4";
+                li.appendChild(input);
                 input.focus();
                 input.select();
-                li.style.userSelect = "text";
-                li.appendChild(input);
             } else {
                 li.textContent = sound.fileName;
             }
@@ -1883,16 +2064,44 @@ function updateSoundsList() {
             }
             isEditing = false;
             li.style.userSelect = "none";
+            li.style.background = selectedPieces.has(sound) ? "#4472C4" : "transparent";
+            li.style.border = "none";
             renderSoundItem();
         }
 
         function cancelEditing() {
             isEditing = false;
             li.style.userSelect = "none";
+            li.style.background = selectedPieces.has(sound) ? "#4472C4" : "transparent";
+            li.style.border = "none";
             renderSoundItem();
         }
         let clickCount = 0;
         let clickTimer = null;
+        let touchTimer = null;
+        let touchStartTime = 0;
+
+        li.ontouchstart = (e) => {
+            if (isEditing) return;
+            e.preventDefault();
+            touchStartTime = Date.now();
+            touchTimer = setTimeout(() => {
+                isEditing = true;
+                renderSoundItem();
+            }, 500);
+        };
+
+        li.ontouchend = (e) => {
+            if (touchTimer) {
+                clearTimeout(touchTimer);
+                touchTimer = null;
+            }
+            const touchDuration = Date.now() - touchStartTime;
+            if (touchDuration < 500) {
+                li.onclick(e);
+            }
+        };
+
         li.onclick = (e) => {
             if (isEditing) return;
             clickCount++;
@@ -1989,6 +2198,8 @@ function updateHistoryMenu() {
         historyGroup.style.display = "none";
         return;
     }
+    const undoStack = getCurrentUndoStack();
+    const undoIndex = getCurrentUndoIndex();
     historyGroup.style.display = "block";
     historyList.innerHTML = "";
     for (let i = undoStack.length - 1; i >= 0; i--) {
@@ -2036,24 +2247,27 @@ function updateHistoryMenu() {
         }
         item.textContent = displayText;
         item.onclick = () => {
-            while (undoIndex < i && undoIndex < undoStack.length - 1) {
-                undoIndex++;
-                const cmd = undoStack[undoIndex];
+            let currentUndoIndex = getCurrentUndoIndex();
+            const currentUndoStack = getCurrentUndoStack();
+            while (currentUndoIndex < i && currentUndoIndex < currentUndoStack.length - 1) {
+                currentUndoIndex++;
+                const cmd = currentUndoStack[currentUndoIndex];
                 if (cmd && cmd.redo && typeof cmd.redo === 'function') {
                     cmd.redo();
                 } else if (cmd && cmd.newState) {
                     restoreAnimationState(cmd.newState);
                 }
             }
-            while (undoIndex > i && undoIndex >= 0) {
-                const cmd = undoStack[undoIndex];
+            while (currentUndoIndex > i && currentUndoIndex >= 0) {
+                const cmd = currentUndoStack[currentUndoIndex];
                 if (cmd && cmd.undo && typeof cmd.undo === 'function') {
                     cmd.undo();
                 } else if (cmd && cmd.oldState) {
                     restoreAnimationState(cmd.oldState);
                 }
-                undoIndex--;
+                currentUndoIndex--;
             }
+            setCurrentUndoIndex(currentUndoIndex);
             redraw();
             updateFrameInfo();
             updateSpritesList();
@@ -2071,11 +2285,12 @@ function updateHistoryMenu() {
         btnHistoryRedo.onclick = undoIndex < undoStack.length - 1 ? () => redo() : null;
     }
     if (btnHistoryClear) {
-        btnHistoryClear.disabled = undoStack.length === 0;
-        btnHistoryClear.onclick = undoStack.length > 0 ? () => showConfirmDialog("Are you sure you want to clear all undo/redo history? This action cannot be undone.", (confirmed) => {
-            if (confirmed) {
-                undoStack = [];
-                undoIndex = -1;
+        const currentUndoStack = getCurrentUndoStack();
+        btnHistoryClear.disabled = currentUndoStack.length === 0;
+        btnHistoryClear.onclick = currentUndoStack.length > 0 ? () => showConfirmDialog("Are you sure you want to clear all undo/redo history? This action cannot be undone.", (confirmed) => {
+            if (confirmed && currentAnimation) {
+                currentAnimation.undoStack = [];
+                currentAnimation.undoIndex = -1;
                 updateHistoryMenu();
                 saveUndoStack();
             }
@@ -2084,29 +2299,39 @@ function updateHistoryMenu() {
     if (btnToolbarUndo) btnToolbarUndo.disabled = undoIndex < 0;
     if (btnToolbarRedo) btnToolbarRedo.disabled = undoIndex >= undoStack.length - 1;
 
-    const historyLoggingToggle = document.getElementById("historyLoggingToggle");
+    const historyLoggingToggle = document.getElementById("toggleHistoryLogging");
     if (historyLoggingToggle) {
-        historyLoggingToggle.checked = historyLoggingEnabled;
+        historyLoggingToggle.checked = getCurrentHistoryLoggingEnabled();
         historyLoggingToggle.onchange = () => {
-            historyLoggingEnabled = historyLoggingToggle.checked;
+            setCurrentHistoryLoggingEnabled(historyLoggingToggle.checked);
+            if (currentAnimation) {
+                const animationIndex = animations.indexOf(currentAnimation);
+                localStorage.setItem("ganiEditorHistoryLoggingEnabled_" + animationIndex, historyLoggingToggle.checked);
+            }
         };
     }
 }
 
 function addUndoCommand(command) {
-    if (!historyLoggingEnabled) return;
-    undoStack = undoStack.slice(0, undoIndex + 1);
+    if (!getCurrentHistoryLoggingEnabled()) return;
+    if (!currentAnimation) return;
+    const undoStack = getCurrentUndoStack();
+    let undoIndex = getCurrentUndoIndex();
+    undoStack.splice(undoIndex + 1);
     undoStack.push(command);
     if (undoStack.length > maxUndo) {
         undoStack.shift();
     } else {
         undoIndex++;
     }
+    setCurrentUndoIndex(undoIndex);
     updateHistoryMenu();
     saveUndoStack();
 }
 
 function undo() {
+    const undoStack = getCurrentUndoStack();
+    let undoIndex = getCurrentUndoIndex();
     if (undoIndex >= 0 && undoStack[undoIndex]) {
         const cmd = undoStack[undoIndex];
         f12Log(`Undo: ${cmd.description}, has undo function: ${!!cmd.undo}, has oldState: ${!!cmd.oldState}`);
@@ -2116,6 +2341,7 @@ function undo() {
             cmd.undo();
         }
         undoIndex--;
+        setCurrentUndoIndex(undoIndex);
         redraw();
         updateFrameInfo();
         updateSpritesList();
@@ -2125,6 +2351,8 @@ function undo() {
 }
 
 function redo() {
+    const undoStack = getCurrentUndoStack();
+    let undoIndex = getCurrentUndoIndex();
     if (undoIndex < undoStack.length - 1 && undoStack[undoIndex + 1]) {
         undoIndex++;
         const cmd = undoStack[undoIndex];
@@ -2134,6 +2362,7 @@ function redo() {
         } else if (cmd.redo && typeof cmd.redo === 'function') {
             cmd.redo();
         }
+        setCurrentUndoIndex(undoIndex);
         redraw();
         updateFrameInfo();
         updateSpritesList();
@@ -2293,6 +2522,8 @@ function restoreAnimationState(state) {
 function saveUndoStack() {
     if (!currentAnimation) return;
     try {
+        const undoStack = getCurrentUndoStack();
+        const undoIndex = getCurrentUndoIndex();
         const undoData = {
             animationIndex: animations.indexOf(currentAnimation),
             undoIndex: undoIndex,
@@ -2302,7 +2533,7 @@ function saveUndoStack() {
                 newState: cmd.newState || null
             }))
         };
-        localStorage.setItem("ganiEditorUndoStack", JSON.stringify(undoData));
+        localStorage.setItem("ganiEditorUndoStack_" + animations.indexOf(currentAnimation), JSON.stringify(undoData));
     } catch (e) {
         console.error("Failed to save undo stack:", e);
     }
@@ -2311,15 +2542,20 @@ function saveUndoStack() {
 function restoreUndoStack() {
     if (!currentAnimation) return;
     try {
-        const undoDataStr = localStorage.getItem("ganiEditorUndoStack");
-        if (!undoDataStr) return;
-        const undoData = JSON.parse(undoDataStr);
-        if (undoData.animationIndex !== animations.indexOf(currentAnimation)) {
-            undoStack = [];
-            undoIndex = -1;
+        const animationIndex = animations.indexOf(currentAnimation);
+        const undoDataStr = localStorage.getItem("ganiEditorUndoStack_" + animationIndex);
+        if (!undoDataStr) {
+            if (!currentAnimation.undoStack) currentAnimation.undoStack = [];
+            if (currentAnimation.undoIndex === undefined) currentAnimation.undoIndex = -1;
             return;
         }
-        undoStack = undoData.commands.filter(cmdData => cmdData.oldState && cmdData.newState).map(cmdData => {
+        const undoData = JSON.parse(undoDataStr);
+        if (undoData.animationIndex !== animationIndex) {
+            if (!currentAnimation.undoStack) currentAnimation.undoStack = [];
+            if (currentAnimation.undoIndex === undefined) currentAnimation.undoIndex = -1;
+            return;
+        }
+        currentAnimation.undoStack = undoData.commands.filter(cmdData => cmdData.oldState && cmdData.newState).map(cmdData => {
             const oldState = cmdData.oldState;
             const newState = cmdData.newState;
             return {
@@ -2336,7 +2572,7 @@ function restoreUndoStack() {
                 }
             };
         });
-        undoIndex = Math.min(undoData.undoIndex || -1, undoStack.length - 1);
+        currentAnimation.undoIndex = Math.min(undoData.undoIndex || -1, currentAnimation.undoStack.length - 1);
         updateHistoryMenu();
     } catch (e) {
         console.error("Failed to restore undo stack:", e);
@@ -2392,8 +2628,20 @@ function initNewAnimation() {
 
 function switchTab(index) {
     if (index < 0 || index >= animations.length) return;
+    saveUndoStack();
     currentTabIndex = index;
     currentAnimation = animations[index];
+    if (!currentAnimation.undoStack) currentAnimation.undoStack = [];
+    if (currentAnimation.undoIndex === undefined) currentAnimation.undoIndex = -1;
+    if (currentAnimation.historyLoggingEnabled === undefined) {
+        const savedValue = localStorage.getItem("ganiEditorHistoryLoggingEnabled_" + index);
+        currentAnimation.historyLoggingEnabled = savedValue !== null ? savedValue === "true" : true;
+    }
+    restoreUndoStack();
+    const historyLoggingToggle = document.getElementById("historyLoggingToggle");
+    if (historyLoggingToggle) {
+        historyLoggingToggle.checked = getCurrentHistoryLoggingEnabled();
+    }
     f12Log(`switchTab to index ${index}, animation defaults: ` + JSON.stringify(Array.from(currentAnimation.defaultImages.entries())));
     currentFrame = 0;
     selectedPieces.clear();
@@ -2584,8 +2832,6 @@ async function restoreSession() {
                 document.getElementById("btnSwapKeys").classList.toggle("active", keysSwapped);
             }
         }
-        undoStack = session.undoStack || [];
-        undoIndex = session.undoIndex !== undefined ? session.undoIndex : -1;
         if (session.animations && session.animations.length > 0) {
             animations = [];
             for (const aniData of session.animations) {
@@ -2624,6 +2870,16 @@ async function restoreSession() {
                 currentTabIndex = Math.min(session.currentTabIndex || 0, animations.length - 1);
                 currentAnimation = animations[currentTabIndex];
             }
+            for (let i = 0; i < animations.length; i++) {
+                if (animations[i].historyLoggingEnabled === undefined) {
+                    const savedValue = localStorage.getItem("ganiEditorHistoryLoggingEnabled_" + i);
+                    animations[i].historyLoggingEnabled = savedValue !== null ? savedValue === "true" : true;
+                }
+            }
+            if (currentAnimation && currentAnimation.historyLoggingEnabled === undefined) {
+                const savedValue = localStorage.getItem("ganiEditorHistoryLoggingEnabled_" + currentTabIndex);
+                currentAnimation.historyLoggingEnabled = savedValue !== null ? savedValue === "true" : true;
+            }
             updateTabs();
             updateUIVisibility();
             updateSpritesList();
@@ -2632,6 +2888,10 @@ async function restoreSession() {
             drawTimeline();
             updateFrameInfo();
             restoreUndoStack();
+            const historyLoggingToggle = document.getElementById("historyLoggingToggle");
+            if (historyLoggingToggle && currentAnimation) {
+                historyLoggingToggle.checked = getCurrentHistoryLoggingEnabled();
+            }
             updateHistoryMenu();
             redraw();
             return true;
@@ -2695,15 +2955,31 @@ window.addEventListener("load", async () => {
                 timelineContainer.style.display = "flex";
                 timelineContainer.style.visibility = "visible";
                 timelineContainer.style.opacity = "1";
-                timelineContainer.style.height = "192px";
-                timelineContainer.style.flex = "0 0 192px";
-                timelineContainer.style.minHeight = "100px";
+                const isTouch = (navigator.maxTouchPoints && navigator.maxTouchPoints > 1) || (window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+                if (isTouch) {
+                    timelineContainer.style.height = "250px";
+                    timelineContainer.style.flex = "0 0 250px";
+                    timelineContainer.style.minHeight = "230px";
+                } else {
+                    timelineContainer.style.height = "218px";
+                    timelineContainer.style.flex = "0 0 218px";
+                    timelineContainer.style.minHeight = "180px";
+                }
             }
             if (timelineView) {
                 timelineView.style.display = "block";
                 timelineView.style.visibility = "visible";
                 timelineView.style.opacity = "1";
             }
+            setTimeout(() => {
+                const isTouch = (navigator.maxTouchPoints && navigator.maxTouchPoints > 1) || (window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+                if (isTouch && timelineContainer) {
+                    timelineContainer.style.height = "250px";
+                    timelineContainer.style.flex = "0 0 250px";
+                    timelineContainer.style.minHeight = "230px";
+                    drawTimeline();
+                }
+            }, 100);
             if (canvas) {
                 canvas.style.display = "block";
                 canvas.style.visibility = "visible";
@@ -2726,6 +3002,10 @@ window.addEventListener("load", async () => {
             spriteSplitterDragging = true;
             e.preventDefault();
         };
+        spriteSplitterHandle.addEventListener("touchstart", (e) => {
+            spriteSplitterDragging = true;
+            e.preventDefault();
+        }, {passive: false});
         document.addEventListener("mousemove", (e) => {
             if (spriteSplitterDragging) {
                 const leftPanel = spriteList.parentElement;
@@ -2736,7 +3016,21 @@ window.addEventListener("load", async () => {
                 }
             }
         });
+        document.addEventListener("touchmove", (e) => {
+            if (spriteSplitterDragging && e.touches.length === 1) {
+                const leftPanel = spriteList.parentElement;
+                const rect = leftPanel.getBoundingClientRect();
+                const newHeight = e.touches[0].clientY - rect.top - spriteList.offsetTop;
+                if (newHeight >= 200 && newHeight <= 600) {
+                    spriteList.style.height = newHeight + "px";
+                }
+                e.preventDefault();
+            }
+        }, {passive: false});
         document.addEventListener("mouseup", () => {
+            spriteSplitterDragging = false;
+        });
+        document.addEventListener("touchend", () => {
             spriteSplitterDragging = false;
         });
     }
@@ -2749,6 +3043,10 @@ window.addEventListener("load", async () => {
             leftCenterSplitterDragging = true;
             e.preventDefault();
         };
+        leftCenterSplitter.addEventListener("touchstart", (e) => {
+            leftCenterSplitterDragging = true;
+            e.preventDefault();
+        }, {passive: false});
     }
     const centerRightSplitter = document.getElementById("centerRightSplitter");
     const rightPanel = document.querySelector(".right-panel");
@@ -2758,6 +3056,10 @@ window.addEventListener("load", async () => {
             centerRightSplitterDragging = true;
             e.preventDefault();
         };
+        centerRightSplitter.addEventListener("touchstart", (e) => {
+            centerRightSplitterDragging = true;
+            e.preventDefault();
+        }, {passive: false});
     }
     const canvasTimelineSplitter = document.getElementById("canvasTimelineSplitter");
     const timelineContainer = document.querySelector(".timeline-container");
@@ -2766,6 +3068,10 @@ window.addEventListener("load", async () => {
             canvasTimelineSplitterDragging = true;
             e.preventDefault();
         };
+        canvasTimelineSplitter.addEventListener("touchstart", (e) => {
+            canvasTimelineSplitterDragging = true;
+            e.preventDefault();
+        }, {passive: false});
     }
     document.addEventListener("mousemove", (e) => {
         if (leftCenterSplitterDragging && leftPanel && centerPanel) {
@@ -2773,14 +3079,20 @@ window.addEventListener("load", async () => {
             const newWidth = e.clientX - rect.left;
             if (newWidth >= 200 && newWidth <= 800) {
                 leftPanel.style.width = newWidth + "px";
-                const centerWidth = mainSplitter.clientWidth - leftPanel.offsetWidth - rightPanel.offsetWidth;
+                const mainSplitter = document.getElementById("mainSplitter");
+                const centerWidth = mainSplitter ? mainSplitter.clientWidth - leftPanel.offsetWidth - rightPanel.offsetWidth : centerPanel.clientWidth;
                 const dpr = window.devicePixelRatio || 1;
-                mainCanvas.width = centerWidth * dpr;
-                mainCanvas.style.width = centerWidth + "px";
-                mainCanvas.style.left = leftPanel.offsetWidth + "px";
+                const canvasContainer = document.querySelector(".canvas-container");
+                if (canvasContainer) {
+                    canvasContainer.style.width = "100%";
+                }
+                const actualWidth = Math.max(centerWidth, centerPanel.clientWidth || centerWidth);
+                mainCanvas.width = actualWidth * dpr;
+                mainCanvas.style.width = "100%";
+                mainCanvas.style.left = "0";
                 const canvasControls = document.querySelector(".canvas-controls");
                 if (canvasControls) {
-                    canvasControls.style.left = leftPanel.offsetWidth + 10 + "px";
+                    canvasControls.style.left = "10px";
                 }
                 ctx.scale(dpr, dpr);
                 redraw();
@@ -2790,14 +3102,20 @@ window.addEventListener("load", async () => {
             const newRightWidth = rect.right - e.clientX;
             if (newRightWidth >= 200 && newRightWidth <= 800) {
                 rightPanel.style.width = newRightWidth + "px";
-                const centerWidth = mainSplitter.clientWidth - leftPanel.offsetWidth - rightPanel.offsetWidth;
+                const mainSplitter = document.getElementById("mainSplitter");
+                const centerWidth = mainSplitter ? mainSplitter.clientWidth - leftPanel.offsetWidth - rightPanel.offsetWidth : centerPanel.clientWidth;
                 const dpr = window.devicePixelRatio || 1;
-                mainCanvas.width = centerWidth * dpr;
-                mainCanvas.style.width = centerWidth + "px";
-                mainCanvas.style.left = leftPanel.offsetWidth + "px";
+                const canvasContainer = document.querySelector(".canvas-container");
+                if (canvasContainer) {
+                    canvasContainer.style.width = "100%";
+                }
+                const actualWidth = Math.max(centerWidth, centerPanel.clientWidth || centerWidth);
+                mainCanvas.width = actualWidth * dpr;
+                mainCanvas.style.width = "100%";
+                mainCanvas.style.left = "0";
                 const canvasControls = document.querySelector(".canvas-controls");
                 if (canvasControls) {
-                    canvasControls.style.left = leftPanel.offsetWidth + 10 + "px";
+                    canvasControls.style.left = "10px";
                 }
                 ctx.scale(dpr, dpr);
                 redraw();
@@ -2806,7 +3124,9 @@ window.addEventListener("load", async () => {
             const contentArea = document.querySelector(".content-area");
             const rect = contentArea.getBoundingClientRect();
             const newTimelineHeight = rect.bottom - e.clientY;
-            if (newTimelineHeight >= 100 && newTimelineHeight <= 400) {
+            const isTouch = (navigator.maxTouchPoints && navigator.maxTouchPoints > 1) || (window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+            const minHeight = isTouch ? 230 : 180;
+            if (newTimelineHeight >= minHeight && newTimelineHeight <= 400) {
                 timelineContainer.style.height = newTimelineHeight + "px";
                 timelineContainer.style.flex = `0 0 ${newTimelineHeight}px`;
                 const timelineHeader = document.querySelector(".timeline-header");
@@ -2822,7 +3142,85 @@ window.addEventListener("load", async () => {
             }
         }
     });
+    document.addEventListener("touchmove", (e) => {
+        if (e.touches.length !== 1) return;
+        if (leftCenterSplitterDragging && leftPanel && centerPanel) {
+            const rect = leftPanel.parentElement.getBoundingClientRect();
+            const newWidth = e.touches[0].clientX - rect.left;
+            if (newWidth >= 200 && newWidth <= 800) {
+                leftPanel.style.width = newWidth + "px";
+                const mainSplitter = document.getElementById("mainSplitter");
+                const centerWidth = mainSplitter ? mainSplitter.clientWidth - leftPanel.offsetWidth - rightPanel.offsetWidth : centerPanel.clientWidth;
+                const dpr = window.devicePixelRatio || 1;
+                const canvasContainer = document.querySelector(".canvas-container");
+                if (canvasContainer) {
+                    canvasContainer.style.width = "100%";
+                }
+                const actualWidth = Math.max(centerWidth, centerPanel.clientWidth || centerWidth);
+                mainCanvas.width = actualWidth * dpr;
+                mainCanvas.style.width = "100%";
+                mainCanvas.style.left = "0";
+                const canvasControls = document.querySelector(".canvas-controls");
+                if (canvasControls) {
+                    canvasControls.style.left = "10px";
+                }
+                ctx.scale(dpr, dpr);
+                redraw();
+            }
+            e.preventDefault();
+        } else if (centerRightSplitterDragging && centerPanel && rightPanel) {
+            const rect = rightPanel.parentElement.getBoundingClientRect();
+            const newRightWidth = rect.right - e.touches[0].clientX;
+            if (newRightWidth >= 200 && newRightWidth <= 800) {
+                rightPanel.style.width = newRightWidth + "px";
+                const mainSplitter = document.getElementById("mainSplitter");
+                const centerWidth = mainSplitter ? mainSplitter.clientWidth - leftPanel.offsetWidth - rightPanel.offsetWidth : centerPanel.clientWidth;
+                const dpr = window.devicePixelRatio || 1;
+                const canvasContainer = document.querySelector(".canvas-container");
+                if (canvasContainer) {
+                    canvasContainer.style.width = "100%";
+                }
+                const actualWidth = Math.max(centerWidth, centerPanel.clientWidth || centerWidth);
+                mainCanvas.width = actualWidth * dpr;
+                mainCanvas.style.width = "100%";
+                mainCanvas.style.left = "0";
+                const canvasControls = document.querySelector(".canvas-controls");
+                if (canvasControls) {
+                    canvasControls.style.left = "10px";
+                }
+                ctx.scale(dpr, dpr);
+                redraw();
+            }
+            e.preventDefault();
+        } else if (canvasTimelineSplitterDragging && timelineContainer) {
+            const contentArea = document.querySelector(".content-area");
+            const rect = contentArea.getBoundingClientRect();
+            const newTimelineHeight = rect.bottom - e.touches[0].clientY;
+            const isTouch = (navigator.maxTouchPoints && navigator.maxTouchPoints > 1) || (window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+            const minHeight = isTouch ? 230 : 180;
+            if (newTimelineHeight >= minHeight && newTimelineHeight <= 400) {
+                timelineContainer.style.height = newTimelineHeight + "px";
+                timelineContainer.style.flex = `0 0 ${newTimelineHeight}px`;
+                const timelineHeader = document.querySelector(".timeline-header");
+                const timelineView = document.querySelector(".timeline-view");
+                const playbackControls = document.querySelector(".playback-controls");
+                if (timelineView && timelineCanvas) {
+                    setTimeout(() => {
+                        const viewHeight = timelineView.clientHeight;
+                        timelineCanvas.height = viewHeight;
+                        drawTimeline();
+                    }, 10);
+                }
+            }
+            e.preventDefault();
+        }
+    }, {passive: false});
     document.addEventListener("mouseup", () => {
+        leftCenterSplitterDragging = false;
+        centerRightSplitterDragging = false;
+        canvasTimelineSplitterDragging = false;
+    });
+    document.addEventListener("touchend", () => {
         leftCenterSplitterDragging = false;
         centerRightSplitterDragging = false;
         canvasTimelineSplitterDragging = false;
@@ -3085,7 +3483,11 @@ window.addEventListener("load", async () => {
                 const spriteList = document.querySelector(".sprite-list");
                 if (leftPanel) leftPanel.style.width = "300px";
                 if (rightPanel) rightPanel.style.width = "250px";
-                if (timelineContainer) timelineContainer.style.height = "192px";
+                if (timelineContainer) {
+                    const isTouch = (navigator.maxTouchPoints && navigator.maxTouchPoints > 1) || (window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+                    timelineContainer.style.height = isTouch ? "240px" : "218px";
+                    timelineContainer.style.flex = isTouch ? "0 0 240px" : "0 0 218px";
+                }
                 if (spriteList) spriteList.style.height = "300px";
                 selectedPieces.clear();
                 currentFrame = 0;
@@ -3464,9 +3866,9 @@ window.addEventListener("load", async () => {
             redo: () => restoreAnimationState(newState)
         });
         redraw();
-        updateFrameInfo();
-        saveSession();
-    };
+    updateFrameInfo();
+    saveSession();
+};
     document.getElementById("btnDeleteFrame").onclick = () => {
         if (currentAnimation.frames.length <= 1) {
             showAlertDialog("Cannot delete the last frame");
@@ -3561,9 +3963,9 @@ window.addEventListener("load", async () => {
     if (btnHistoryRedo) btnHistoryRedo.onclick = redo;
     if (btnHistoryClear) btnHistoryClear.onclick = () => {
         showConfirmDialog("Are you sure you want to clear the history? This cannot be undone.", (confirmed) => {
-            if (confirmed) {
-                undoStack = [];
-                undoIndex = -1;
+            if (confirmed && currentAnimation) {
+                currentAnimation.undoStack = [];
+                currentAnimation.undoIndex = -1;
                 updateHistoryMenu();
                 saveUndoStack();
             }
@@ -3574,10 +3976,6 @@ window.addEventListener("load", async () => {
     let resizeStartDuration = 0;
     let resizeOffset = 0;
     let desiredResizeFrame = -1;
-    let dragFrame = -1;
-    let dragStartX = 0;
-    let dragThreshold = 5;
-    let isDraggingFrame = false;
     timelineCanvas.onmousemove = (e) => {
         const rect = timelineCanvas.getBoundingClientRect();
         const pos = {x: e.clientX - rect.left, y: e.clientY - rect.top};
@@ -3607,9 +4005,11 @@ window.addEventListener("load", async () => {
             return;
         }
         let currentX = 2 - timelineScrollX;
+        const pixelsPerMs = window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 1 : 1.5;
+        const minFrameWidth = 48;
         for (let i = 0; i < currentAnimation.frames.length; i++) {
             const frame = currentAnimation.frames[i];
-            const frameWidth = Math.max(frame.duration * 1, 48);
+            const frameWidth = Math.max(frame.duration * pixelsPerMs, minFrameWidth);
             const frameStartX = currentX;
             const frameEndX = currentX + frameWidth;
             const right = frameEndX - 2;
@@ -3628,6 +4028,28 @@ window.addEventListener("load", async () => {
                 isDraggingFrame = true;
                 timelineCanvas.style.cursor = "grabbing";
             }
+        }
+
+        if (isDraggingFrame && dragFrame >= 0) {
+            dragCurrentX = pos.x;
+            let targetIndex = dragFrame;
+            let x = 2;
+            const pixelsPerMs = window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 1 : 1.5;
+            const minFrameWidth = 48;
+            for (let i = 0; i < currentAnimation.frames.length; i++) {
+                const frame = currentAnimation.frames[i];
+                const frameWidth = Math.max(frame.duration * pixelsPerMs, minFrameWidth);
+                const frameCenter = x + frameWidth / 2;
+                if (pos.x < frameCenter) {
+                    targetIndex = i;
+                    break;
+                }
+                x += frameWidth;
+                if (i === currentAnimation.frames.length - 1) {
+                    targetIndex = i + 1;
+                }
+            }
+            drawTimeline();
         }
 
         timelineCanvas.style.cursor = isDraggingFrame ? "grabbing" : "default";
@@ -3668,9 +4090,11 @@ window.addEventListener("load", async () => {
                 return;
             }
             let currentX = 2 - timelineScrollX;
+            const pixelsPerMs = window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 1 : 1.5;
+            const minFrameWidth = 48;
             for (let i = 0; i < currentAnimation.frames.length; i++) {
                 const frame = currentAnimation.frames[i];
-                const frameWidth = Math.max(frame.duration * 1, 48);
+                const frameWidth = Math.max(frame.duration * pixelsPerMs, minFrameWidth);
                 const frameStartX = currentX;
                 const frameEndX = currentX + frameWidth;
 
@@ -3698,6 +4122,247 @@ window.addEventListener("load", async () => {
         e.stopImmediatePropagation();
         showTimelineContextMenu(e);
     };
+
+    let timelineTouchStart = null;
+    let timelineTouchContextMenuTimer = null;
+    let timelineTouchMoved = false;
+
+    timelineCanvas.addEventListener("touchstart", (e) => {
+        if (e.touches.length > 1) return;
+        e.preventDefault();
+        const rect = timelineCanvas.getBoundingClientRect();
+        const touch = e.touches[0];
+        const pos = {x: touch.clientX - rect.left, y: touch.clientY - rect.top};
+        timelineTouchStart = pos;
+        timelineTouchMoved = false;
+
+        if (pos.y < 20) return;
+
+        if (timelineTotalWidth > timelineCanvas.width) {
+            const scrollbarHeight = 8;
+            const scrollbarY = timelineCanvas.height - scrollbarHeight - 2;
+            if (pos.y >= scrollbarY && pos.y <= scrollbarY + scrollbarHeight) {
+                const scrollbarWidth = timelineCanvas.width - 4;
+                const thumbWidth = Math.max(20, (timelineCanvas.width / timelineTotalWidth) * scrollbarWidth);
+                const thumbX = 2 + ((timelineScrollX / timelineTotalWidth) * scrollbarWidth);
+
+                if (pos.x >= thumbX && pos.x <= thumbX + thumbWidth) {
+                    isDraggingScrollbar = true;
+                    return;
+                } else if (pos.x >= 2 && pos.x <= 2 + scrollbarWidth) {
+                    const clickRatio = (pos.x - 2) / scrollbarWidth;
+                    const newScrollX = clickRatio * timelineTotalWidth;
+                    timelineScrollX = Math.max(0, Math.min(timelineTotalWidth - timelineCanvas.width, newScrollX - (timelineCanvas.width / 2)));
+                    drawTimeline();
+                    return;
+                }
+            }
+        }
+
+        if (desiredResizeFrame >= 0) {
+            resizeFrame = desiredResizeFrame;
+            const frame = currentAnimation.getFrame(resizeFrame);
+            if (frame) {
+                resizeOffset = pos.x;
+                resizeStartDuration = frame.duration;
+            }
+            return;
+        }
+
+        let currentX = 2 - timelineScrollX;
+        for (let i = 0; i < currentAnimation.frames.length; i++) {
+            const frame = currentAnimation.frames[i];
+            const frameWidth = Math.max(frame.duration * 1, 48);
+            const frameStartX = currentX;
+            const frameEndX = currentX + frameWidth;
+
+            if (pos.x >= frameStartX + 2 && pos.x <= frameEndX - 4) {
+                dragFrame = i;
+                dragStartX = pos.x;
+                isDraggingFrame = false;
+                if (currentFrame !== i) {
+                    currentFrame = i;
+                    selectedPieces.clear();
+                    redraw();
+                    updateFrameInfo();
+                    const slider = document.getElementById("timelineSlider");
+                    if (slider) slider.value = currentFrame;
+                }
+                break;
+            }
+            currentX += frameWidth;
+        }
+
+        timelineTouchContextMenuTimer = setTimeout(() => {
+            if (!timelineTouchMoved && timelineTouchStart) {
+                const fakeEvent = {
+                    clientX: rect.left + timelineTouchStart.x,
+                    clientY: rect.top + timelineTouchStart.y,
+                    preventDefault: () => {},
+                    stopPropagation: () => {},
+                    stopImmediatePropagation: () => {}
+                };
+                showTimelineContextMenu(fakeEvent);
+            }
+        }, 500);
+    }, {passive: false});
+
+    timelineCanvas.addEventListener("touchmove", (e) => {
+        if (e.touches.length > 1) return;
+        e.preventDefault();
+        const rect = timelineCanvas.getBoundingClientRect();
+        const touch = e.touches[0];
+        const pos = {x: touch.clientX - rect.left, y: touch.clientY - rect.top};
+
+        if (timelineTouchStart) {
+            const dist = Math.sqrt(Math.pow(pos.x - timelineTouchStart.x, 2) + Math.pow(pos.y - timelineTouchStart.y, 2));
+            if (dist > 5) {
+                timelineTouchMoved = true;
+                if (timelineTouchContextMenuTimer) {
+                    clearTimeout(timelineTouchContextMenuTimer);
+                    timelineTouchContextMenuTimer = null;
+                }
+            }
+        }
+
+        if (pos.y < 20) return;
+
+        if (isDraggingScrollbar && timelineTotalWidth > timelineCanvas.width) {
+            const scrollbarWidth = timelineCanvas.width - 4;
+            const newScrollX = ((pos.x - 2) / scrollbarWidth) * timelineTotalWidth;
+            timelineScrollX = Math.max(0, Math.min(timelineTotalWidth - timelineCanvas.width, newScrollX));
+            drawTimeline();
+            return;
+        }
+
+        if (resizeFrame >= 0) {
+            const frame = currentAnimation.getFrame(resizeFrame);
+            if (frame) {
+                const newDurationUnfiltered = resizeStartDuration + (pos.x - resizeOffset);
+                const newDuration = Math.max(50, Math.round(newDurationUnfiltered / 50) * 50);
+                if (frame.duration !== newDuration) {
+                    frame.duration = newDuration;
+                    if (resizeFrame === currentFrame) {
+                        document.getElementById("duration").value = frame.duration;
+                    }
+                    redraw();
+                    updateFrameInfo();
+                }
+            }
+            return;
+        }
+
+        if (dragFrame >= 0 && !isDraggingFrame) {
+            if (Math.abs(pos.x - dragStartX) > dragThreshold) {
+                isDraggingFrame = true;
+            }
+        }
+
+        if (isDraggingFrame && dragFrame >= 0) {
+            dragCurrentX = pos.x;
+            let targetIndex = dragFrame;
+            let x = 2;
+            const pixelsPerMs = window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 1 : 1.5;
+            const minFrameWidth = 48;
+            for (let i = 0; i < currentAnimation.frames.length; i++) {
+                const frame = currentAnimation.frames[i];
+                const frameWidth = Math.max(frame.duration * pixelsPerMs, minFrameWidth);
+                const frameCenter = x + frameWidth / 2;
+                if (pos.x < frameCenter) {
+                    targetIndex = i;
+                    break;
+                }
+                x += frameWidth;
+                if (i === currentAnimation.frames.length - 1) {
+                    targetIndex = i + 1;
+                }
+            }
+            drawTimeline();
+        }
+    }, {passive: false});
+
+    timelineCanvas.addEventListener("touchend", (e) => {
+        if (timelineTouchContextMenuTimer) {
+            clearTimeout(timelineTouchContextMenuTimer);
+            timelineTouchContextMenuTimer = null;
+        }
+
+        if (isDraggingScrollbar) {
+            isDraggingScrollbar = false;
+            timelineTouchStart = null;
+            timelineTouchMoved = false;
+            return;
+        }
+
+        if (resizeFrame >= 0) {
+            const oldState = serializeAnimationState();
+            const newState = serializeAnimationState();
+            if (JSON.stringify(oldState) !== JSON.stringify(newState)) {
+                addUndoCommand({
+                    description: "Change Frame Duration",
+                    oldState: oldState,
+                    newState: newState,
+                    undo: () => restoreAnimationState(oldState),
+                    redo: () => restoreAnimationState(newState)
+                });
+            }
+            resizeFrame = -1;
+            desiredResizeFrame = -1;
+            saveSession();
+        }
+
+        if (isDraggingFrame && dragFrame >= 0) {
+            const rect = timelineCanvas.getBoundingClientRect();
+            const touch = e.changedTouches[0];
+            const pos = {x: touch.clientX - rect.left, y: touch.clientY - rect.top};
+
+            let targetIndex = dragFrame;
+            let x = 2;
+            const pixelsPerMs = window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 1 : 1.5;
+            const minFrameWidth = 48;
+            for (let i = 0; i < currentAnimation.frames.length; i++) {
+                const frame = currentAnimation.frames[i];
+                const frameWidth = Math.max(frame.duration * pixelsPerMs, minFrameWidth);
+                const frameCenter = x + frameWidth / 2;
+                if (pos.x < frameCenter) {
+                    targetIndex = i;
+                    break;
+                }
+                x += frameWidth;
+                if (i === currentAnimation.frames.length - 1) {
+                    targetIndex = i + 1;
+                }
+            }
+
+            if (targetIndex !== dragFrame && targetIndex >= 0 && targetIndex <= currentAnimation.frames.length) {
+                const oldState = serializeAnimationState();
+                const frameToMove = currentAnimation.frames.splice(dragFrame, 1)[0];
+                currentAnimation.frames.splice(targetIndex > dragFrame ? targetIndex - 1 : targetIndex, 0, frameToMove);
+                currentFrame = targetIndex > dragFrame ? targetIndex - 1 : targetIndex;
+
+                const newState = serializeAnimationState();
+                addUndoCommand({
+                    description: "Reorder Frame",
+                    oldState: oldState,
+                    newState: newState,
+                    undo: () => restoreAnimationState(oldState),
+                    redo: () => restoreAnimationState(newState)
+                });
+
+                redraw();
+                updateFrameInfo();
+                saveSession();
+            }
+        }
+
+        dragFrame = -1;
+        isDraggingFrame = false;
+        dragCurrentX = 0;
+        timelineTouchStart = null;
+        timelineTouchMoved = false;
+        drawTimeline();
+        drawTimeline();
+    }, {passive: false});
     timelineCanvas.onmouseup = (e) => {
         if (isDraggingScrollbar) {
             isDraggingScrollbar = false;
@@ -3712,12 +4377,15 @@ window.addEventListener("load", async () => {
         if (isDraggingFrame && dragFrame >= 0 && e.button === 0) {
             const rect = timelineCanvas.getBoundingClientRect();
             const pos = {x: e.clientX - rect.left, y: e.clientY - rect.top};
+            dragCurrentX = pos.x;
 
             let targetIndex = dragFrame;
             let x = 2;
+            const pixelsPerMs = window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 1 : 1.5;
+            const minFrameWidth = 48;
             for (let i = 0; i < currentAnimation.frames.length; i++) {
                 const frame = currentAnimation.frames[i];
-                const frameWidth = frame.duration;
+                const frameWidth = Math.max(frame.duration * pixelsPerMs, minFrameWidth);
                 const frameCenter = x + frameWidth / 2;
                 if (pos.x < frameCenter) {
                     targetIndex = i;
@@ -3751,7 +4419,9 @@ window.addEventListener("load", async () => {
 
         dragFrame = -1;
         isDraggingFrame = false;
+        dragCurrentX = 0;
         timelineCanvas.style.cursor = "default";
+        drawTimeline();
     };
 
     let isDraggingScrollbar = false;
@@ -4556,41 +5226,73 @@ window.addEventListener("load", async () => {
     let initialPanX = null;
     let initialPanY = null;
 
+    let twoFingerPanStart = null;
+    let twoFingerPanInitialPanX = null;
+    let twoFingerPanInitialPanY = null;
+
     mainCanvas.addEventListener("touchstart", (e) => {
         if (e.touches.length === 2) {
             e.preventDefault();
+            isBoxSelecting = false;
+            boxSelectStart = null;
+            boxSelectEnd = null;
             const touch1 = e.touches[0];
             const touch2 = e.touches[1];
             initialPinchDistance = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);
             initialZoomLevel = zoomLevel;
             initialPanX = panX;
             initialPanY = panY;
+            twoFingerPanStart = {
+                x: (touch1.clientX + touch2.clientX) / 2,
+                y: (touch1.clientY + touch2.clientY) / 2
+            };
+            twoFingerPanInitialPanX = panX;
+            twoFingerPanInitialPanY = panY;
         }
     }, { passive: false });
 
     mainCanvas.addEventListener("touchmove", (e) => {
-        if (e.touches.length === 2 && initialPinchDistance !== null) {
+        if (e.touches.length === 2) {
             e.preventDefault();
             const touch1 = e.touches[0];
             const touch2 = e.touches[1];
+            const currentCenterX = (touch1.clientX + touch2.clientX) / 2;
+            const currentCenterY = (touch1.clientY + touch2.clientY) / 2;
             const currentDistance = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);
-            const oldZoom = zoomFactors[zoomLevel] || 1.0;
-            const zoomRatio = currentDistance / initialPinchDistance;
-            const newZoomLevel = Math.max(0, Math.min(7, initialZoomLevel + Math.log2(zoomRatio)));
-            zoomLevel = Math.round(newZoomLevel);
-            localStorage.setItem("mainCanvasZoom", zoomLevel);
             const rect = mainCanvas.getBoundingClientRect();
-            const centerX = (touch1.clientX + touch2.clientX) / 2 - rect.left;
-            const centerY = (touch1.clientY + touch2.clientY) / 2 - rect.top;
             const width = mainCanvas.width / (window.devicePixelRatio || 1);
             const height = mainCanvas.height / (window.devicePixelRatio || 1);
-            const newZoom = zoomFactors[zoomLevel] || 1.0;
 
-            const worldX = (centerX - width / 2 - initialPanX) / oldZoom;
-            const worldY = (centerY - height / 2 - initialPanY) / oldZoom;
+            if (initialPinchDistance !== null && twoFingerPanStart) {
+                const oldZoom = zoomFactors[zoomLevel] || 1.0;
+                const zoomRatio = currentDistance / initialPinchDistance;
+                const newZoomLevel = Math.max(0, Math.min(7, initialZoomLevel + Math.log2(zoomRatio)));
+                zoomLevel = Math.round(newZoomLevel);
+                localStorage.setItem("mainCanvasZoom", zoomLevel);
+                const newZoom = zoomFactors[zoomLevel] || 1.0;
 
-            panX = centerX - width / 2 - worldX * newZoom;
-            panY = centerY - height / 2 - worldY * newZoom;
+                const initialCenterScreenX = twoFingerPanStart.x - rect.left;
+                const initialCenterScreenY = twoFingerPanStart.y - rect.top;
+                const currentCenterScreenX = currentCenterX - rect.left;
+                const currentCenterScreenY = currentCenterY - rect.top;
+
+                const worldXAtInitial = (initialCenterScreenX - width / 2 - initialPanX) / oldZoom;
+                const worldYAtInitial = (initialCenterScreenY - height / 2 - initialPanY) / oldZoom;
+
+                const centerDeltaX = currentCenterScreenX - initialCenterScreenX;
+                const centerDeltaY = currentCenterScreenY - initialCenterScreenY;
+
+                const zoomAdjustedPanX = currentCenterScreenX - width / 2 - worldXAtInitial * newZoom;
+                const zoomAdjustedPanY = currentCenterScreenY - height / 2 - worldYAtInitial * newZoom;
+
+                panX = zoomAdjustedPanX;
+                panY = zoomAdjustedPanY;
+            } else if (twoFingerPanStart && twoFingerPanInitialPanX !== null && twoFingerPanInitialPanY !== null) {
+                const deltaX = currentCenterX - twoFingerPanStart.x;
+                const deltaY = currentCenterY - twoFingerPanStart.y;
+                panX = twoFingerPanInitialPanX + deltaX;
+                panY = twoFingerPanInitialPanY + deltaY;
+            }
 
             redraw();
         }
@@ -4602,6 +5304,9 @@ window.addEventListener("load", async () => {
             initialZoomLevel = null;
             initialPanX = null;
             initialPanY = null;
+            twoFingerPanStart = null;
+            twoFingerPanInitialPanX = null;
+            twoFingerPanInitialPanY = null;
         }
     }, { passive: false });
 
@@ -4774,6 +5479,7 @@ window.addEventListener("load", async () => {
                         redraw();
                     }
                     boxSelectStart = {x, y};
+                    boxSelectEnd = {x, y};
                     isBoxSelecting = true;
                 }
             }
@@ -4825,10 +5531,8 @@ window.addEventListener("load", async () => {
             redraw();
             updateItemSettings();
         } else if (isBoxSelecting && boxSelectStart) {
-            const boxSelectEnd = {x, y};
-            if (boxSelectEnd) {
-                redraw();
-            }
+            boxSelectEnd = {x, y};
+            redraw();
         } else if (insertPiece) {
             redraw();
         }
@@ -4916,6 +5620,7 @@ window.addEventListener("load", async () => {
             }
             isBoxSelecting = false;
             boxSelectStart = null;
+            boxSelectEnd = null;
             redraw();
             saveSession();
         }
@@ -4931,6 +5636,291 @@ window.addEventListener("load", async () => {
         e.stopImmediatePropagation();
         showCanvasContextMenu(e);
     };
+
+    let touchStartTime = 0;
+    let touchStartPos = null;
+    let touchMoved = false;
+    let lastTouchIdentifier = null;
+    let touchContextMenuTimer = null;
+
+    function getTouchCoords(e) {
+        const rect = mainCanvas.getBoundingClientRect();
+        const width = mainCanvas.width / (window.devicePixelRatio || 1);
+        const height = mainCanvas.height / (window.devicePixelRatio || 1);
+        const zoomFactors = [0.25, 0.5, 0.75, 1.0, 2, 3, 4, 8];
+        const zoom = zoomFactors[zoomLevel] || 1.0;
+        const touch = e.touches[0] || e.changedTouches[0];
+        const x = (touch.clientX - rect.left - width / 2 - panX) / zoom;
+        const y = (touch.clientY - rect.top - height / 2 - panY) / zoom;
+        return {x, y, clientX: touch.clientX, clientY: touch.clientY};
+    }
+
+    mainCanvas.addEventListener("touchstart", (e) => {
+        if (e.touches.length > 1) return;
+        e.preventDefault();
+        const coords = getTouchCoords(e);
+        touchStartTime = Date.now();
+        touchStartPos = coords;
+        touchMoved = false;
+        lastTouchIdentifier = e.touches[0].identifier;
+
+        const rect = mainCanvas.getBoundingClientRect();
+        const width = mainCanvas.width / (window.devicePixelRatio || 1);
+        const height = mainCanvas.height / (window.devicePixelRatio || 1);
+        const zoomFactors = [0.25, 0.5, 0.75, 1.0, 2, 3, 4, 8];
+        const zoom = zoomFactors[zoomLevel] || 1.0;
+        const x = coords.x;
+        const y = coords.y;
+
+        if (insertPiece) {
+            const frame = currentAnimation.getFrame(currentFrame);
+            if (frame) {
+                const actualDir = getDirIndex(currentDir);
+                const sprite = currentAnimation.getAniSprite(insertPiece.spriteIndex, insertPiece.spriteName);
+                insertPiece.xoffset = Math.floor(0.5 + x - insertPiece.dragOffset.x);
+                insertPiece.yoffset = Math.floor(0.5 + y - insertPiece.dragOffset.y);
+                const oldState = serializeAnimationState();
+                frame.pieces[actualDir].push(insertPiece);
+                selectedPieces.clear();
+                selectedPieces.add(insertPiece);
+                const newState = serializeAnimationState();
+                const spriteName = sprite && sprite.comment ? `"${sprite.comment}"` : `Sprite ${insertPiece.spriteIndex}`;
+                addUndoCommand({
+                    description: `Place ${spriteName}`,
+                    oldState: oldState,
+                    newState: newState,
+                    undo: () => restoreAnimationState(oldState),
+                    redo: () => restoreAnimationState(newState)
+                });
+                updateItemsCombo();
+                insertPiece = null;
+                redraw();
+                saveSession();
+                return;
+            }
+        }
+
+        const frame = currentAnimation.getFrame(currentFrame);
+        if (frame) {
+            const actualDir = getDirIndex(currentDir);
+            const pieces = frame.pieces[actualDir] || [];
+            let found = false;
+            for (let i = pieces.length - 1; i >= 0; i--) {
+                const piece = pieces[i];
+                const bb = piece.getBoundingBox(currentAnimation);
+                if (x >= bb.x && x < bb.x + bb.width && y >= bb.y && y < bb.y + bb.height) {
+                    if (selectedPieces.has(piece)) {
+                        selectedPieces.clear();
+                        selectedPieces.add(piece);
+                    } else {
+                        selectedPieces.clear();
+                        selectedPieces.add(piece);
+                    }
+                    dragOffset = {x: x - piece.xoffset, y: y - piece.yoffset};
+                    dragStartMousePos = {x, y};
+                    dragButton = "left";
+                    isDragging = true;
+                    dragStartState = serializeAnimationState();
+                    pieceInitialPositions.clear();
+                    for (const p of selectedPieces) {
+                        pieceInitialPositions.set(p, {x: p.xoffset, y: p.yoffset});
+                    }
+                    found = true;
+                    if (piece.type === "sprite") {
+                        const sprite = currentAnimation.getAniSprite(piece.spriteIndex, piece.spriteName);
+                        if (sprite) {
+                            selectSprite(sprite);
+                        }
+                    }
+                    updateItemsCombo();
+                    break;
+                }
+            }
+            if (!found) {
+                for (const sound of frame.sounds || []) {
+                    const dist = Math.sqrt(Math.pow(x - sound.xoffset, 2) + Math.pow(y - sound.yoffset, 2));
+                    if (dist <= 8) {
+                        if (selectedPieces.has(sound)) {
+                            selectedPieces.clear();
+                            selectedPieces.add(sound);
+                        } else {
+                            selectedPieces.clear();
+                            selectedPieces.add(sound);
+                        }
+                        dragOffset = {x: x - sound.xoffset, y: y - sound.yoffset};
+                        dragStartMousePos = {x, y};
+                        dragButton = "left";
+                        isDragging = true;
+                        dragStartState = serializeAnimationState();
+                        pieceInitialPositions.clear();
+                        for (const p of selectedPieces) {
+                            pieceInitialPositions.set(p, {x: p.xoffset, y: p.yoffset});
+                        }
+                        found = true;
+                        updateItemsCombo();
+                        break;
+                    }
+                }
+            }
+            if (!found) {
+                selectedPieces.clear();
+                const combo = document.getElementById("itemsCombo");
+                if (combo) combo.value = "";
+                updateItemsCombo();
+                updateItemSettings();
+                redraw();
+                boxSelectStart = {x, y};
+                boxSelectEnd = {x, y};
+                isBoxSelecting = true;
+                touchContextMenuTimer = setTimeout(() => {
+                    if (!touchMoved && touchStartPos) {
+                        const fakeEvent = {
+                            clientX: touchStartPos.clientX,
+                            clientY: touchStartPos.clientY,
+                            preventDefault: () => {},
+                            stopPropagation: () => {},
+                            stopImmediatePropagation: () => {}
+                        };
+                        showCanvasContextMenu(fakeEvent);
+                    }
+                }, 500);
+            }
+        }
+        redraw();
+    }, {passive: false});
+
+    mainCanvas.addEventListener("touchmove", (e) => {
+        if (e.touches.length > 1) return;
+        e.preventDefault();
+        const touch = Array.from(e.touches).find(t => t.identifier === lastTouchIdentifier);
+        if (!touch) return;
+
+        const coords = getTouchCoords(e);
+        if (touchStartPos) {
+            const dist = Math.sqrt(Math.pow(coords.x - touchStartPos.x, 2) + Math.pow(coords.y - touchStartPos.y, 2));
+            if (dist > 5) {
+                touchMoved = true;
+                if (touchContextMenuTimer) {
+                    clearTimeout(touchContextMenuTimer);
+                    touchContextMenuTimer = null;
+                }
+            }
+        }
+
+        const rect = mainCanvas.getBoundingClientRect();
+        const width = mainCanvas.width / (window.devicePixelRatio || 1);
+        const height = mainCanvas.height / (window.devicePixelRatio || 1);
+        const zoomFactors = [0.25, 0.5, 0.75, 1.0, 2, 3, 4, 8];
+        const zoom = zoomFactors[zoomLevel] || 1.0;
+        const x = coords.x;
+        const y = coords.y;
+
+        if (isDragging && dragButton === "left" && dragOffset && dragStartMousePos) {
+            const deltaX = x - dragStartMousePos.x;
+            const deltaY = y - dragStartMousePos.y;
+            for (const piece of selectedPieces) {
+                const initialPos = pieceInitialPositions.get(piece);
+                if (initialPos) {
+                    piece.xoffset = Math.floor(0.5 + initialPos.x + deltaX);
+                    piece.yoffset = Math.floor(0.5 + initialPos.y + deltaY);
+                } else {
+                    piece.xoffset = Math.floor(0.5 + x - dragOffset.x);
+                    piece.yoffset = Math.floor(0.5 + y - dragOffset.y);
+                }
+            }
+            redraw();
+            updateItemSettings();
+        } else if (isBoxSelecting && boxSelectStart) {
+            boxSelectEnd = {x, y};
+            redraw();
+        }
+    }, {passive: false});
+
+    mainCanvas.addEventListener("touchend", (e) => {
+        if (touchContextMenuTimer) {
+            clearTimeout(touchContextMenuTimer);
+            touchContextMenuTimer = null;
+        }
+
+        if (isDragging) {
+            isDragging = false;
+            if (selectedPieces.size > 0 && dragStartState) {
+                const newState = serializeAnimationState();
+                const movedPieces = Array.from(selectedPieces).map(p => {
+                    if (p.type === "sprite" && currentAnimation) {
+                        const sprite = currentAnimation.getAniSprite(p.spriteIndex, p.spriteName || "");
+                        if (sprite && sprite.comment) {
+                            return `"${sprite.comment}"`;
+                        }
+                        return `Sprite ${p.spriteIndex}`;
+                    }
+                    return `Sound - ${p.fileName || 'unnamed'}`;
+                }).join(", ");
+                if (JSON.stringify(dragStartState) !== JSON.stringify(newState)) {
+                    addUndoCommand({
+                        description: `Move Piece${selectedPieces.size > 1 ? 's' : ''} (${movedPieces})`,
+                        oldState: dragStartState,
+                        newState: newState,
+                        undo: () => restoreAnimationState(dragStartState),
+                        redo: () => restoreAnimationState(newState)
+                    });
+                }
+            }
+            dragButton = null;
+            dragOffset = null;
+            dragStartMousePos = null;
+            dragStartState = null;
+            pieceInitialPositions.clear();
+            saveSession();
+        }
+
+        if (isBoxSelecting && boxSelectStart) {
+            const coords = getTouchCoords(e);
+            const x = coords.x;
+            const y = coords.y;
+            const frame = currentAnimation.getFrame(currentFrame);
+            if (frame) {
+                const actualDir = getDirIndex(currentDir);
+                const pieces = frame.pieces[actualDir] || [];
+                const minX = Math.min(boxSelectStart.x, x);
+                const maxX = Math.max(boxSelectStart.x, x);
+                const minY = Math.min(boxSelectStart.y, y);
+                const maxY = Math.max(boxSelectStart.y, y);
+                const boxWidth = Math.abs(maxX - minX);
+                const boxHeight = Math.abs(maxY - minY);
+                const dist = Math.sqrt(Math.pow(boxSelectStart.x - x, 2) + Math.pow(boxSelectStart.y - y, 2));
+                if (boxWidth < 5 && boxHeight < 5 && dist < 5) {
+                    selectedPieces.clear();
+                    updateItemsCombo();
+                    updateItemSettings();
+                } else {
+                    for (const piece of pieces) {
+                        const bb = piece.getBoundingBox(currentAnimation);
+                        const centerX = bb.x + bb.width / 2;
+                        const centerY = bb.y + bb.height / 2;
+                        if (centerX >= minX && centerX <= maxX && centerY >= minY && centerY <= maxY) {
+                            if (!selectedPieces.has(piece)) {
+                                selectedPieces.add(piece);
+                            }
+                        }
+                    }
+                    updateItemsCombo();
+                    updateItemSettings();
+                }
+            }
+            isBoxSelecting = false;
+            boxSelectStart = null;
+            boxSelectEnd = null;
+            redraw();
+            saveSession();
+        }
+
+        isPanning = false;
+        touchStartPos = null;
+        touchMoved = false;
+        lastTouchIdentifier = null;
+        redraw();
+    }, {passive: false});
 });
 
 let lastPlayedFrame = -1;
