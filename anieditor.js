@@ -2834,12 +2834,12 @@ function updateTabs() {
             tab.style.transform = `translateX(${dragTabCurrentX - dragTabStartX}px)`;
         }
         tab.onclick = (e) => {
-            if (!isDraggingTab && !rightClickTabMoved) {
+            if (!isDraggingTab && !rightClickTabMoved && !e.target.classList.contains("tab-close")) {
                 switchTab(i);
             }
         };
         tab.addEventListener("mousedown", (e) => {
-            if (e.button === 0) {
+            if (e.button === 0 && !e.target.classList.contains("tab-close")) {
                 dragTab = i;
                 dragTabStartX = e.clientX;
                 dragTabCurrentX = e.clientX;
@@ -2855,7 +2855,11 @@ function updateTabs() {
         close.innerHTML = "×";
         close.onclick = (e) => {
             e.stopPropagation();
+            e.preventDefault();
             closeTab(i);
+        };
+        close.onmousedown = (e) => {
+            e.stopPropagation();
         };
         tab.appendChild(close);
         container.appendChild(tab);
@@ -3007,16 +3011,22 @@ function showTabContextMenu(e, tabIndex) {
     closeItem.style.cursor = "pointer";
     closeItem.onmouseover = () => closeItem.style.background = "#555";
     closeItem.onmouseout = () => closeItem.style.background = "transparent";
-    closeItem.onclick = () => {
+    closeItem.onclick = (e) => {
+        e.stopPropagation();
+        e.preventDefault();
         closeTab(tabIndex);
-        document.body.removeChild(menu);
-        activeContextMenu = null;
+        if (activeContextMenu === menu) {
+            document.body.removeChild(menu);
+            activeContextMenu = null;
+            document.removeEventListener("click", closeMenu);
+            document.removeEventListener("mousedown", closeMenu);
+        }
     };
     menu.appendChild(closeItem);
     document.body.appendChild(menu);
     activeContextMenu = menu;
-    const closeMenu = () => {
-        if (activeContextMenu === menu) {
+    const closeMenu = (e) => {
+        if (activeContextMenu === menu && e.target !== closeItem && !menu.contains(e.target)) {
             document.body.removeChild(menu);
             activeContextMenu = null;
             document.removeEventListener("click", closeMenu);
