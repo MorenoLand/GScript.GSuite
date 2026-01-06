@@ -412,6 +412,8 @@ let dragStartX = 0;
 let dragThreshold = 5;
 let isDraggingFrame = false;
 let dragCurrentX = 0;
+let scrollbarDragStartX = 0;
+let scrollbarDragStartScrollX = 0;
 let timelineScrollX = 0;
 let timelineTotalWidth = 0;
 const leftPanel = document.querySelector(".left-panel");
@@ -1091,7 +1093,7 @@ function drawTimeline() {
     }
 
     if (timelineTotalWidth > width) {
-        const scrollbarHeight = 8;
+        const scrollbarHeight = 10;
         const scrollbarY = height - scrollbarHeight - 2;
         const scrollbarWidth = width - 4;
         const thumbWidth = Math.max(20, (width / timelineTotalWidth) * scrollbarWidth);
@@ -3219,6 +3221,11 @@ window.addEventListener("load", async () => {
         leftCenterSplitterDragging = false;
         centerRightSplitterDragging = false;
         canvasTimelineSplitterDragging = false;
+        if (isDraggingScrollbar) {
+            isDraggingScrollbar = false;
+            scrollbarDragStartX = 0;
+            scrollbarDragStartScrollX = 0;
+        }
     });
     document.addEventListener("touchend", () => {
         leftCenterSplitterDragging = false;
@@ -3979,11 +3986,17 @@ window.addEventListener("load", async () => {
     timelineCanvas.onmousemove = (e) => {
         const rect = timelineCanvas.getBoundingClientRect();
         const pos = {x: e.clientX - rect.left, y: e.clientY - rect.top};
-        if (pos.y < 20) return;
-
+        
         if (isDraggingScrollbar && timelineTotalWidth > timelineCanvas.width) {
+            if (pos.x < 0 || pos.x > timelineCanvas.width || pos.y < 0 || pos.y > timelineCanvas.height) {
+                isDraggingScrollbar = false;
+                return;
+            }
             const scrollbarWidth = timelineCanvas.width - 4;
-            const newScrollX = ((pos.x - 2) / scrollbarWidth) * timelineTotalWidth;
+            const deltaX = pos.x - scrollbarDragStartX;
+            const scrollRatio = deltaX / scrollbarWidth;
+            const deltaScroll = scrollRatio * timelineTotalWidth;
+            const newScrollX = scrollbarDragStartScrollX + deltaScroll;
             timelineScrollX = Math.max(0, Math.min(timelineTotalWidth - timelineCanvas.width, newScrollX));
             drawTimeline();
             return;
@@ -4060,7 +4073,7 @@ window.addEventListener("load", async () => {
         if (pos.y < 20) return;
         if (e.button === 0) {
             if (timelineTotalWidth > timelineCanvas.width) {
-                const scrollbarHeight = 8;
+                const scrollbarHeight = 10;
                 const scrollbarY = timelineCanvas.height - scrollbarHeight - 2;
                 if (pos.y >= scrollbarY && pos.y <= scrollbarY + scrollbarHeight) {
                     const scrollbarWidth = timelineCanvas.width - 4;
@@ -4069,6 +4082,8 @@ window.addEventListener("load", async () => {
 
                     if (pos.x >= thumbX && pos.x <= thumbX + thumbWidth) {
                         isDraggingScrollbar = true;
+                        scrollbarDragStartX = pos.x;
+                        scrollbarDragStartScrollX = timelineScrollX;
                         return;
                     } else if (pos.x >= 2 && pos.x <= 2 + scrollbarWidth) {
                         const clickRatio = (pos.x - 2) / scrollbarWidth;
@@ -4139,17 +4154,19 @@ window.addEventListener("load", async () => {
         if (pos.y < 20) return;
 
         if (timelineTotalWidth > timelineCanvas.width) {
-            const scrollbarHeight = 8;
+            const scrollbarHeight = 10;
             const scrollbarY = timelineCanvas.height - scrollbarHeight - 2;
             if (pos.y >= scrollbarY && pos.y <= scrollbarY + scrollbarHeight) {
                 const scrollbarWidth = timelineCanvas.width - 4;
                 const thumbWidth = Math.max(20, (timelineCanvas.width / timelineTotalWidth) * scrollbarWidth);
                 const thumbX = 2 + ((timelineScrollX / timelineTotalWidth) * scrollbarWidth);
 
-                if (pos.x >= thumbX && pos.x <= thumbX + thumbWidth) {
-                    isDraggingScrollbar = true;
-                    return;
-                } else if (pos.x >= 2 && pos.x <= 2 + scrollbarWidth) {
+                    if (pos.x >= thumbX && pos.x <= thumbX + thumbWidth) {
+                        isDraggingScrollbar = true;
+                        scrollbarDragStartX = pos.x;
+                        scrollbarDragStartScrollX = timelineScrollX;
+                        return;
+                    } else if (pos.x >= 2 && pos.x <= 2 + scrollbarWidth) {
                     const clickRatio = (pos.x - 2) / scrollbarWidth;
                     const newScrollX = clickRatio * timelineTotalWidth;
                     timelineScrollX = Math.max(0, Math.min(timelineTotalWidth - timelineCanvas.width, newScrollX - (timelineCanvas.width / 2)));
@@ -4228,8 +4245,15 @@ window.addEventListener("load", async () => {
         if (pos.y < 20) return;
 
         if (isDraggingScrollbar && timelineTotalWidth > timelineCanvas.width) {
+            if (pos.x < 0 || pos.x > timelineCanvas.width || pos.y < 0 || pos.y > timelineCanvas.height) {
+                isDraggingScrollbar = false;
+                return;
+            }
             const scrollbarWidth = timelineCanvas.width - 4;
-            const newScrollX = ((pos.x - 2) / scrollbarWidth) * timelineTotalWidth;
+            const deltaX = pos.x - scrollbarDragStartX;
+            const scrollRatio = deltaX / scrollbarWidth;
+            const deltaScroll = scrollRatio * timelineTotalWidth;
+            const newScrollX = scrollbarDragStartScrollX + deltaScroll;
             timelineScrollX = Math.max(0, Math.min(timelineTotalWidth - timelineCanvas.width, newScrollX));
             drawTimeline();
             return;
@@ -4289,6 +4313,8 @@ window.addEventListener("load", async () => {
 
         if (isDraggingScrollbar) {
             isDraggingScrollbar = false;
+            scrollbarDragStartX = 0;
+            scrollbarDragStartScrollX = 0;
             timelineTouchStart = null;
             timelineTouchMoved = false;
             return;
@@ -4366,6 +4392,8 @@ window.addEventListener("load", async () => {
     timelineCanvas.onmouseup = (e) => {
         if (isDraggingScrollbar) {
             isDraggingScrollbar = false;
+            scrollbarDragStartX = 0;
+            scrollbarDragStartScrollX = 0;
             return;
         }
 
