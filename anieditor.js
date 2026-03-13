@@ -285,6 +285,7 @@ let currentFrame = 0;
 let currentDir = 2;
 let selectedPieces = new Set();
 let selectedPieceDir = null;
+let selectedSpritesForDeletion = new Set();
 function f12Log(message) {
     if (!ENABLE_F12_LOGGING) return;
     try {
@@ -2233,7 +2234,12 @@ function updateSpritesList() {
         const item = document.createElement("div");
         item.className = "sprite-item";
         item.draggable = false;
+        item.style.position = "relative";
         if (editingSprite && editingSprite.index === sprite.index && editingSprite.type === sprite.type) item.classList.add("selected");
+        if (selectedSpritesForDeletion.has(sprite)) {
+            item.classList.add("multi-selected");
+            item.style.border = "2px solid #ff6600";
+        }
         let spriteItemDragStart = null;
         let spriteItemDragging = false;
         const spriteItemDragHandler = (e) => {
@@ -2262,6 +2268,8 @@ function updateSpritesList() {
                 document.removeEventListener("mousemove", spriteItemDragHandler);
                 document.removeEventListener("mouseup", spriteItemMouseUpHandler);
                 if (!spriteItemDragging) {
+                    selectedSpritesForDeletion.clear();
+                    updateSpritesList();
                     insertPiece = new FramePieceSprite();
                     insertPiece.spriteIndex = sprite.index;
                     insertPiece.spriteName = String(sprite.index);
@@ -2279,6 +2287,35 @@ function updateSpritesList() {
             if (e.button === 0) {
                 e.preventDefault();
                 e.stopPropagation();
+                if (e.ctrlKey || e.metaKey || e.shiftKey) {
+                    if (e.shiftKey && selectedSpritesForDeletion.size > 0) {
+                        const spriteIndices = sortedSprites.map(s => s.index);
+                        const clickedIndex = sprite.index;
+                        const selectedIndexArray = Array.from(selectedSpritesForDeletion).map(s => s.index);
+                        const minIndex = Math.min(...selectedIndexArray);
+                        const maxIndex = Math.max(...selectedIndexArray);
+                        const newMinIndex = Math.min(minIndex, clickedIndex);
+                        const newMaxIndex = Math.max(maxIndex, clickedIndex);
+                        for (let i = newMinIndex; i <= newMaxIndex; i++) {
+                            if (spriteIndices.includes(i)) {
+                                const spriteAtIndex = sortedSprites.find(s => s.index === i);
+                                if (spriteAtIndex && !selectedSpritesForDeletion.has(spriteAtIndex)) {
+                                    selectedSpritesForDeletion.add(spriteAtIndex);
+                                }
+                            }
+                        }
+                    } else if (selectedSpritesForDeletion.has(sprite)) {
+                        selectedSpritesForDeletion.delete(sprite);
+                        item.classList.remove("multi-selected");
+                        item.style.border = "";
+                    } else {
+                        selectedSpritesForDeletion.add(sprite);
+                        item.classList.add("multi-selected");
+                        item.style.border = "2px solid #ff6600";
+                    }
+                    updateSpritesList();
+                    return;
+                }
                 spriteItemDragStart = {x: e.clientX, y: e.clientY};
                 spriteItemDragging = false;
                 document.addEventListener("mousemove", spriteItemDragHandler);
@@ -2393,6 +2430,39 @@ function updateSpritesList() {
     const spritesList = document.getElementById("spritesList");
     if (spritesList && !spritesList.hasAttribute("data-context-menu-bound")) {
         spritesList.setAttribute("data-context-menu-bound", "true");
+        spritesList.setAttribute("tabindex", "0");
+        spritesList.onclick = (e) => {
+            if (e.target === spritesList) {
+                selectedSpritesForDeletion.clear();
+                updateSpritesList();
+            }
+        };
+        spritesList.onkeydown = (e) => {
+            if (e.key === "Delete" && selectedSpritesForDeletion.size > 0) {
+                e.preventDefault();
+                e.stopPropagation();
+                const oldState = serializeAnimationState();
+                for (const spriteToDelete of selectedSpritesForDeletion) {
+                    currentAnimation.sprites.delete(spriteToDelete.index);
+                }
+                if (editingSprite && selectedSpritesForDeletion.has(editingSprite)) {
+                    editingSprite = null;
+                }
+                selectedSpritesForDeletion.clear();
+                const newState = serializeAnimationState();
+                addUndoCommand({
+                    description: `Delete ${selectedSpritesForDeletion.size} Sprite${selectedSpritesForDeletion.size > 1 ? 's' : ''}`,
+                    oldState: oldState,
+                    newState: newState,
+                    undo: () => restoreAnimationState(oldState),
+                    redo: () => restoreAnimationState(newState)
+                });
+                updateSpritesList();
+                updateSpriteEditor();
+                redraw();
+                saveSession();
+            }
+        };
         spritesList.oncontextmenu = (e) => {
             if (e.target === spritesList || e.target.parentElement === spritesList) {
                 e.preventDefault();
@@ -3534,6 +3604,7 @@ function restoreAnimationState(state) {
     const selectedPieceIds = state.selectedPieceIds || [];
     selectedPieces.clear();
     selectedPieceDir = state.selectedPieceDir !== undefined ? state.selectedPieceDir : null;
+    selectedSpritesForDeletion.clear();
     if (selectedPieceIds.length > 0) {
         const frame = currentAnimation.getFrame(currentFrame);
         if (frame) {
@@ -3636,6 +3707,7 @@ function restoreUndoStack() {
 }
 
 function initNewAnimation() {
+    selectedSpritesForDeletion.clear();
     if (animations.length === 0) {
         animations.push(new Animation());
     }
@@ -3700,6 +3772,7 @@ function switchTab(index) {
     if (index < 0 || index >= animations.length) return;
     saveUndoStack();
     saveCurrentFrame();
+    selectedSpritesForDeletion.clear();
     currentTabIndex = index;
     currentAnimation = animations[index];
     if (!currentAnimation.undoStack) currentAnimation.undoStack = [];
@@ -3828,6 +3901,7 @@ function closeTab(index) {
         currentTabIndex = -1;
         currentFrame = 0;
         selectedPieces.clear();
+        selectedSpritesForDeletion.clear();
         updateTabs();
         updateUIVisibility();
         redraw();
@@ -6793,50 +6867,90 @@ window.addEventListener("load", async () => {
         }
     };
     document.getElementById("btnDeleteSprite").onclick = () => {
-        if (!editingSprite) return;
-        showConfirmDialog(`Delete sprite ${editingSprite.index}?`, (confirmed) => {
-            if (confirmed) {
-                const oldState = serializeAnimationState();
-                const deletedIndex = editingSprite.index;
-                currentAnimation.sprites.delete(deletedIndex);
-                for (const frame of currentAnimation.frames) {
-                    for (const dirPieces of frame.pieces) {
-                        for (let i = dirPieces.length - 1; i >= 0; i--) {
-                            const piece = dirPieces[i];
-                            if (piece.type === "sprite" && piece.spriteIndex === deletedIndex) {
-                                dirPieces.splice(i, 1);
+        if (selectedSpritesForDeletion.size > 0) {
+            showConfirmDialog(`Delete ${selectedSpritesForDeletion.size} sprite${selectedSpritesForDeletion.size > 1 ? 's' : ''}?`, (confirmed) => {
+                if (confirmed) {
+                    const oldState = serializeAnimationState();
+                    const deletedIndices = Array.from(selectedSpritesForDeletion).map(s => s.index);
+                    for (const spriteToDelete of selectedSpritesForDeletion) {
+                        currentAnimation.sprites.delete(spriteToDelete.index);
+                    }
+                    for (const frame of currentAnimation.frames) {
+                        for (const dirPieces of frame.pieces) {
+                            for (let i = dirPieces.length - 1; i >= 0; i--) {
+                                const piece = dirPieces[i];
+                                if (piece.type === "sprite" && deletedIndices.includes(piece.spriteIndex)) {
+                                    dirPieces.splice(i, 1);
+                                }
                             }
                         }
                     }
+                    editingSprite = null;
+                    selectedSpritesForDeletion.clear();
+                    const newState = serializeAnimationState();
+                    addUndoCommand({
+                        description: `Delete ${deletedIndices.length} Sprite${deletedIndices.length > 1 ? 's' : ''}`,
+                        oldState: oldState,
+                        newState: newState,
+                        undo: () => {
+                            restoreAnimationState(oldState);
+                        },
+                        redo: () => {
+                            restoreAnimationState(newState);
+                        }
+                    });
+                    updateSpritesList();
+                    updateSpriteEditor();
+                    redraw();
+                    saveSession();
                 }
-                const nextSprite = Array.from(currentAnimation.sprites.values())[0] || null;
-                editingSprite = nextSprite;
-                const newState = serializeAnimationState();
-                addUndoCommand({
-                    description: (() => {
-                        const sprite = currentAnimation ? currentAnimation.getAniSprite(deletedIndex, "") : null;
-                        const spriteName = sprite && sprite.comment ? `"${sprite.comment}"` : `Sprite ${deletedIndex}`;
-                        return `Delete ${spriteName}`;
-                    })(),
-                    oldState: oldState,
-                    newState: newState,
-                    undo: () => {
-                        restoreAnimationState(oldState);
-                        editingSprite = currentAnimation.getAniSprite(deletedIndex, "");
-                        updateSpriteEditor();
-                    },
-                    redo: () => {
-                        restoreAnimationState(newState);
-                        editingSprite = nextSprite;
-                        updateSpriteEditor();
+            });
+        } else {
+            if (!editingSprite) return;
+            showConfirmDialog(`Delete sprite ${editingSprite.index}?`, (confirmed) => {
+                if (confirmed) {
+                    const oldState = serializeAnimationState();
+                    const deletedIndex = editingSprite.index;
+                    currentAnimation.sprites.delete(deletedIndex);
+                    for (const frame of currentAnimation.frames) {
+                        for (const dirPieces of frame.pieces) {
+                            for (let i = dirPieces.length - 1; i >= 0; i--) {
+                                const piece = dirPieces[i];
+                                if (piece.type === "sprite" && piece.spriteIndex === deletedIndex) {
+                                    dirPieces.splice(i, 1);
+                                }
+                            }
+                        }
                     }
-                });
-                updateSpritesList();
-                updateSpriteEditor();
-                redraw();
-                saveSession();
-            }
-        });
+                    const nextSprite = Array.from(currentAnimation.sprites.values())[0] || null;
+                    editingSprite = nextSprite;
+                    const newState = serializeAnimationState();
+                    addUndoCommand({
+                        description: (() => {
+                            const sprite = currentAnimation ? currentAnimation.getAniSprite(deletedIndex, "") : null;
+                            const spriteName = sprite && sprite.comment ? `"${sprite.comment}"` : `Sprite ${deletedIndex}`;
+                            return `Delete ${spriteName}`;
+                        })(),
+                        oldState: oldState,
+                        newState: newState,
+                        undo: () => {
+                            restoreAnimationState(oldState);
+                            editingSprite = currentAnimation.getAniSprite(deletedIndex, "");
+                            updateSpriteEditor();
+                        },
+                        redo: () => {
+                            restoreAnimationState(newState);
+                            editingSprite = nextSprite;
+                            updateSpriteEditor();
+                        }
+                    });
+                    updateSpritesList();
+                    updateSpriteEditor();
+                    redraw();
+                    saveSession();
+                }
+            });
+        }
     };
     const btnDuplicateSprite = document.getElementById("btnDuplicateSprite");
     if (btnDuplicateSprite) {
@@ -9926,9 +10040,32 @@ function showSpriteContextMenu(e, sprite) {
             updateSpritesList();
             redraw();
         }},
-        {text: "Delete Sprite", action: () => {
-            editingSprite = sprite;
-            document.getElementById("btnDeleteSprite").click();
+        {text: selectedSpritesForDeletion.size > 1 ? `Delete ${selectedSpritesForDeletion.size} Sprites` : "Delete Sprite", action: () => {
+            if (selectedSpritesForDeletion.size > 0) {
+                const oldState = serializeAnimationState();
+                for (const spriteToDelete of selectedSpritesForDeletion) {
+                    currentAnimation.sprites.delete(spriteToDelete.index);
+                }
+                if (editingSprite && selectedSpritesForDeletion.has(editingSprite)) {
+                    editingSprite = null;
+                }
+                selectedSpritesForDeletion.clear();
+                const newState = serializeAnimationState();
+                addUndoCommand({
+                    description: `Delete ${selectedSpritesForDeletion.size} Sprite${selectedSpritesForDeletion.size > 1 ? 's' : ''}`,
+                    oldState: oldState,
+                    newState: newState,
+                    undo: () => restoreAnimationState(oldState),
+                    redo: () => restoreAnimationState(newState)
+                });
+                updateSpritesList();
+                updateSpriteEditor();
+                redraw();
+                saveSession();
+            } else {
+                editingSprite = sprite;
+                document.getElementById("btnDeleteSprite").click();
+            }
         }}
     ];
     for (const item of items) {
@@ -10124,7 +10261,31 @@ function showSpritesListContextMenu(e) {
     activeContextMenu = menu;
     const items = [
         {text: "Add Sprite", action: () => document.getElementById("btnAddSprite").click()},
-        {text: "Paste Sprite", action: () => document.getElementById("btnPasteSprite").click()}
+        {text: "Paste Sprite", action: () => document.getElementById("btnPasteSprite").click()},
+        ...(selectedSpritesForDeletion.size > 0 ? [{text: `Delete ${selectedSpritesForDeletion.size} Selected`, action: () => {
+            if (selectedSpritesForDeletion.size > 0) {
+                const oldState = serializeAnimationState();
+                for (const spriteToDelete of selectedSpritesForDeletion) {
+                    currentAnimation.sprites.delete(spriteToDelete.index);
+                }
+                if (editingSprite && selectedSpritesForDeletion.has(editingSprite)) {
+                    editingSprite = null;
+                }
+                selectedSpritesForDeletion.clear();
+                const newState = serializeAnimationState();
+                addUndoCommand({
+                    description: `Delete ${selectedSpritesForDeletion.size} Sprite${selectedSpritesForDeletion.size > 1 ? 's' : ''}`,
+                    oldState: oldState,
+                    newState: newState,
+                    undo: () => restoreAnimationState(oldState),
+                    redo: () => restoreAnimationState(newState)
+                });
+                updateSpritesList();
+                updateSpriteEditor();
+                redraw();
+                saveSession();
+            }
+        }}] : [])
     ];
     for (const item of items) {
         const div = document.createElement("div");
@@ -10320,6 +10481,25 @@ function showConfirmDialog(message, callback, showClearStorage = false) {
     content.appendChild(buttonContainer);
     dialog.appendChild(content);
     document.body.appendChild(dialog);
+    const handleKeyPress = (e) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            const clearStorage = showClearStorage && clearStorageCheckbox && clearStorageCheckbox._checked === true;
+            if (dialog.parentNode) {
+                document.body.removeChild(dialog);
+            }
+            callback(true, clearStorage);
+            document.removeEventListener("keydown", handleKeyPress);
+        } else if (e.key === "Escape") {
+            e.preventDefault();
+            if (dialog.parentNode) {
+                document.body.removeChild(dialog);
+            }
+            callback(false);
+            document.removeEventListener("keydown", handleKeyPress);
+        }
+    };
+    setTimeout(() => document.addEventListener("keydown", handleKeyPress), 100);
 }
 
 function showAddSpriteDialog(editSprite = null) {
