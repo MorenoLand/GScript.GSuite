@@ -284,6 +284,7 @@ const refreshLocalFileCache = async () => {
 let currentFrame = 0;
 let currentDir = 2;
 let selectedPieces = new Set();
+let selectedPieceDir = null;
 function f12Log(message) {
     if (!ENABLE_F12_LOGGING) return;
     try {
@@ -2539,10 +2540,11 @@ function updateSpriteEditor() {
 function updateItemsCombo() {
     const combo = document.getElementById("itemsCombo");
     const frame = currentAnimation ? currentAnimation.getFrame(currentFrame) : null;
-    const selectedId = selectedPieces.size === 1 ? Array.from(selectedPieces)[0] : combo ? combo.value : null;
+    const selectedPiece = selectedPieces.size === 1 ? Array.from(selectedPieces)[0] : null;
+    const selectedId = selectedPiece && selectedPiece.id ? selectedPiece.id : (combo ? combo.value : null);
     if (combo) combo.innerHTML = '<option value="">(none)</option>';
     if (frame) {
-        const actualDir = getDirIndex(currentDir);
+        const actualDir = (splitViewEnabled && !currentAnimation.singleDir && selectedPieceDir !== null) ? selectedPieceDir : getDirIndex(currentDir);
         const pieces = frame.pieces[actualDir] || [];
         for (const piece of pieces) {
             const option = document.createElement("option");
@@ -2564,13 +2566,25 @@ function updateItemsCombo() {
             if (combo) combo.appendChild(option);
         }
     }
+    if (combo && selectedId) {
+        combo.value = selectedId;
+        const selectedOption = Array.from(combo.options).find(opt => opt.value === selectedId);
+        if (selectedOption) {
+            selectedOption.selected = true;
+            const wrapper = combo.closest("div");
+            const button = wrapper ? wrapper.querySelector(".custom-dropdown-button span") : null;
+            if (button) {
+                button.textContent = selectedOption.textContent;
+            }
+        }
+    }
     updateItemSettings();
 }
 
 function updateItemSettings() {
     const combo = document.getElementById("itemsCombo");
     const frame = currentAnimation ? currentAnimation.getFrame(currentFrame) : null;
-    const actualDir = getDirIndex(currentDir);
+    const actualDir = (splitViewEnabled && !currentAnimation.singleDir && selectedPieceDir !== null) ? selectedPieceDir : getDirIndex(currentDir);
     const pieces = frame ? frame.pieces[actualDir] || [] : [];
     const sounds = frame ? (frame.sounds || []) : [];
     let piece = null;
@@ -3444,7 +3458,8 @@ function serializeAnimationState() {
             m_drawIndex: s.m_drawIndex || 0
         })),
         currentFrame: currentFrame,
-        selectedPieceIds: Array.from(selectedPieces).map(p => p.id).filter(id => id)
+        selectedPieceIds: Array.from(selectedPieces).map(p => p.id).filter(id => id),
+        selectedPieceDir: selectedPieceDir
     };
     return state;
 }
@@ -3518,10 +3533,11 @@ function restoreAnimationState(state) {
     currentFrame = Math.min(state.currentFrame || 0, currentAnimation.frames.length - 1);
     const selectedPieceIds = state.selectedPieceIds || [];
     selectedPieces.clear();
+    selectedPieceDir = state.selectedPieceDir !== undefined ? state.selectedPieceDir : null;
     if (selectedPieceIds.length > 0) {
         const frame = currentAnimation.getFrame(currentFrame);
         if (frame) {
-            const actualDir = getDirIndex(currentDir);
+            const actualDir = (splitViewEnabled && !currentAnimation.singleDir && selectedPieceDir !== null) ? selectedPieceDir : getDirIndex(currentDir);
             const pieces = frame.pieces[actualDir] || [];
             const sounds = frame.sounds || [];
             for (const pieceId of selectedPieceIds) {
@@ -4945,6 +4961,7 @@ window.addEventListener("load", async () => {
     document.getElementById("directionCombo").onchange = (e) => {
         currentDir = ["UP", "LEFT", "DOWN", "RIGHT"].indexOf(e.target.value);
         selectedPieces.clear();
+        selectedPieceDir = null;
         redraw();
         updateItemsCombo();
     };
@@ -5561,7 +5578,10 @@ window.addEventListener("load", async () => {
         e.target.closest("button").classList.toggle("active", splitViewEnabled);
         const btnMirrored = document.getElementById("btnMirroredActions");
         if (btnMirrored) btnMirrored.style.display = splitViewEnabled ? "" : "none";
-        if (!splitViewEnabled) mirroredActionsEnabled = false;
+        if (!splitViewEnabled) {
+            mirroredActionsEnabled = false;
+            selectedPieceDir = null;
+        }
         if (btnMirrored) btnMirrored.classList.remove("active");
         redraw();
     };
@@ -9033,6 +9053,21 @@ window.addEventListener("load", async () => {
                         undo: () => restoreAnimationState(oldState),
                         redo: () => restoreAnimationState(newState)
                     });
+                    if (splitViewEnabled && !currentAnimation.singleDir) {
+                        selectedPieceDir = actualDir;
+                        const dirNames = ["UP", "LEFT", "DOWN", "RIGHT"];
+                        const dirCombo = document.getElementById("directionCombo");
+                        if (dirCombo && dirNames[actualDir]) {
+                            const oldHandler = dirCombo.onchange;
+                            dirCombo.onchange = null;
+                            dirCombo.value = dirNames[actualDir];
+                            currentDir = actualDir;
+                            const wrapper = dirCombo.closest("div");
+                            const button = wrapper ? wrapper.querySelector(".custom-dropdown-button span") : null;
+                            if (button) button.textContent = dirNames[actualDir];
+                            setTimeout(() => dirCombo.onchange = oldHandler, 0);
+                        }
+                    }
                     updateItemsCombo();
                     insertPiece = null;
                     mainCanvas.style.cursor = "default";
@@ -9086,6 +9121,23 @@ window.addEventListener("load", async () => {
                             pieceInitialPositions.set(p, {x: p.xoffset, y: p.yoffset});
                         }
                         found = true;
+                        if (splitViewEnabled && !currentAnimation.singleDir) {
+                            selectedPieceDir = actualDir;
+                            const dirNames = ["UP", "LEFT", "DOWN", "RIGHT"];
+                            const dirCombo = document.getElementById("directionCombo");
+                            if (dirCombo && dirNames[actualDir]) {
+                                const oldHandler = dirCombo.onchange;
+                                dirCombo.onchange = null;
+                                dirCombo.value = dirNames[actualDir];
+                                currentDir = actualDir;
+                                const wrapper = dirCombo.closest("div");
+                                const button = wrapper ? wrapper.querySelector(".custom-dropdown-button span") : null;
+                                if (button) button.textContent = dirNames[actualDir];
+                                setTimeout(() => dirCombo.onchange = oldHandler, 0);
+                            }
+                        } else {
+                            selectedPieceDir = null;
+                        }
                         if (piece.type === "sprite") {
                             const sprite = currentAnimation.getAniSprite(piece.spriteIndex, piece.spriteName);
                             if (sprite) {
@@ -9122,6 +9174,23 @@ window.addEventListener("load", async () => {
                                 pieceInitialPositions.set(p, {x: p.xoffset, y: p.yoffset});
                             }
                             found = true;
+                            if (splitViewEnabled && !currentAnimation.singleDir) {
+                                selectedPieceDir = actualDir;
+                                const dirNames = ["UP", "LEFT", "DOWN", "RIGHT"];
+                                const dirCombo = document.getElementById("directionCombo");
+                                if (dirCombo && dirNames[actualDir]) {
+                                    const oldHandler = dirCombo.onchange;
+                                    dirCombo.onchange = null;
+                                    dirCombo.value = dirNames[actualDir];
+                                    currentDir = actualDir;
+                                    const wrapper = dirCombo.closest("div");
+                                    const button = wrapper ? wrapper.querySelector(".custom-dropdown-button span") : null;
+                                    if (button) button.textContent = dirNames[actualDir];
+                                    setTimeout(() => dirCombo.onchange = oldHandler, 0);
+                                }
+                            } else {
+                                selectedPieceDir = null;
+                            }
                             updateItemsCombo();
                             break;
                         }
@@ -9130,6 +9199,7 @@ window.addEventListener("load", async () => {
                 if (!found) {
                     if (!e.shiftKey) {
                         selectedPieces.clear();
+                        selectedPieceDir = null;
                         const combo = document.getElementById("itemsCombo");
                         if (combo) combo.value = "";
                         updateItemsCombo();
@@ -9143,6 +9213,18 @@ window.addEventListener("load", async () => {
                         const quadWidth = logicalWidth / 2;
                         const quadHeight = logicalHeight / 2;
                         boxSelectQuadrant = Math.floor(adjustedY / quadHeight) * 2 + Math.floor(adjustedX / quadWidth);
+                        const dirNames = ["UP", "LEFT", "DOWN", "RIGHT"];
+                        const dirCombo = document.getElementById("directionCombo");
+                        if (dirCombo && dirNames[boxSelectQuadrant]) {
+                            const oldHandler = dirCombo.onchange;
+                            dirCombo.onchange = null;
+                            dirCombo.value = dirNames[boxSelectQuadrant];
+                            currentDir = boxSelectQuadrant;
+                            const wrapper = dirCombo.closest("div");
+                            const button = wrapper ? wrapper.querySelector(".custom-dropdown-button span") : null;
+                            if (button) button.textContent = dirNames[boxSelectQuadrant];
+                            setTimeout(() => dirCombo.onchange = oldHandler, 0);
+                        }
                     } else {
                         boxSelectQuadrant = -1;
                     }
