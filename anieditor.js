@@ -11331,8 +11331,7 @@ function showAddSpriteDialog(editSprite = null) {
             updateSpritesList();
             redraw();
             saveSession();
-            document.body.removeChild(dialog);
-            document.body.removeChild(fileInput);
+            document.getElementById("addSpriteIndex").value = spriteIndex + totalSprites;
         }
     };
     if (editSprite) {
