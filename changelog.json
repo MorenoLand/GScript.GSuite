@@ -1,0 +1,29 @@
+[
+  {
+    "version": "2.1.0",
+    "date": "2026-03-25",
+    "changes": [
+      "Selected sprite now persists when switching frames (matches by piece position, not just sprite type)",
+      "Keyboard shortcuts , and . for previous/next frame navigation",
+      "Unified info menu combining About, Keybinds, and Changelog into one tabbed dialog (F1 to open)",
+      "Item controls centered with padding, layer buttons labeled L+/L-, button gaps increased for easier touch targeting",
+      "Timeline zoom via Ctrl+Scroll (desktop) and pinch-to-zoom (mobile)",
+      "Custom CSS support via theme menu — import, export, and live-apply your own stylesheet",
+      "Multi-frame timeline selection — Shift/Ctrl+click frames then drag to move them as a group",
+      "All keybinds now rebindable in the Keybinds tab — covers save, open, undo, redo, play, zoom, deselect, delete, select all, cycle, layers, frames, toggle panels, reset, info dialog",
+      "New hotkeys: Ctrl+A select all sprites, [ / ] layer down/up, Shift+Tab adds next sprite to selection",
+      "Styled tooltips on all toolbar and playback buttons",
+      "EFFECTMODE 2 relabeled from Holes to Blacklight (color inversion / blacklight effect)",
+      "Tab close button now shows hover highlight and prompts confirmation before closing",
+      "Sprite list icon now reflects scale, rotation, color, and mode modifications",
+      "Fixed slider changes (X Scale, Y Scale, Rotation, Zoom) not appearing in undo history",
+      "Ctrl+S saves even when an input field is focused",
+      "Ctrl+W browser shortcut blocked to prevent accidental tab close",
+      "Items dropdown now properly selects the corresponding piece on the canvas",
+      "Duration (MS) input arrows now step by 50ms",
+      "WASD/Arrow swap button now shows active state indicator",
+      "Multi-select sprites in left panel (Ctrl/Shift+click) then drag to place them all at once",
+      "Ctrl+click on canvas pieces adds/removes from selection"
+    ]
+  }
+]

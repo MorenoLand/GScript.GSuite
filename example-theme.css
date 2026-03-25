@@ -1,0 +1,49 @@
+/* Gani Editor - Custom CSS Example
+   Paste this into the Custom CSS dialog and modify to your liking.
+   Your CSS loads last, so it overrides everything including built-in themes.
+*/
+
+/* ── Toolbar ───────────────────────────────────────────────── */
+.toolbar {
+    background: #1a1a2e;
+    border-bottom-color: #0f0f1a;
+}
+.toolbar button {
+    background: #16213e;
+    color: #e0e0e0;
+    border-color: #0f3460;
+}
+.toolbar button:hover {
+    background: #0f3460;
+}
+
+/* ── Left / Right panels ───────────────────────────────────── */
+.left-panel, .right-panel {
+    background: #16213e;
+    border-color: #0f0f1a;
+}
+
+/* ── Canvas area ───────────────────────────────────────────── */
+.canvas-container {
+    background: #0d0d0d;
+}
+
+/* ── Timeline ──────────────────────────────────────────────── */
+.timeline-container {
+    background: #1a1a2e;
+    border-top-color: #0f0f1a;
+}
+
+/* ── Buttons (global) ──────────────────────────────────────── */
+button {
+    border-radius: 4px;
+}
+
+/* ── Accent color (links, highlights) ─────────────────────── */
+a { color: #e94560; }
+
+/* ── Scrollbars (webkit) ───────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #0f0f1a; }
+::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #e94560; }

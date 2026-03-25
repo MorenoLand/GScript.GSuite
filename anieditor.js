@@ -442,6 +442,7 @@ let dragStartMousePos = null;
 let pieceInitialPositions = new Map();
 let isDragging = false;
 let insertPiece = null;
+let insertPieces = [];
 let selectedAttachedSprite = -1;
 let attachedSpriteStartMove = null;
 let isPlacingAttachment = false;
@@ -490,6 +491,10 @@ function createSliderSync(numberId, sliderId, getter, setter, onChange = () => {
         performChange(val, false);
     };
 
+    let sliderPreChangeState = null;
+    sliderEl.addEventListener("mousedown", () => { sliderPreChangeState = serializeAnimationState(); });
+    sliderEl.addEventListener("touchstart", () => { sliderPreChangeState = serializeAnimationState(); }, {passive: true});
+
     sliderEl.oninput = (e) => {
         const val = parseFloat(e.target.value) || 0;
         setter(val);
@@ -499,7 +504,16 @@ function createSliderSync(numberId, sliderId, getter, setter, onChange = () => {
 
     sliderEl.onchange = (e) => {
         const val = parseFloat(e.target.value) || 0;
-        performChange(val, true);
+        setter(val);
+        sliderEl.value = val;
+        onChange();
+        const oldState = sliderPreChangeState || serializeAnimationState();
+        sliderPreChangeState = null;
+        const newState = serializeAnimationState();
+        if (oldState !== newState) {
+            const desc = typeof undoDesc === 'function' ? undoDesc() : (undoDesc || `${numberId}`);
+            addUndoCommand({ description: desc, oldState, newState, undo: () => restoreAnimationState(oldState), redo: () => restoreAnimationState(newState) });
+        }
     };
 }
 
@@ -524,9 +538,45 @@ let dragThreshold = 5;
 let isDraggingFrame = false;
 let dragCurrentX = 0;
 let dragTargetIndex = -1;
+let selectedFrames = new Set();
+const DEFAULT_KEYBINDS = {
+    prevFrame: ",", nextFrame: ".", cycleSprite: "Tab", selectAll: "ctrl+a", layerUp: "]", layerDown: "[",
+    undo: "ctrl+z", redo: "ctrl+y", save: "ctrl+s", open: "ctrl+o", resetEditor: "ctrl+r",
+    infoDialog: "F1", togglePanels: "alt+z", play: " ", zoomIn: "+", zoomOut: "-",
+    deselect: "Escape", deletePiece: "Delete",
+};
+let keybinds = {...DEFAULT_KEYBINDS};
+try { const _sk = localStorage.getItem("ganiEditorKeybinds"); if (_sk) Object.assign(keybinds, JSON.parse(_sk)); } catch(e) {}
+function saveKeybinds() { localStorage.setItem("ganiEditorKeybinds", JSON.stringify(keybinds)); }
+function matchesKeybind(e, binding, opts = {}) {
+    if (binding === "+" || binding === "-") return e.key === binding;
+    const parts = binding.toLowerCase().split("+");
+    const needsCtrl = parts.includes("ctrl"), needsShift = parts.includes("shift"), needsAlt = parts.includes("alt");
+    const key = parts[parts.length - 1];
+    if (!key) return false;
+    if (needsCtrl !== e.ctrlKey || needsAlt !== e.altKey) return false;
+    if (!opts.ignoreShift && needsShift !== e.shiftKey) return false;
+    return e.key.toLowerCase() === key || e.key === key || e.code.toLowerCase() === `key${key}` || e.code.toLowerCase() === key;
+}
+function formatKeybind(binding) {
+    if (binding === "+") return "+";
+    if (binding === "-") return "-";
+    return binding.split("+").filter(p => p.length > 0).map(p => {
+        const lp = p.toLowerCase();
+        if (lp === " ") return "Space";
+        if (lp === "escape") return "Esc";
+        if (lp === "delete") return "Del";
+        if (p === "ctrl") return "Ctrl";
+        if (p === "shift") return "Shift";
+        if (p === "alt") return "Alt";
+        if (p.length === 1) return p;
+        return p[0].toUpperCase() + p.slice(1);
+    }).join("+");
+}
 let scrollbarDragStartX = 0;
 let scrollbarDragStartScrollX = 0;
 let timelineScrollX = 0;
+let timelineZoom = 1.0;
 let timelineTotalWidth = 0;
 let dragTab = -1;
 let dragTabStartX = 0;
@@ -1206,6 +1256,26 @@ function redraw() {
         ctx.setLineDash([]);
         }
     }
+    if (insertPieces.length > 0 && insertPiece) {
+        const rect = mainCanvas.getBoundingClientRect();
+        const zoom = zoomFactors[zoomLevel] || 1.0;
+        const mouseX = (lastMouseX || 0) - rect.left;
+        const mouseY = (lastMouseY || 0) - rect.top;
+        const worldX = (mouseX - panX - width / 2) / zoom;
+        const worldY = (mouseY - panY - height / 2) / zoom;
+        const baseX = Math.floor(0.5 + worldX - insertPiece.dragOffset.x);
+        const baseY = Math.floor(0.5 + worldY - insertPiece.dragOffset.y);
+        for (const ep of insertPieces) {
+            const eSprite = currentAnimation.getAniSprite(ep.spriteIndex, ep.spriteName);
+            if (!eSprite) continue;
+            ep.xoffset = baseX; ep.yoffset = baseY;
+            ctx.save();
+            ctx.translate(width / 2 + panX, height / 2 + panY);
+            ctx.scale(zoom, zoom);
+            drawSprite(ctx, eSprite, ep.xoffset, ep.yoffset);
+            ctx.restore();
+        }
+    }
     if (insertPiece) {
         mainCanvas.style.cursor = "crosshair";
     } else {
@@ -1407,8 +1477,8 @@ function drawTimeline() {
     timelineCtx.font = "12px Arial";
     timelineCtx.textAlign = "center";
     timelineCtx.textBaseline = "top";
-    const minFrameWidth = 48;
-    const getPixelsPerMs = () => window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 1 : 1.5;
+    const minFrameWidth = 48 * timelineZoom;
+    const getPixelsPerMs = () => (window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 1 : 1.5) * timelineZoom;
     const pixelsPerMs = getPixelsPerMs();
     let totalTimelineWidth = 2;
     for (let i = 0; i < currentAnimation.frames.length; i++) {
@@ -1423,7 +1493,7 @@ function drawTimeline() {
 
     let currentX = 2 - timelineScrollX;
     for (let i = 0; i < currentAnimation.frames.length; i++) {
-        if (isDraggingFrame && dragFrame === i) continue;
+        if (isDraggingFrame && selectedFrames.has(i)) continue;
         const frame = currentAnimation.frames[i];
         const frameWidth = Math.max(frame.duration * pixelsPerMs, minFrameWidth);
         const frameStartX = currentX;
@@ -1446,7 +1516,7 @@ function drawTimeline() {
             const dirsWithPieces = frame.pieces.map((dp, idx) => dp.length > 0 ? idx : -1).filter(idx => idx >= 0);
             f12Log(`Frame ${i}: currentDir=${currentDir}, actualDir=${actualDir}, pieces.length=${pieces.length}, but frame has pieces in dirs: [${dirsWithPieces.join(', ')}]`);
         }
-        timelineCtx.fillStyle = selected ? "#006400" : "#8b0000";
+        timelineCtx.fillStyle = selected ? "#006400" : selectedFrames.has(i) ? "#00456b" : "#8b0000";
         timelineCtx.beginPath();
         const rx = 10, ry = 10;
         const w = frameWidth - 4;
@@ -1576,15 +1646,30 @@ function drawTimeline() {
         timelineCtx.fillStyle = "#ffffff";
         timelineCtx.fillText(String(dragFrame), dragX + frameWidth / 2, headerHeight + 1);
         timelineCtx.fillText(`${frame.duration} ms`, dragX + frameWidth / 2, headerHeight + buttonHeight - 16);
+        if (selectedFrames.size > 1) {
+            const badge = `×${selectedFrames.size}`;
+            timelineCtx.font = "bold 11px sans-serif";
+            const bw = timelineCtx.measureText(badge).width + 8;
+            const bx = dragX + frameWidth - bw - 2;
+            const by = headerHeight + 4;
+            timelineCtx.fillStyle = "#00456b";
+            timelineCtx.fillRect(bx, by, bw, 14);
+            timelineCtx.fillStyle = "#ffffff";
+            timelineCtx.fillText(badge, bx + bw / 2, by + 11);
+            timelineCtx.font = "11px sans-serif";
+        }
         timelineCtx.globalAlpha = 1.0;
     }
     if (isDraggingFrame && dragTargetIndex >= 0 && dragTargetIndex <= currentAnimation.frames.length) {
         let dropX = 2 - timelineScrollX;
         const pixelsPerMs = getPixelsPerMs();
+        const multiIndices = selectedFrames.size > 1 ? [...selectedFrames].sort((a, b) => a - b) : null;
+        const firstSelected = multiIndices ? multiIndices[0] : dragFrame;
+        const lastSelected = multiIndices ? multiIndices[multiIndices.length - 1] : dragFrame;
         for (let i = 0; i < currentAnimation.frames.length; i++) {
-            if (i === dragFrame) continue;
-            if (dragTargetIndex <= dragFrame && i >= dragTargetIndex) break;
-            if (dragTargetIndex > dragFrame && i > dragFrame && i >= dragTargetIndex) break;
+            if (multiIndices ? multiIndices.includes(i) : i === dragFrame) continue;
+            if (dragTargetIndex <= firstSelected && i >= dragTargetIndex) break;
+            if (dragTargetIndex > lastSelected && i > lastSelected && i >= dragTargetIndex) break;
             const frame = currentAnimation.frames[i];
             const frameWidth = Math.max(frame.duration * pixelsPerMs, minFrameWidth);
             dropX += frameWidth;
@@ -1598,31 +1683,53 @@ function drawTimeline() {
             timelineCtx.stroke();
         }
     }
-    const startX = Math.floor(-2 / 50) * 50;
     timelineCtx.fillStyle = "#808080";
     timelineCtx.fillRect(-2, 0, width + 4, headerHeight);
-    for (let time = startX; time <= width + 100; time += 50) {
-        const timeStr = (time / 1000.0).toFixed(3);
-        const textWidth = timelineCtx.measureText(timeStr).width;
-        timelineCtx.strokeStyle = "#e0e0e0";
-        timelineCtx.lineWidth = 1;
-        timelineCtx.beginPath();
-        timelineCtx.moveTo(time, 11);
-        timelineCtx.lineTo(time, headerHeight - 1);
-        timelineCtx.stroke();
-        timelineCtx.fillStyle = "#ffffff";
-        timelineCtx.font = "11px Arial";
-        if (time + textWidth / 2 <= width) {
-            timelineCtx.fillText(timeStr, time, 1);
+    timelineCtx.font = "11px Arial";
+    timelineCtx.textAlign = "left";
+    timelineCtx.strokeStyle = "#e0e0e0";
+    timelineCtx.lineWidth = 1;
+    let rulerX = 2 - timelineScrollX;
+    let accTime = 0;
+    let lastLabelRight = -999;
+    for (let i = 0; i <= currentAnimation.frames.length; i++) {
+        if (rulerX >= -1 && rulerX <= width + 1) {
+            timelineCtx.beginPath();
+            timelineCtx.moveTo(rulerX, 8);
+            timelineCtx.lineTo(rulerX, headerHeight - 1);
+            timelineCtx.stroke();
+            const timeStr = (accTime / 1000.0).toFixed(3) + "s";
+            const labelX = rulerX + 2;
+            if (labelX > lastLabelRight) {
+                timelineCtx.fillStyle = "#ffffff";
+                timelineCtx.fillText(timeStr, labelX, 1);
+                lastLabelRight = labelX + timelineCtx.measureText(timeStr).width + 4;
+            }
+        }
+        if (i < currentAnimation.frames.length) {
+            const frame = currentAnimation.frames[i];
+            rulerX += Math.max(frame.duration * pixelsPerMs, minFrameWidth);
+            accTime += frame.duration;
         }
     }
     if (isPlaying) {
-        const pos = Math.min(playPosition, totalTime);
+        let playX = 2 - timelineScrollX;
+        let elapsed = 0;
+        for (let i = 0; i < currentAnimation.frames.length; i++) {
+            const fw = Math.max(currentAnimation.frames[i].duration * pixelsPerMs, minFrameWidth);
+            if (elapsed + currentAnimation.frames[i].duration >= playPosition) {
+                const frac = (playPosition - elapsed) / currentAnimation.frames[i].duration;
+                playX += fw * frac;
+                break;
+            }
+            elapsed += currentAnimation.frames[i].duration;
+            playX += fw;
+        }
         timelineCtx.fillStyle = "#0000ff";
         timelineCtx.beginPath();
-        timelineCtx.moveTo(pos - 5, 21);
-        timelineCtx.lineTo(pos, 11);
-        timelineCtx.lineTo(pos + 5, 21);
+        timelineCtx.moveTo(playX - 5, 21);
+        timelineCtx.lineTo(playX, 11);
+        timelineCtx.lineTo(playX + 5, 21);
         timelineCtx.closePath();
         timelineCtx.fill();
     }
@@ -2258,6 +2365,16 @@ function updateSpritesList() {
                         insertPiece.xoffset = -5000;
                         insertPiece.yoffset = -5000;
                         insertPiece.dragOffset = {x: (sprite.width * sprite.xscale) / 2, y: (sprite.height * sprite.yscale) / 2};
+                        insertPieces = [];
+                        for (const sel of selectedSpritesForDeletion) {
+                            if (sel.index === sprite.index) continue;
+                            const ep = new FramePieceSprite();
+                            ep.spriteIndex = sel.index;
+                            ep.spriteName = String(sel.index);
+                            ep.xoffset = -5000; ep.yoffset = -5000;
+                            ep.dragOffset = {x: 0, y: 0};
+                            insertPieces.push(ep);
+                        }
                         redraw();
                     }
                 }
@@ -2393,10 +2510,18 @@ function updateSpritesList() {
             canvas.width = maxSize;
             canvas.height = maxSize;
         }
+        canvas.width = maxSize;
+        canvas.height = maxSize;
         const itemCtx = canvas.getContext("2d");
         itemCtx.imageSmoothingEnabled = false;
         if (img && sprite.width > 0 && sprite.height > 0) {
-            itemCtx.drawImage(img, sprite.left, sprite.top, sprite.width, sprite.height, 0, 0, canvas.width, canvas.height);
+            const dispW = Math.max(sprite.width * Math.abs(sprite.xscale), 1);
+            const dispH = Math.max(sprite.height * Math.abs(sprite.yscale), 1);
+            const scale = Math.min(maxSize / dispW, maxSize / dispH);
+            itemCtx.save();
+            itemCtx.scale(scale, scale);
+            drawSprite(itemCtx, sprite, 0, 0);
+            itemCtx.restore();
         } else {
             const placeholderWidth = sprite.width > 0 ? sprite.width : 32;
             const placeholderHeight = sprite.height > 0 ? sprite.height : 32;
@@ -2668,7 +2793,7 @@ function updateItemSettings() {
             if (piece.id) combo.value = piece.id;
             else if (piece.toString) combo.value = piece.toString();
         }
-    } else {
+    } else if (selectedPieces.size === 0) {
         const pieceId = combo ? combo.value : null;
         if (pieceId) {
             piece = pieces.find(p => p.id === pieceId);
@@ -3773,6 +3898,7 @@ function switchTab(index) {
     saveUndoStack();
     saveCurrentFrame();
     selectedSpritesForDeletion.clear();
+    selectedFrames.clear();
     currentTabIndex = index;
     currentAnimation = animations[index];
     if (!currentAnimation.undoStack) currentAnimation.undoStack = [];
@@ -3960,6 +4086,8 @@ function updateTabs() {
         close.onclick = (e) => {
             e.stopPropagation();
             e.preventDefault();
+            const name = animations[i].fileName || `Animation ${i + 1}`;
+            if (!confirm(`Close "${name}"?`)) return;
             closeTab(i);
         };
         close.onmousedown = (e) => {
@@ -5039,7 +5167,7 @@ window.addEventListener("load", async () => {
         redraw();
         updateItemsCombo();
     };
-    document.getElementById("itemsCombo").onchange = () => updateItemSettings();
+    document.getElementById("itemsCombo").onchange = () => { selectedPieces.clear(); updateItemSettings(); redraw(); };
     document.getElementById("itemX").onchange = (e) => {
         const pieceId = document.getElementById("itemsCombo").value;
         const frame = currentAnimation.getFrame(currentFrame);
@@ -5293,19 +5421,19 @@ window.addEventListener("load", async () => {
     createSliderSync("xScale", "xScaleSlider",
         () => editingSprite?.xscale || 1.0,
         (val) => { if (editingSprite) { editingSprite.xscale = val; editingSprite.updateBoundingBox(); } },
-        () => { redraw(); drawSpritePreview(); saveSession(true); },
+        () => { redraw(); drawSpritePreview(); updateSpritesList(); saveSession(true); },
         `Change ${editingSprite.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite.index}`} X Scale`
     );
     createSliderSync("yScale", "yScaleSlider",
         () => editingSprite?.yscale || 1.0,
         (val) => { if (editingSprite) { editingSprite.yscale = val; editingSprite.updateBoundingBox(); } },
-        () => { redraw(); drawSpritePreview(); saveSession(true); },
+        () => { redraw(); drawSpritePreview(); updateSpritesList(); saveSession(true); },
         `Change ${editingSprite.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite.index}`} Y Scale`
     );
     createSliderSync("rotation", "rotationSlider",
         () => editingSprite?.rotation || 0,
         (val) => { if (editingSprite) { editingSprite.rotation = val; editingSprite.updateBoundingBox(); } },
-        () => { redraw(); drawSpritePreview(); saveSession(true); },
+        () => { redraw(); drawSpritePreview(); updateSpritesList(); saveSession(true); },
         `Change ${editingSprite.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite.index}`} Rotation`
     );
     createSliderSync("zoom", "zoomSlider",
@@ -5320,7 +5448,7 @@ window.addEventListener("load", async () => {
                 editingSprite.updateBoundingBox();
             }
         },
-        () => { redraw(); drawSpritePreview(); saveSession(true); },
+        () => { redraw(); drawSpritePreview(); updateSpritesList(); saveSession(true); },
         () => `Change ${editingSprite?.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite?.index}`} Zoom`
     );
     const spriteModeSelect = document.getElementById("spriteMode");
@@ -5364,6 +5492,7 @@ window.addEventListener("load", async () => {
             }
             redraw();
             drawSpritePreview();
+            updateSpritesList();
             saveSession(true);
         });
     }
@@ -5519,6 +5648,7 @@ window.addEventListener("load", async () => {
         });
         redraw();
         drawSpritePreview();
+        updateSpritesList();
         saveSession();
     };
     if (document.getElementById("colorR")) document.getElementById("colorR").onchange = updateColorFromRGB;
@@ -5605,9 +5735,19 @@ window.addEventListener("load", async () => {
     };
     document.getElementById("timelineSlider").oninput = (e) => {
         saveCurrentFrame();
+        const actualDir = getDirIndex(currentDir);
+        const oldPieces = (currentAnimation.getFrame(currentFrame)?.pieces[actualDir]) || [];
+        const prevSelected = Array.from(selectedPieces).filter(p => p.type === "sprite").map(p => ({ spriteIndex: p.spriteIndex, spriteName: p.spriteName || "", arrayIndex: oldPieces.indexOf(p) }));
         currentFrame = parseInt(e.target.value) || 0;
         saveCurrentFrame();
         selectedPieces.clear();
+        if (prevSelected.length > 0) {
+            const newPieces = (currentAnimation.getFrame(currentFrame)?.pieces[actualDir]) || [];
+            for (const sel of prevSelected) {
+                const piece = sel.arrayIndex >= 0 ? newPieces[sel.arrayIndex] : null;
+                if (piece?.type === "sprite" && piece.spriteIndex === sel.spriteIndex && (piece.spriteName || "") === sel.spriteName) selectedPieces.add(piece);
+            }
+        }
         redraw();
         updateFrameInfo();
     };
@@ -5721,8 +5861,8 @@ window.addEventListener("load", async () => {
             return;
         }
         let currentX = 2 - timelineScrollX;
-        const pixelsPerMs = window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 1 : 1.5;
-        const minFrameWidth = 48;
+        const pixelsPerMs = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 1 : 1.5) * timelineZoom;
+        const minFrameWidth = 48 * timelineZoom;
         for (let i = 0; i < currentAnimation.frames.length; i++) {
             const frame = currentAnimation.frames[i];
             const frameWidth = Math.max(frame.duration * pixelsPerMs, minFrameWidth);
@@ -5750,8 +5890,8 @@ window.addEventListener("load", async () => {
             dragCurrentX = pos.x;
             let targetIndex = dragFrame;
             let x = 2 - timelineScrollX;
-            const pixelsPerMs = window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 1 : 1.5;
-            const minFrameWidth = 48;
+            const pixelsPerMs = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 1 : 1.5) * timelineZoom;
+            const minFrameWidth = 48 * timelineZoom;
             for (let i = 0; i < currentAnimation.frames.length; i++) {
                 const frame = currentAnimation.frames[i];
                 const frameWidth = Math.max(frame.duration * pixelsPerMs, minFrameWidth);
@@ -5809,8 +5949,8 @@ window.addEventListener("load", async () => {
                 return;
             }
             let currentX = 2 - timelineScrollX;
-            const pixelsPerMs = window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 1 : 1.5;
-            const minFrameWidth = 48;
+            const pixelsPerMs = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 1 : 1.5) * timelineZoom;
+            const minFrameWidth = 48 * timelineZoom;
             for (let i = 0; i < currentAnimation.frames.length; i++) {
                 const frame = currentAnimation.frames[i];
                 const frameWidth = Math.max(frame.duration * pixelsPerMs, minFrameWidth);
@@ -5818,17 +5958,34 @@ window.addEventListener("load", async () => {
                 const frameEndX = currentX + frameWidth;
 
                 if (pos.x >= frameStartX + 2 && pos.x <= frameEndX - 4) {
-                    dragFrame = i;
-                    dragStartX = pos.x;
-                    isDraggingFrame = false;
-                    if (currentFrame !== i) {
-                        currentFrame = i;
-                        saveCurrentFrame();
-                        selectedPieces.clear();
-                        redraw();
-                        updateFrameInfo();
-                        const slider = document.getElementById("timelineSlider");
-                        if (slider) slider.value = currentFrame;
+                    if (e.shiftKey || e.ctrlKey) {
+                        if (selectedFrames.has(i)) selectedFrames.delete(i);
+                        else selectedFrames.add(i);
+                        drawTimeline();
+                    } else {
+                        dragFrame = i;
+                        dragStartX = pos.x;
+                        isDraggingFrame = false;
+                        if (!selectedFrames.has(i)) selectedFrames.clear();
+                        if (currentFrame !== i) {
+                            const actualDir = getDirIndex(currentDir);
+                            const oldPieces = (currentAnimation.getFrame(currentFrame)?.pieces[actualDir]) || [];
+                            const prevSelected = Array.from(selectedPieces).filter(p => p.type === "sprite").map(p => ({ spriteIndex: p.spriteIndex, spriteName: p.spriteName || "", arrayIndex: oldPieces.indexOf(p) }));
+                            currentFrame = i;
+                            saveCurrentFrame();
+                            selectedPieces.clear();
+                            if (prevSelected.length > 0) {
+                                const newPieces = (currentAnimation.getFrame(currentFrame)?.pieces[actualDir]) || [];
+                                for (const sel of prevSelected) {
+                                    const piece = sel.arrayIndex >= 0 ? newPieces[sel.arrayIndex] : null;
+                                    if (piece?.type === "sprite" && piece.spriteIndex === sel.spriteIndex && (piece.spriteName || "") === sel.spriteName) selectedPieces.add(piece);
+                                }
+                            }
+                            redraw();
+                            updateFrameInfo();
+                            const slider = document.getElementById("timelineSlider");
+                            if (slider) slider.value = currentFrame;
+                        }
                     }
                     break;
                 }
@@ -5846,8 +6003,23 @@ window.addEventListener("load", async () => {
     let timelineTouchStart = null;
     let timelineTouchContextMenuTimer = null;
     let timelineTouchMoved = false;
+    let pinchStartDist = null;
+    let pinchStartZoom = 1.0;
+    let pinchStartScrollX = 0;
+    let pinchMidX = 0;
 
     timelineCanvas.addEventListener("touchstart", (e) => {
+        if (e.touches.length === 2) {
+            e.preventDefault();
+            const dx = e.touches[1].clientX - e.touches[0].clientX;
+            const dy = e.touches[1].clientY - e.touches[0].clientY;
+            pinchStartDist = Math.sqrt(dx * dx + dy * dy);
+            pinchStartZoom = timelineZoom;
+            const rect = timelineCanvas.getBoundingClientRect();
+            pinchMidX = ((e.touches[0].clientX + e.touches[1].clientX) / 2) - rect.left;
+            pinchStartScrollX = timelineScrollX;
+            return;
+        }
         if (e.touches.length > 1) return;
         e.preventDefault();
         const rect = timelineCanvas.getBoundingClientRect();
@@ -5894,7 +6066,7 @@ window.addEventListener("load", async () => {
         let currentX = 2 - timelineScrollX;
         for (let i = 0; i < currentAnimation.frames.length; i++) {
             const frame = currentAnimation.frames[i];
-            const frameWidth = Math.max(frame.duration * 1, 48);
+            const frameWidth = Math.max(frame.duration * timelineZoom, 48 * timelineZoom);
             const frameStartX = currentX;
             const frameEndX = currentX + frameWidth;
 
@@ -5903,9 +6075,19 @@ window.addEventListener("load", async () => {
                 dragStartX = pos.x;
                 isDraggingFrame = false;
                 if (currentFrame !== i) {
+                    const actualDir = getDirIndex(currentDir);
+                    const oldPieces = (currentAnimation.getFrame(currentFrame)?.pieces[actualDir]) || [];
+                    const prevSelected = Array.from(selectedPieces).filter(p => p.type === "sprite").map(p => ({ spriteIndex: p.spriteIndex, spriteName: p.spriteName || "", arrayIndex: oldPieces.indexOf(p) }));
                     currentFrame = i;
                     saveCurrentFrame();
                     selectedPieces.clear();
+                    if (prevSelected.length > 0) {
+                        const newPieces = (currentAnimation.getFrame(currentFrame)?.pieces[actualDir]) || [];
+                        for (const sel of prevSelected) {
+                            const piece = sel.arrayIndex >= 0 ? newPieces[sel.arrayIndex] : null;
+                            if (piece?.type === "sprite" && piece.spriteIndex === sel.spriteIndex && (piece.spriteName || "") === sel.spriteName) selectedPieces.add(piece);
+                        }
+                    }
                     redraw();
                     updateFrameInfo();
                     const slider = document.getElementById("timelineSlider");
@@ -5931,6 +6113,16 @@ window.addEventListener("load", async () => {
     }, {passive: false});
 
     timelineCanvas.addEventListener("touchmove", (e) => {
+        if (e.touches.length === 2 && pinchStartDist !== null) {
+            e.preventDefault();
+            const dx = e.touches[1].clientX - e.touches[0].clientX;
+            const dy = e.touches[1].clientY - e.touches[0].clientY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            timelineZoom = Math.max(0.25, Math.min(5.0, pinchStartZoom * (dist / pinchStartDist)));
+            timelineScrollX = Math.max(0, (pinchStartScrollX + pinchMidX) * (timelineZoom / pinchStartZoom) - pinchMidX);
+            drawTimeline();
+            return;
+        }
         if (e.touches.length > 1) return;
         e.preventDefault();
         const rect = timelineCanvas.getBoundingClientRect();
@@ -5992,8 +6184,8 @@ window.addEventListener("load", async () => {
             dragCurrentX = pos.x;
             let targetIndex = dragFrame;
             let x = 2 - timelineScrollX;
-            const pixelsPerMs = window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 1 : 1.5;
-            const minFrameWidth = 48;
+            const pixelsPerMs = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 1 : 1.5) * timelineZoom;
+            const minFrameWidth = 48 * timelineZoom;
             for (let i = 0; i < currentAnimation.frames.length; i++) {
                 const frame = currentAnimation.frames[i];
                 const frameWidth = Math.max(frame.duration * pixelsPerMs, minFrameWidth);
@@ -6012,6 +6204,7 @@ window.addEventListener("load", async () => {
     }, {passive: false});
 
     timelineCanvas.addEventListener("touchend", (e) => {
+        if (e.touches.length < 2) pinchStartDist = null;
         if (timelineTouchContextMenuTimer) {
             clearTimeout(timelineTouchContextMenuTimer);
             timelineTouchContextMenuTimer = null;
@@ -6050,8 +6243,8 @@ window.addEventListener("load", async () => {
 
             let targetIndex = dragFrame;
             let x = 2 - timelineScrollX;
-            const pixelsPerMs = window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 1 : 1.5;
-            const minFrameWidth = 48;
+            const pixelsPerMs = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 1 : 1.5) * timelineZoom;
+            const minFrameWidth = 48 * timelineZoom;
             for (let i = 0; i < currentAnimation.frames.length; i++) {
                 const frame = currentAnimation.frames[i];
                 const frameWidth = Math.max(frame.duration * pixelsPerMs, minFrameWidth);
@@ -6067,23 +6260,34 @@ window.addEventListener("load", async () => {
             }
             dragTargetIndex = targetIndex;
 
-            if (targetIndex !== dragFrame && targetIndex >= 0 && targetIndex <= currentAnimation.frames.length) {
+            if (targetIndex >= 0 && targetIndex <= currentAnimation.frames.length) {
                 const oldState = serializeAnimationState();
-                const frameToMove = currentAnimation.frames.splice(dragFrame, 1)[0];
-                currentAnimation.frames.splice(targetIndex > dragFrame ? targetIndex - 1 : targetIndex, 0, frameToMove);
-                currentFrame = targetIndex > dragFrame ? targetIndex - 1 : targetIndex;
-
-                if (getCurrentHistoryLoggingEnabled()) {
-                const newState = serializeAnimationState();
-                addUndoCommand({
-                    description: "Reorder Frame",
-                    oldState: oldState,
-                    newState: newState,
-                    undo: () => restoreAnimationState(oldState),
-                    redo: () => restoreAnimationState(newState)
-                });
+                const _allSel = new Set(selectedFrames); if (dragFrame >= 0) _allSel.add(dragFrame);
+                const multiIndices = [..._allSel].sort((a, b) => a - b);
+                if (multiIndices.length > 1) {
+                    const beforeCount = multiIndices.filter(idx => idx < targetIndex).length;
+                    const extracted = multiIndices.map(idx => currentAnimation.frames[idx]);
+                    for (let k = multiIndices.length - 1; k >= 0; k--) currentAnimation.frames.splice(multiIndices[k], 1);
+                    const insertAt = Math.max(0, Math.min(targetIndex - beforeCount, currentAnimation.frames.length));
+                    currentAnimation.frames.splice(insertAt, 0, ...extracted);
+                    const _dfIdx = multiIndices.indexOf(dragFrame); currentFrame = insertAt + (_dfIdx >= 0 ? _dfIdx : 0); dragFrame = currentFrame;
+                    selectedFrames = new Set(multiIndices.map((_, k) => insertAt + k));
+                } else if (targetIndex !== dragFrame) {
+                    const frameToMove = currentAnimation.frames.splice(dragFrame, 1)[0];
+                    currentAnimation.frames.splice(targetIndex > dragFrame ? targetIndex - 1 : targetIndex, 0, frameToMove);
+                    currentFrame = targetIndex > dragFrame ? targetIndex - 1 : targetIndex; dragFrame = currentFrame;
+                    selectedFrames.clear();
                 }
-
+                if (getCurrentHistoryLoggingEnabled()) {
+                    const newState = serializeAnimationState();
+                    addUndoCommand({
+                        description: "Reorder Frame",
+                        oldState: oldState,
+                        newState: newState,
+                        undo: () => restoreAnimationState(oldState),
+                        redo: () => restoreAnimationState(newState)
+                    });
+                }
                 redraw();
                 updateFrameInfo();
                 saveSession();
@@ -6119,8 +6323,8 @@ window.addEventListener("load", async () => {
 
             let targetIndex = dragFrame;
             let x = 2 - timelineScrollX;
-            const pixelsPerMs = window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 1 : 1.5;
-            const minFrameWidth = 48;
+            const pixelsPerMs = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 1 : 1.5) * timelineZoom;
+            const minFrameWidth = 48 * timelineZoom;
             for (let i = 0; i < currentAnimation.frames.length; i++) {
                 const frame = currentAnimation.frames[i];
                 const frameWidth = Math.max(frame.duration * pixelsPerMs, minFrameWidth);
@@ -6136,23 +6340,34 @@ window.addEventListener("load", async () => {
             }
             dragTargetIndex = targetIndex;
 
-            if (targetIndex !== dragFrame && targetIndex >= 0 && targetIndex <= currentAnimation.frames.length) {
+            if (targetIndex >= 0 && targetIndex <= currentAnimation.frames.length) {
                 const oldState = serializeAnimationState();
-                const frameToMove = currentAnimation.frames.splice(dragFrame, 1)[0];
-                currentAnimation.frames.splice(targetIndex > dragFrame ? targetIndex - 1 : targetIndex, 0, frameToMove);
-                currentFrame = targetIndex > dragFrame ? targetIndex - 1 : targetIndex;
-
-                if (getCurrentHistoryLoggingEnabled()) {
-                const newState = serializeAnimationState();
-                addUndoCommand({
-                    description: "Reorder Frame",
-                    oldState: oldState,
-                    newState: newState,
-                    undo: () => restoreAnimationState(oldState),
-                    redo: () => restoreAnimationState(newState)
-                });
+                const _allSel = new Set(selectedFrames); if (dragFrame >= 0) _allSel.add(dragFrame);
+                const multiIndices = [..._allSel].sort((a, b) => a - b);
+                if (multiIndices.length > 1) {
+                    const beforeCount = multiIndices.filter(idx => idx < targetIndex).length;
+                    const extracted = multiIndices.map(idx => currentAnimation.frames[idx]);
+                    for (let k = multiIndices.length - 1; k >= 0; k--) currentAnimation.frames.splice(multiIndices[k], 1);
+                    const insertAt = Math.max(0, Math.min(targetIndex - beforeCount, currentAnimation.frames.length));
+                    currentAnimation.frames.splice(insertAt, 0, ...extracted);
+                    const _dfIdx2 = multiIndices.indexOf(dragFrame); currentFrame = insertAt + (_dfIdx2 >= 0 ? _dfIdx2 : 0); dragFrame = currentFrame;
+                    selectedFrames = new Set(multiIndices.map((_, k) => insertAt + k));
+                } else if (targetIndex !== dragFrame) {
+                    const frameToMove = currentAnimation.frames.splice(dragFrame, 1)[0];
+                    currentAnimation.frames.splice(targetIndex > dragFrame ? targetIndex - 1 : targetIndex, 0, frameToMove);
+                    currentFrame = targetIndex > dragFrame ? targetIndex - 1 : targetIndex; dragFrame = currentFrame;
+                    selectedFrames.clear();
                 }
-
+                if (getCurrentHistoryLoggingEnabled()) {
+                    const newState = serializeAnimationState();
+                    addUndoCommand({
+                        description: "Reorder Frame",
+                        oldState: oldState,
+                        newState: newState,
+                        undo: () => restoreAnimationState(oldState),
+                        redo: () => restoreAnimationState(newState)
+                    });
+                }
                 redraw();
                 updateFrameInfo();
             }
@@ -6170,50 +6385,54 @@ window.addEventListener("load", async () => {
 
     timelineCanvas.onwheel = (e) => {
         e.preventDefault();
-        if (timelineTotalWidth > timelineCanvas.width) {
-            const scrollSpeed = 50;
-            timelineScrollX += e.deltaY > 0 ? scrollSpeed : -scrollSpeed;
+        if (e.ctrlKey) {
+            const factor = e.deltaY < 0 ? 1.15 : 0.87;
+            const mouseX = e.offsetX;
+            const worldX = mouseX + timelineScrollX;
+            timelineZoom = Math.max(0.25, Math.min(5.0, timelineZoom * factor));
+            timelineScrollX = Math.max(0, worldX - mouseX);
+            drawTimeline();
+        } else if (timelineTotalWidth > timelineCanvas.width) {
+            timelineScrollX += e.deltaY > 0 ? 50 : -50;
             timelineScrollX = Math.max(0, Math.min(timelineTotalWidth - timelineCanvas.width, timelineScrollX));
             drawTimeline();
         }
     };
 
+    window.addEventListener("keydown", (e) => {
+        if (e.ctrlKey && (e.key === "w" || e.key === "W")) e.preventDefault();
+    }, true);
+
     document.addEventListener("keydown", (e) => {
+        if (matchesKeybind(e, keybinds.save)) {
+            e.preventDefault();
+            if (currentAnimation) document.getElementById("btnSave").click();
+            return;
+        }
         const activeElement = document.activeElement;
         if (activeElement && (activeElement.tagName === "INPUT" || activeElement.tagName === "TEXTAREA" || activeElement.tagName === "SELECT" || activeElement.contentEditable === "true")) {
             return;
         }
-        if (e.ctrlKey && e.key === "z" && !e.shiftKey) {
+        if (matchesKeybind(e, keybinds.undo)) {
             e.preventDefault();
             undo();
-        } else if ((e.ctrlKey && e.key === "y") || (e.ctrlKey && e.shiftKey && e.key === "z")) {
+        } else if (matchesKeybind(e, keybinds.redo) || (e.ctrlKey && e.shiftKey && e.key === "z")) {
             e.preventDefault();
             redo();
-        } else if (e.ctrlKey && e.key === "s") {
-            e.preventDefault();
-            if (currentAnimation) {
-                document.getElementById("btnSave").click();
-            }
-        } else if (e.ctrlKey && e.key === "r") {
+        } else if (matchesKeybind(e, keybinds.resetEditor)) {
             e.preventDefault();
             const settingsReset = document.getElementById("settingsReset");
             if (settingsReset && settingsReset.onclick) {
                 settingsReset.onclick({ stopPropagation: () => {} });
             }
-        } else if (e.ctrlKey && e.key === "o") {
+        } else if (matchesKeybind(e, keybinds.open)) {
             e.preventDefault();
             const btnOpen = document.getElementById("btnOpen");
-            if (btnOpen && btnOpen.onclick) {
-                btnOpen.onclick();
-            }
-        } else if (e.key === "F1") {
+            if (btnOpen && btnOpen.onclick) btnOpen.onclick();
+        } else if (matchesKeybind(e, keybinds.infoDialog)) {
             e.preventDefault();
-            const hotkeysDialog = document.getElementById("hotkeysDialog");
-            if (hotkeysDialog) {
-                updateHotkeysDialog();
-                hotkeysDialog.style.display = "flex";
-            }
-        } else if (e.altKey && e.key === "z") {
+            openInfoDialog("about");
+        } else if (matchesKeybind(e, keybinds.togglePanels)) {
             e.preventDefault();
             const leftPanel = document.querySelector(".left-panel");
             const rightPanel = document.querySelector(".right-panel");
@@ -6352,7 +6571,7 @@ window.addEventListener("load", async () => {
                 if (fileInput) {
                     fileInput.click();
             }
-        } else if (e.key === "Escape" || e.key === "Esc") {
+        } else if (matchesKeybind(e, keybinds.deselect)) {
             e.preventDefault();
             selectedPieces.clear();
             editingSprite = null;
@@ -6362,7 +6581,7 @@ window.addEventListener("load", async () => {
             updateItemSettings();
             updateSpritesList();
             redraw();
-        } else if ((e.key === "Delete" || e.key === "Backspace") && selectedPieces.size > 0 && !e.ctrlKey && !e.altKey) {
+        } else if ((matchesKeybind(e, keybinds.deletePiece) || e.key === "Backspace") && selectedPieces.size > 0 && !e.ctrlKey && !e.altKey) {
             e.preventDefault();
             const frame = currentAnimation.getFrame(currentFrame);
             if (frame) {
@@ -6400,7 +6619,7 @@ window.addEventListener("load", async () => {
                 redraw();
                 saveSession();
             }
-        } else if (e.key === "Tab") {
+        } else if (matchesKeybind(e, keybinds.cycleSprite, {ignoreShift: true})) {
             e.preventDefault();
             if (!currentAnimation) return;
             const frame = currentAnimation.getFrame(currentFrame);
@@ -6409,41 +6628,66 @@ window.addEventListener("load", async () => {
                 const allPieces = [...frame.pieces[actualDir], ...frame.sounds];
                 if (allPieces.length > 0) {
                     let currentIndex = -1;
-                    if (selectedPieces.size === 1) {
-                        const selected = Array.from(selectedPieces)[0];
-                        currentIndex = allPieces.indexOf(selected);
-                    }
+                    if (selectedPieces.size >= 1) currentIndex = allPieces.indexOf([...selectedPieces].pop());
                     const nextIndex = (currentIndex + 1) % allPieces.length;
-                    selectedPieces.clear();
+                    if (!e.shiftKey) selectedPieces.clear();
                     selectedPieces.add(allPieces[nextIndex]);
                     updateItemsCombo();
                     redraw();
                 }
             }
-        } else if (e.key === "Delete") {
-            if (!currentAnimation) return;
+        } else if (matchesKeybind(e, keybinds.selectAll) && currentAnimation) {
+            e.preventDefault();
             const frame = currentAnimation.getFrame(currentFrame);
-            if (frame && selectedPieces.size > 0) {
+            if (frame) {
                 const actualDir = getDirIndex(currentDir);
-                frame.pieces[actualDir] = frame.pieces[actualDir].filter(p => !selectedPieces.has(p));
                 selectedPieces.clear();
-                redraw();
+                for (const p of (frame.pieces[actualDir] || [])) selectedPieces.add(p);
                 updateItemsCombo();
-                saveSession();
+                redraw();
             }
-        } else if (e.key === "+" || e.key === "=") {
+        } else if (matchesKeybind(e, keybinds.layerUp) && currentAnimation) {
+            e.preventDefault();
+            document.getElementById("btnItemLayerUp").click();
+        } else if (matchesKeybind(e, keybinds.layerDown) && currentAnimation) {
+            e.preventDefault();
+            document.getElementById("btnItemLayerDown").click();
+        } else if ((matchesKeybind(e, keybinds.prevFrame) || matchesKeybind(e, keybinds.nextFrame)) && currentAnimation) {
+            e.preventDefault();
+            const dir = matchesKeybind(e, keybinds.prevFrame) ? -1 : 1;
+            const newFrame = Math.max(0, Math.min(currentAnimation.frames.length - 1, currentFrame + dir));
+            if (newFrame !== currentFrame) {
+                const actualDir = getDirIndex(currentDir);
+                const oldPieces = (currentAnimation.getFrame(currentFrame)?.pieces[actualDir]) || [];
+                const prevSelected = Array.from(selectedPieces).filter(p => p.type === "sprite").map(p => ({ spriteIndex: p.spriteIndex, spriteName: p.spriteName || "", arrayIndex: oldPieces.indexOf(p) }));
+                currentFrame = newFrame;
+                saveCurrentFrame();
+                selectedPieces.clear();
+                if (prevSelected.length > 0) {
+                    const newPieces = (currentAnimation.getFrame(currentFrame)?.pieces[actualDir]) || [];
+                    for (const sel of prevSelected) {
+                        const piece = sel.arrayIndex >= 0 ? newPieces[sel.arrayIndex] : null;
+                        if (piece?.type === "sprite" && piece.spriteIndex === sel.spriteIndex && (piece.spriteName || "") === sel.spriteName) selectedPieces.add(piece);
+                    }
+                }
+                redraw();
+                updateFrameInfo();
+                const slider = document.getElementById("timelineSlider");
+                if (slider) slider.value = currentFrame;
+            }
+        } else if (matchesKeybind(e, keybinds.zoomIn) || e.key === "=") {
             zoomLevel++;
             if (zoomLevel >= zoomFactors.length) zoomLevel = zoomFactors.length - 1;
             localStorage.setItem("mainCanvasZoom", zoomLevel);
             updateMainCanvasZoomDisplay();
             redraw();
-        } else if (e.key === "-" || e.key === "_") {
+        } else if (matchesKeybind(e, keybinds.zoomOut) || e.key === "_") {
             zoomLevel--;
             if (zoomLevel < 0) zoomLevel = 0;
             localStorage.setItem("mainCanvasZoom", zoomLevel);
             updateMainCanvasZoomDisplay();
             redraw();
-        } else if (e.key === " ") {
+        } else if (matchesKeybind(e, keybinds.play)) {
             e.preventDefault();
             document.getElementById("btnPlay").click();
         } else if (!currentAnimation) {
@@ -6987,7 +7231,7 @@ window.addEventListener("load", async () => {
             document.body.style.background = "";
             document.body.style.color = "";
             const settingsDialog = document.getElementById("settingsDialog");
-            const aboutDialog = document.getElementById("aboutDialog");
+            const aboutDialog = document.getElementById("infoDialog");
             if (settingsDialog) {
                 const settingsContent = settingsDialog.querySelector(".dialog-content");
                 if (settingsContent) {
@@ -7390,6 +7634,85 @@ window.addEventListener("load", async () => {
                 colorSchemeDropdown.style.display = "none";
             }
         });
+        const btnCustomCSS = document.getElementById("btnCustomCSS");
+        if (btnCustomCSS) {
+            btnCustomCSS.onmouseenter = () => { btnCustomCSS.style.background = "#252525"; };
+            btnCustomCSS.onmouseleave = () => { btnCustomCSS.style.background = ""; };
+            btnCustomCSS.onclick = (e) => {
+                e.stopPropagation();
+                colorSchemeDropdown.style.display = "none";
+                openCustomCSSDialog();
+            };
+        }
+    }
+    (function initCustomCSS() {
+        const saved = localStorage.getItem("ganiEditorCustomCSS");
+        if (saved) {
+            let tag = document.getElementById("customUserCSS");
+            if (!tag) { tag = document.createElement("style"); tag.id = "customUserCSS"; document.head.appendChild(tag); }
+            tag.textContent = saved;
+        }
+    })();
+    function openCustomCSSDialog() {
+        const fontFamily = getFontFamily(localStorage.getItem("editorFont") || "chevyray");
+        const current = (document.getElementById("customUserCSS") || {}).textContent || "";
+        const overlay = document.createElement("div");
+        overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;display:flex;justify-content:center;align-items:center;";
+        overlay.innerHTML = `
+            <div style="background:#2b2b2b;border:2px solid #1a1a1a;width:560px;max-width:92vw;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 4px 16px rgba(0,0,0,0.9);">
+                <div style="background:#1e1e1e;border-bottom:2px solid #0a0a0a;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;">
+                    <span style="font-family:${fontFamily};font-size:13px;color:#c0c0c0;user-select:none;">Custom CSS</span>
+                    <span style="font-family:${fontFamily};font-size:11px;color:#666;user-select:none;">injected after all themes — overrides anything</span>
+                </div>
+                <textarea id="customCSSTextarea" spellcheck="false" style="flex:1;min-height:320px;background:#1a1a1a;color:#e0e0e0;border:none;border-bottom:1px solid #0a0a0a;padding:12px;font-family:monospace;font-size:12px;line-height:1.5;resize:none;outline:none;">${current.replace(/</g,"&lt;")}</textarea>
+                <div style="padding:10px 14px;display:flex;gap:8px;align-items:center;border-top:1px solid #0a0a0a;">
+                    <button id="cssApply" style="background:#1a6b1a;color:#fff;border:1px solid #0a0a0a;border-top:1px solid #2a8a2a;padding:7px 14px;cursor:pointer;font-family:${fontFamily};font-size:12px;">Apply</button>
+                    <button id="cssImport" style="background:#1a1a1a;color:#e0e0e0;border:1px solid #0a0a0a;border-top:1px solid #404040;padding:7px 14px;cursor:pointer;font-family:${fontFamily};font-size:12px;">Import</button>
+                    <button id="cssExport" style="background:#1a1a1a;color:#e0e0e0;border:1px solid #0a0a0a;border-top:1px solid #404040;padding:7px 14px;cursor:pointer;font-family:${fontFamily};font-size:12px;">Export</button>
+                    <a id="cssExample" href="example-theme.css" download style="background:#1a1a1a;color:#4a9eff;border:1px solid #0a0a0a;border-top:1px solid #404040;padding:7px 14px;cursor:pointer;font-family:${fontFamily};font-size:12px;text-decoration:none;">Example</a>
+                    <div style="flex:1;"></div>
+                    <button id="cssClear" style="background:#6b1a1a;color:#fff;border:1px solid #0a0a0a;border-top:1px solid #8a2a2a;padding:7px 14px;cursor:pointer;font-family:${fontFamily};font-size:12px;">Clear</button>
+                    <button id="cssClose" style="background:#1a1a1a;color:#e0e0e0;border:1px solid #0a0a0a;border-top:1px solid #404040;padding:7px 14px;cursor:pointer;font-family:${fontFamily};font-size:12px;">Close</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        const textarea = overlay.querySelector("#customCSSTextarea");
+        const applyCSS = () => {
+            const css = textarea.value;
+            let tag = document.getElementById("customUserCSS");
+            if (!tag) { tag = document.createElement("style"); tag.id = "customUserCSS"; document.head.appendChild(tag); }
+            tag.textContent = css;
+            localStorage.setItem("ganiEditorCustomCSS", css);
+        };
+        overlay.querySelector("#cssApply").onclick = applyCSS;
+        overlay.querySelector("#cssClose").onclick = () => document.body.removeChild(overlay);
+        overlay.onclick = (e) => { if (e.target === overlay) document.body.removeChild(overlay); };
+        overlay.querySelector("#cssClear").onclick = () => {
+            textarea.value = "";
+            const tag = document.getElementById("customUserCSS");
+            if (tag) tag.textContent = "";
+            localStorage.removeItem("ganiEditorCustomCSS");
+        };
+        overlay.querySelector("#cssImport").onclick = () => {
+            const input = document.createElement("input");
+            input.type = "file"; input.accept = ".css,text/css";
+            input.onchange = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => { textarea.value = ev.target.result; applyCSS(); };
+                reader.readAsText(file);
+            };
+            input.click();
+        };
+        overlay.querySelector("#cssExport").onclick = () => {
+            const blob = new Blob([textarea.value], {type: "text/css"});
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = "custom-theme.css";
+            a.click();
+            URL.revokeObjectURL(a.href);
+        };
     }
     function createCustomDropdown(selectElement) {
         if (!selectElement || selectElement.dataset.customDropdown) return;
@@ -7644,7 +7967,7 @@ window.addEventListener("load", async () => {
             document.querySelectorAll(".color-scheme-item").forEach(item => {
                 item.style.fontFamily = fontFamily;
             });
-            const aboutDialog = document.getElementById("aboutDialog");
+            const aboutDialog = document.getElementById("infoDialog");
             if (aboutDialog) {
                 const aboutContent = aboutDialog.querySelector(".dialog-content");
                 if (aboutContent) {
@@ -8408,100 +8731,135 @@ window.addEventListener("load", async () => {
         e.target.classList.toggle("active", keysSwapped);
         saveSession();
     };
-    const btnAbout = document.getElementById("btnAbout");
-    const aboutDialog = document.getElementById("aboutDialog");
-    const aboutOK = document.getElementById("aboutOK");
-    const aboutVersion = document.getElementById("aboutVersion");
-    if (btnAbout && aboutDialog && aboutOK) {
-        const VERSION_HASH = "2.0.0";
-        if (aboutVersion) {
-            aboutVersion.textContent = `${VERSION_HASH}`;
+    const APP_VERSION = "2.1.0";
+    const _infoDialog = document.getElementById("infoDialog");
+    const _infoClose = document.getElementById("infoClose");
+    const _infoContent = document.getElementById("infoContent");
+    let _changelogData = null;
+    function _getInfoTabHTML(tab) {
+        const fontFamily = getFontFamily(localStorage.getItem("editorFont") || "chevyray");
+        if (tab === "about") return `
+            <p style="margin:0 0 12px 0;">Version <span style="color:#888; font-size:10px;">${APP_VERSION}</span></p>
+            <p style="margin:0 0 12px 0;">A javascript-based animation editor for GANI files, based around Stefan/39sters editors.</p>
+            <p style="margin:0 0 12px 0;">Part of Preagonal/OpenGraal - preserving Graal for future generations.</p>
+            <p style="margin:0 0 12px 0; border-top:1px solid #0a0a0a; padding-top:12px; font-size:11px; color:#888;">
+                <strong>Credits:</strong><br>
+                Original C++ GaniEditor by <a href="https://www.xing.com/profile/Stefan_Knorr9" target="_blank" style="color:#4a9eff; text-decoration:none;">Stefan Knorr</a><br>
+                Modern C++ version by <a href="https://github.com/lukegrahamSydney/TilesEditor" target="_blank" style="color:#4a9eff; text-decoration:none;">39ster/luke graham</a><br>
+                Javascript Web version by <a href="https://github.com/denveous" target="_blank" style="color:#4a9eff; text-decoration:none;">denveous</a>
+            </p>`;
+        if (tab === "keybinds") {
+            const editableActions = [
+                { key: "save", label: "Save" },
+                { key: "open", label: "Open" },
+                { key: "undo", label: "Undo" },
+                { key: "redo", label: "Redo" },
+                { key: "play", label: "Play / Pause" },
+                { key: "zoomIn", label: "Zoom In" },
+                { key: "zoomOut", label: "Zoom Out" },
+                { key: "deselect", label: "Deselect / Close" },
+                { key: "deletePiece", label: "Delete Piece" },
+                { key: "selectAll", label: "Select All Sprites" },
+                { key: "cycleSprite", label: "Cycle Sprite (Shift = add)" },
+                { key: "layerUp", label: "Layer Up" },
+                { key: "layerDown", label: "Layer Down" },
+                { key: "prevFrame", label: "Previous Frame" },
+                { key: "nextFrame", label: "Next Frame" },
+                { key: "togglePanels", label: "Toggle Panels" },
+                { key: "resetEditor", label: "Reset Editor" },
+                { key: "infoDialog", label: "Info / Help" },
+            ];
+            const kbRow = (label, key) => `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;margin-left:16px;"><span style="color:#c0c0c0;">${label}</span><button class="keybind-edit-btn" data-action="${key}" title="Click to rebind, right-click to reset" style="min-width:72px;text-align:center;cursor:pointer;background:#1a1a1a;border:1px solid #444;color:#e0e0e0;padding:2px 8px;border-radius:3px;font-size:11px;">${formatKeybind(keybinds[key])}</button></div>`;
+            return `<div style="margin-bottom:8px;"><strong>Editable Shortcuts</strong> <span style="color:#555;font-size:10px;">click to rebind · right-click to reset</span></div>
+${editableActions.map(a => kbRow(a.label, a.key)).join("")}
+<div style="margin-top:14px;margin-bottom:8px;"><strong>Fixed Shortcuts</strong></div>
+<div style="margin-left:16px;margin-bottom:4px;color:#c0c0c0;">Arrows — Move Selected Piece</div>
+<div style="margin-left:16px;margin-bottom:4px;color:#c0c0c0;">Backspace — Delete Piece</div>
+<div style="margin-left:16px;margin-bottom:4px;color:#c0c0c0;">Shift+Click Canvas — Add to selection</div>
+<div style="margin-top:14px;margin-bottom:8px;"><strong>Timeline</strong></div>
+<div style="margin-left:16px;margin-bottom:4px;color:#c0c0c0;">Ctrl+Scroll — Zoom Timeline</div>
+<div style="margin-left:16px;margin-bottom:4px;color:#c0c0c0;">Shift/Ctrl+Click Frame — Multi-select frames</div>
+<div style="margin-left:16px;margin-bottom:4px;color:#c0c0c0;">Drag selected frame — Move group</div>`;
         }
-        const updateAboutFont = () => {
-            const currentFont = localStorage.getItem("editorFont") || "chevyray";
-            const fontFamily = getFontFamily(currentFont);
-            const aboutContent = aboutDialog.querySelector(".dialog-content");
-            if (aboutContent) {
-                aboutContent.style.fontFamily = fontFamily;
-                const h3 = aboutContent.querySelector("h3");
-                if (h3) h3.style.fontFamily = fontFamily;
-                aboutContent.querySelectorAll("p, span, div, a").forEach(el => {
-                    el.style.fontFamily = fontFamily;
+        return "";
+    }
+    function _renderChangelog() {
+        if (!_changelogData || !_infoContent) return;
+        _infoContent.style.fontFamily = getFontFamily(localStorage.getItem("editorFont") || "chevyray");
+        _infoContent.innerHTML = _changelogData.map(entry => `
+            <div style="margin-bottom:20px;">
+                <div style="font-size:13px; color:#4a9eff; margin-bottom:8px; border-bottom:1px solid #3a3a3a; padding-bottom:6px;">v${entry.version} <span style="color:#666; font-size:11px;">(${entry.date})</span></div>
+                <ul style="margin:0; padding-left:20px; color:#c0c0c0;">${entry.changes.map(c => `<li style="margin-bottom:4px;">${c}</li>`).join("")}</ul>
+            </div>`).join("");
+    }
+    function switchInfoTab(tab) {
+        if (!_infoContent) return;
+        _infoContent.style.fontFamily = getFontFamily(localStorage.getItem("editorFont") || "chevyray");
+        document.querySelectorAll(".info-tab-btn").forEach(btn => {
+            const active = btn.dataset.tab === tab;
+            btn.style.color = active ? "#4a9eff" : "#888";
+            btn.style.background = active ? "#252525" : "transparent";
+        });
+        if (tab === "changelog") {
+            if (_changelogData) { _renderChangelog(); return; }
+            _infoContent.innerHTML = `<div style="color:#888;">Loading...</div>`;
+            fetch("changelog.json").then(r => r.json()).then(data => { _changelogData = data; _renderChangelog(); }).catch(() => { _infoContent.innerHTML = `<div style="color:#888;">Failed to load changelog.</div>`; });
+        } else {
+            _infoContent.innerHTML = _getInfoTabHTML(tab);
+            if (tab === "keybinds") {
+                _infoContent.querySelectorAll(".keybind-edit-btn").forEach(btn => {
+                    btn.onclick = () => {
+                        if (btn.dataset.listening) return;
+                        btn.dataset.listening = "1";
+                        const orig = btn.textContent;
+                        btn.textContent = "…press key…";
+                        btn.style.color = "#4a9eff";
+                        const capture = (ev) => {
+                            if (ev.key === "Escape") { btn.textContent = orig; btn.style.color = "#e0e0e0"; delete btn.dataset.listening; document.removeEventListener("keydown", capture, true); return; }
+                            ev.preventDefault(); ev.stopPropagation();
+                            const parts = [];
+                            if (ev.ctrlKey) parts.push("ctrl");
+                            if (ev.shiftKey) parts.push("shift");
+                            if (ev.altKey) parts.push("alt");
+                            if (!["Control","Shift","Alt","Meta"].includes(ev.key)) parts.push(ev.key);
+                            if (parts.length === 0 || (parts.length === 1 && !["ctrl","shift","alt"].includes(parts[0])) || parts[parts.length - 1] !== ev.key) {
+                                keybinds[btn.dataset.action] = parts.join("+");
+                                saveKeybinds();
+                                btn.textContent = formatKeybind(keybinds[btn.dataset.action]);
+                                btn.style.color = "#e0e0e0";
+                                delete btn.dataset.listening;
+                                document.removeEventListener("keydown", capture, true);
+                            }
+                        };
+                        document.addEventListener("keydown", capture, true);
+                    };
+                    btn.oncontextmenu = (ev) => { ev.preventDefault(); keybinds[btn.dataset.action] = DEFAULT_KEYBINDS[btn.dataset.action]; saveKeybinds(); btn.textContent = formatKeybind(DEFAULT_KEYBINDS[btn.dataset.action]); };
                 });
             }
-        };
-        const updateHistoryFont = () => {
-            const currentFont = localStorage.getItem("editorFont") || "chevyray";
-            const fontFamily = getFontFamily(currentFont);
-            const historyList = document.getElementById("historyList");
-            if (historyList) {
-                historyList.style.fontFamily = fontFamily;
-                historyList.querySelectorAll("div").forEach(item => {
-                    item.style.fontFamily = fontFamily;
-                });
-            }
-        };
-        const updateAllH3Fonts = () => {
-            const currentFont = localStorage.getItem("editorFont") || "chevyray";
-            let fontFamily = currentFont;
-            if (currentFont === "PressStart2P") fontFamily = '"PressStart2P", monospace';
-            else if (currentFont === "Silkscreen") fontFamily = '"Silkscreen", monospace';
-            else if (currentFont === "Tempus Sans ITC") fontFamily = '"Tempus Sans ITC", monospace';
-            else if (currentFont === "MesloLGS NF") fontFamily = '"MesloLGS NF", monospace';
-            else if (currentFont === "chevyray") fontFamily = '"chevyray", monospace';
-            else if (currentFont === "chevyrayOeuf") fontFamily = '"chevyrayOeuf", monospace';
-            else if (currentFont === "monospace") fontFamily = "monospace";
-            document.querySelectorAll("h3").forEach(h3 => {
-                h3.style.fontFamily = fontFamily;
-            });
-        };
-        updateAboutFont();
-        updateHistoryFont();
-        updateAllH3Fonts();
-        btnAbout.onclick = () => {
-            updateAboutFont();
-            aboutDialog.style.display = "flex";
-        };
-        aboutOK.onclick = () => {
-            aboutDialog.style.display = "none";
-        };
-        aboutDialog.onclick = (e) => {
-            if (e.target === aboutDialog) {
-                aboutDialog.style.display = "none";
-            }
-        };
-    }
-    const hotkeysDialog = document.getElementById("hotkeysDialog");
-    const hotkeysOK = document.getElementById("hotkeysOK");
-    const hotkeysContent = document.getElementById("hotkeysContent");
-    function updateHotkeysDialog() {
-        const currentFont = localStorage.getItem("editorFont") || "chevyray";
-        const fontFamily = getFontFamily(currentFont);
-        if (hotkeysContent) {
-            hotkeysContent.style.fontFamily = fontFamily;
-            hotkeysContent.innerHTML = `
-                <div style="margin-bottom: 12px;"><strong>File Operations:</strong></div>
-                <div style="margin-left: 16px; margin-bottom: 8px;">Ctrl+O - Open File</div>
-                <div style="margin-left: 16px; margin-bottom: 8px;">Ctrl+S - Save File</div>
-                <div style="margin-top: 16px; margin-bottom: 12px;"><strong>Editor:</strong></div>
-                <div style="margin-left: 16px; margin-bottom: 8px;">Ctrl+R - Reset Editor</div>
-                <div style="margin-left: 16px; margin-bottom: 8px;">Ctrl+Z - Undo</div>
-                <div style="margin-left: 16px; margin-bottom: 8px;">Ctrl+Y - Redo</div>
-                <div style="margin-left: 16px; margin-bottom: 8px;">Alt+Z - Toggle All Panels</div>
-                <div style="margin-left: 16px; margin-bottom: 8px;">ESC - Deselect / Close Dialogs</div>
-            `;
         }
     }
-    if (hotkeysDialog && hotkeysOK) {
-        hotkeysOK.onclick = () => {
-            hotkeysDialog.style.display = "none";
-        };
-        hotkeysDialog.onclick = (e) => {
-            if (e.target === hotkeysDialog) {
-                hotkeysDialog.style.display = "none";
-            }
-        };
+    function openInfoDialog(tab = "about") {
+        if (!_infoDialog) return;
+        _infoDialog.style.display = "flex";
+        switchInfoTab(tab);
     }
+    if (_infoDialog && _infoClose) {
+        _infoClose.onclick = () => { _infoDialog.style.display = "none"; };
+        _infoDialog.onclick = (e) => { if (e.target === _infoDialog) _infoDialog.style.display = "none"; };
+        document.querySelectorAll(".info-tab-btn").forEach(btn => { btn.onclick = () => switchInfoTab(btn.dataset.tab); });
+        const btnAbout = document.getElementById("btnAbout");
+        if (btnAbout) btnAbout.onclick = () => openInfoDialog("about");
+    }
+    const updateHistoryFont = () => {
+        const fontFamily = getFontFamily(localStorage.getItem("editorFont") || "chevyray");
+        const historyList = document.getElementById("historyList");
+        if (historyList) {
+            historyList.style.fontFamily = fontFamily;
+            historyList.querySelectorAll("div").forEach(item => { item.style.fontFamily = fontFamily; });
+        }
+    };
+    updateHistoryFont();
+    document.querySelectorAll("h3").forEach(h3 => { h3.style.fontFamily = getFontFamily(localStorage.getItem("editorFont") || "chevyray"); });
     document.getElementById("btnDefaults").onclick = () => {
         const table = document.getElementById("defaultsTable");
         if (table.style.visibility === "hidden" || table.style.visibility === "") {
@@ -8634,7 +8992,7 @@ window.addEventListener("load", async () => {
         const pos = getPreviewCanvasPos(e);
         if (e.button === 2) {
             if (insertPiece) {
-                insertPiece = null;
+                insertPiece = null; insertPieces = [];
                 drawSpritePreview();
                 return;
             }
@@ -9128,6 +9486,29 @@ window.addEventListener("load", async () => {
             mainCanvas.style.cursor = "grabbing";
             e.preventDefault();
         } else if (e.button === 1 || (e.button === 0 && e.ctrlKey)) {
+            if (e.button === 0 && e.ctrlKey && currentAnimation) {
+                const frame = currentAnimation.getFrame(currentFrame);
+                if (frame) {
+                    let dirToUse = currentDir;
+                    if (splitViewEnabled && !currentAnimation.singleDir) {
+                        const quadWidth = logicalWidth / 2;
+                        const quadHeight = logicalHeight / 2;
+                        const quadIndex = Math.floor(adjustedY / quadHeight) * 2 + Math.floor(adjustedX / quadWidth);
+                        dirToUse = Math.min(3, Math.max(0, quadIndex));
+                    }
+                    const actualDir = getDirIndex(dirToUse);
+                    const pieces = frame.pieces[actualDir] || [];
+                    let hitPiece = null;
+                    for (let i = pieces.length - 1; i >= 0; i--) {
+                        const bb = pieces[i].getBoundingBox(currentAnimation);
+                        if (x >= bb.x && x < bb.x + bb.width && y >= bb.y && y < bb.y + bb.height) { hitPiece = pieces[i]; break; }
+                    }
+                    if (hitPiece) {
+                        if (selectedPieces.has(hitPiece)) selectedPieces.delete(hitPiece); else { selectedPieces.add(hitPiece); selectedPieceDir = actualDir; }
+                        updateItemsCombo(); updateItemSettings(); redraw(); return;
+                    }
+                }
+            }
             isPanning = true;
             panStartX = e.clientX - panX;
             panStartY = e.clientY - panY;
@@ -9155,6 +9536,8 @@ window.addEventListener("load", async () => {
                     frame.pieces[actualDir].push(insertPiece);
                     selectedPieces.clear();
                     selectedPieces.add(insertPiece);
+                    for (const ep of insertPieces) { ep.xoffset = insertPiece.xoffset; ep.yoffset = insertPiece.yoffset; frame.pieces[actualDir].push(ep); selectedPieces.add(ep); }
+                    insertPieces = [];
                     const newState = serializeAnimationState();
                     addUndoCommand({
                         description: (() => {
@@ -9311,15 +9694,6 @@ window.addEventListener("load", async () => {
                     }
                 }
                 if (!found) {
-                    if (!e.shiftKey) {
-                        selectedPieces.clear();
-                        selectedPieceDir = null;
-                        const combo = document.getElementById("itemsCombo");
-                        if (combo) combo.value = "";
-                        updateItemsCombo();
-                        updateItemSettings();
-                        redraw();
-                    }
                     boxSelectStart = {x, y};
                     boxSelectEnd = {x, y};
                     isBoxSelecting = true;
@@ -9341,6 +9715,15 @@ window.addEventListener("load", async () => {
                         }
                     } else {
                         boxSelectQuadrant = -1;
+                    }
+                    if (!e.shiftKey) {
+                        selectedPieces.clear();
+                        selectedPieceDir = null;
+                        const combo = document.getElementById("itemsCombo");
+                        if (combo) combo.value = "";
+                        updateItemsCombo();
+                        updateItemSettings();
+                        redraw();
                     }
                 }
             }
@@ -9432,7 +9815,7 @@ window.addEventListener("load", async () => {
                 rightClickJustDragged = true;
             } else {
                 if (insertPiece) {
-                    insertPiece = null;
+                    insertPiece = null; insertPieces = [];
                     mainCanvas.style.cursor = "default";
                     redraw();
                 } else if (selectedPieces.size > 0) {
@@ -9465,7 +9848,8 @@ window.addEventListener("load", async () => {
                     }
                     return `Sound - ${p.fileName || 'unnamed'}`;
                 }).join(", ");
-                if (JSON.stringify(dragStartState) !== JSON.stringify(newState)) {
+                const _stripSel = s => { const {selectedPieceIds, selectedPieceDir, ...r} = s; return r; };
+                if (JSON.stringify(_stripSel(dragStartState)) !== JSON.stringify(_stripSel(newState))) {
                     addUndoCommand({
                         description: `Move Piece${selectedPieces.size > 1 ? 's' : ''} (${movedPieces})`,
                         oldState: dragStartState,
@@ -9800,7 +10184,8 @@ window.addEventListener("load", async () => {
                     }
                     return `Sound - ${p.fileName || 'unnamed'}`;
                 }).join(", ");
-                if (JSON.stringify(dragStartState) !== JSON.stringify(newState)) {
+                const _stripSel2 = s => { const {selectedPieceIds, selectedPieceDir, ...r} = s; return r; };
+                if (JSON.stringify(_stripSel2(dragStartState)) !== JSON.stringify(_stripSel2(newState))) {
                     addUndoCommand({
                         description: `Move Piece${selectedPieces.size > 1 ? 's' : ''} (${movedPieces})`,
                         oldState: dragStartState,
@@ -10645,7 +11030,7 @@ function showAddSpriteDialog(editSprite = null) {
     effectsGrid.style.gridTemplateColumns = "auto 1fr";
     effectsGrid.style.gap = "4px 8px";
     effectsGrid.style.alignItems = "center";
-    effectsGrid.innerHTML = `<label style="font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">Color Enabled:</label><span id="addSpriteColorEnabledCheckbox" style="display:inline-block;width:16px;height:16px;text-align:center;border:1px solid ${dialogColors.border === "#0a0a0a" ? "#555" : dialogColors.border};background:${dialogColors.inputBg};vertical-align:middle;line-height:14px;font-size:12px;cursor:pointer;user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;"> </span><label style="font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">Color:</label><input type="color" id="addSpriteColorSwatch" style="width:100%;height:32px;background:${dialogColors.inputBg};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};cursor:pointer;box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);"><label style="font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">Color R:</label><input type="number" id="addSpriteColorR" min="0" max="255" value="255" style="width:100%;background:${dialogColors.inputBg};color:${dialogColors.text};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};padding:4px;font-size:12px;font-family:${fontFamily};box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);"><label style="font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">Color G:</label><input type="number" id="addSpriteColorG" min="0" max="255" value="255" style="width:100%;background:${dialogColors.inputBg};color:${dialogColors.text};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};padding:4px;font-size:12px;font-family:${fontFamily};box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);"><label style="font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">Color B:</label><input type="number" id="addSpriteColorB" min="0" max="255" value="255" style="width:100%;background:${dialogColors.inputBg};color:${dialogColors.text};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};padding:4px;font-size:12px;font-family:${fontFamily};box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);"><label style="font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">Color A:</label><input type="number" id="addSpriteColorA" min="0" max="255" value="255" style="width:100%;background:${dialogColors.inputBg};color:${dialogColors.text};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};padding:4px;font-size:12px;font-family:${fontFamily};box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);"><label style="font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">Zoom:</label><input type="number" id="addSpriteZoom" min="0.1" max="10" step="0.01" value="1" style="width:100%;background:${dialogColors.inputBg};color:${dialogColors.text};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};padding:4px;font-size:12px;font-family:${fontFamily};box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);"><label style="font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">Rotate:</label><input type="number" id="addSpriteRotate" min="-360" max="360" step="1" value="0" style="width:100%;background:${dialogColors.inputBg};color:${dialogColors.text};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};padding:4px;font-size:12px;font-family:${fontFamily};box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);"><label style="font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">Mode:</label><select id="addSpriteMode" style="width:100%;background:${dialogColors.inputBg};color:${dialogColors.text};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};padding:4px;font-size:12px;font-family:${fontFamily};box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);"><option value="">Simple (Off)</option><option value="0">Lights (0)</option><option value="1">Transparency (1)</option><option value="2">Holes (2)</option></select><label style="font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">StretchX:</label><input type="number" id="addSpriteStretchX" min="-10" max="10" step="0.01" value="1" style="width:100%;background:${dialogColors.inputBg};color:${dialogColors.text};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};padding:4px;font-size:12px;font-family:${fontFamily};box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);"><label style="font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">StretchY:</label><input type="number" id="addSpriteStretchY" min="-10" max="10" step="0.01" value="1" style="width:100%;background:${dialogColors.inputBg};color:${dialogColors.text};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};padding:4px;font-size:12px;font-family:${fontFamily};box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);">`;
+    effectsGrid.innerHTML = `<label style="font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">Color Enabled:</label><span id="addSpriteColorEnabledCheckbox" style="display:inline-block;width:16px;height:16px;text-align:center;border:1px solid ${dialogColors.border === "#0a0a0a" ? "#555" : dialogColors.border};background:${dialogColors.inputBg};vertical-align:middle;line-height:14px;font-size:12px;cursor:pointer;user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;"> </span><label style="font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">Color:</label><input type="color" id="addSpriteColorSwatch" style="width:100%;height:32px;background:${dialogColors.inputBg};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};cursor:pointer;box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);"><label style="font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">Color R:</label><input type="number" id="addSpriteColorR" min="0" max="255" value="255" style="width:100%;background:${dialogColors.inputBg};color:${dialogColors.text};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};padding:4px;font-size:12px;font-family:${fontFamily};box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);"><label style="font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">Color G:</label><input type="number" id="addSpriteColorG" min="0" max="255" value="255" style="width:100%;background:${dialogColors.inputBg};color:${dialogColors.text};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};padding:4px;font-size:12px;font-family:${fontFamily};box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);"><label style="font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">Color B:</label><input type="number" id="addSpriteColorB" min="0" max="255" value="255" style="width:100%;background:${dialogColors.inputBg};color:${dialogColors.text};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};padding:4px;font-size:12px;font-family:${fontFamily};box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);"><label style="font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">Color A:</label><input type="number" id="addSpriteColorA" min="0" max="255" value="255" style="width:100%;background:${dialogColors.inputBg};color:${dialogColors.text};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};padding:4px;font-size:12px;font-family:${fontFamily};box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);"><label style="font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">Zoom:</label><input type="number" id="addSpriteZoom" min="0.1" max="10" step="0.01" value="1" style="width:100%;background:${dialogColors.inputBg};color:${dialogColors.text};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};padding:4px;font-size:12px;font-family:${fontFamily};box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);"><label style="font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">Rotate:</label><input type="number" id="addSpriteRotate" min="-360" max="360" step="1" value="0" style="width:100%;background:${dialogColors.inputBg};color:${dialogColors.text};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};padding:4px;font-size:12px;font-family:${fontFamily};box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);"><label style="font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">Mode:</label><select id="addSpriteMode" style="width:100%;background:${dialogColors.inputBg};color:${dialogColors.text};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};padding:4px;font-size:12px;font-family:${fontFamily};box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);"><option value="">Simple (Off)</option><option value="0">Lights (0)</option><option value="1">Transparency (1)</option><option value="2">Blacklight (2)</option></select><label style="font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">StretchX:</label><input type="number" id="addSpriteStretchX" min="-10" max="10" step="0.01" value="1" style="width:100%;background:${dialogColors.inputBg};color:${dialogColors.text};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};padding:4px;font-size:12px;font-family:${fontFamily};box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);"><label style="font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">StretchY:</label><input type="number" id="addSpriteStretchY" min="-10" max="10" step="0.01" value="1" style="width:100%;background:${dialogColors.inputBg};color:${dialogColors.text};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};padding:4px;font-size:12px;font-family:${fontFamily};box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);">`;
     effectsGroup.appendChild(effectsGrid);
     formLayout.appendChild(row1);
     formLayout.appendChild(row2);
@@ -12161,7 +12546,7 @@ function setupContextMenus() {
     document.addEventListener("keydown", (e) => {
         if (e.key === "Escape" || e.key === "Esc") {
             const settingsDialog = document.getElementById("settingsDialog");
-            const aboutDialog = document.getElementById("aboutDialog");
+            const aboutDialog = document.getElementById("infoDialog");
             const hotkeysDialog = document.getElementById("hotkeysDialog");
             const defaultGaniDialog = document.getElementById("defaultGaniDialog");
             const colorSchemeDropdown = document.getElementById("colorSchemeDropdown");
