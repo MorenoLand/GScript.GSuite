@@ -93,12 +93,15 @@ class FramePieceSprite {
     getBoundingBox(ani) {
         const sprite = ani.getAniSprite(this.spriteIndex, this.spriteName);
         if (sprite) {
-            return {
-                x: this.xoffset + sprite.boundingBox.x,
-                y: this.yoffset + sprite.boundingBox.y,
-                width: sprite.boundingBox.width,
-                height: sprite.boundingBox.height
-            };
+            const bb = sprite.boundingBox;
+            const pz = this._zoom || 1.0, px = this.xscale * pz, py = this.yscale * pz;
+            const rot = this.rotation * Math.PI / 180, cos = Math.cos(rot), sin = Math.sin(rot);
+            const cx = sprite.width / 2, cy = sprite.height / 2;
+            const corners = [{x:bb.x,y:bb.y},{x:bb.x+bb.width,y:bb.y},{x:bb.x+bb.width,y:bb.y+bb.height},{x:bb.x,y:bb.y+bb.height}];
+            const t = corners.map(p => { const dx=(p.x-cx)*px, dy=(p.y-cy)*py; return {x:dx*cos-dy*sin+cx, y:dx*sin+dy*cos+cy}; });
+            const minX=Math.min(...t.map(p=>p.x)), minY=Math.min(...t.map(p=>p.y));
+            const maxX=Math.max(...t.map(p=>p.x)), maxY=Math.max(...t.map(p=>p.y));
+            return {x:this.xoffset+minX, y:this.yoffset+minY, width:maxX-minX, height:maxY-minY};
         }
         return {x: this.xoffset, y: this.yoffset, width: 16, height: 16};
     }
@@ -379,6 +382,8 @@ let lastOpenDirectory = localStorage.getItem("ganiEditorLastOpenDir") || "";
 let onionSkinEnabled = false;
 let splitViewEnabled = localStorage.getItem("ganiEditorSplitView") === "true";
 let mirroredActionsEnabled = false;
+let pixelGridEnabled = false;
+let pixelGridSize = 16;
 let maxUndo = 50;
 let redrawScheduled = false;
 let redrawRafId = null;
@@ -440,10 +445,12 @@ let dragStartState = null;
 let clipboardFrames = null;
 let clipboardSprite = null;
 let clipboardPieces = null;
+let _spriteClipboard = null;
 let dragButton = null;
 let dragOffset = null;
 let dragStartMousePos = null;
 let pieceInitialPositions = new Map();
+let _dragMoveIndicator = null;
 let isDragging = false;
 let insertPiece = null;
 let insertPieces = [];
@@ -546,7 +553,7 @@ let selectedFrames = new Set();
 const DEFAULT_KEYBINDS = {
     prevFrame: ",", nextFrame: ".", cycleSprite: "Tab", selectAll: "ctrl+a", layerUp: "]", layerDown: "[",
     undo: "ctrl+z", redo: "ctrl+y", save: "ctrl+s", open: "ctrl+o", resetEditor: "ctrl+r",
-    infoDialog: "F1", togglePanels: "alt+z", play: " ", zoomIn: "+", zoomOut: "-",
+    infoDialog: "F1", settingsDialog: "F2", togglePanels: "alt+z", play: " ", zoomIn: "+", zoomOut: "-",
     deselect: "Escape", deletePiece: "Delete",
 };
 let keybinds = {...DEFAULT_KEYBINDS};
@@ -792,6 +799,22 @@ function drawGrid(ctx) {
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
+}
+
+function drawPixelGrid(ctx) {
+    const size = pixelGridSize;
+    const range = 512;
+    const start = -Math.ceil(range / size) * size;
+    const end = Math.ceil(range / size) * size;
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    for (let x = start; x <= end; x += size) { ctx.moveTo(x, start); ctx.lineTo(x, end); }
+    for (let y = start; y <= end; y += size) { ctx.moveTo(start, y); ctx.lineTo(end, y); }
+    ctx.stroke();
+    ctx.restore();
 }
 
 function drawSprite(ctx, sprite, x, y, level = 0, drawnSprites = null) {
@@ -1155,6 +1178,7 @@ function redraw() {
             if (showGrid) {
     drawGrid(ctx);
             }
+    if (pixelGridEnabled) drawPixelGrid(ctx);
     if (frame) {
         if (onionSkinEnabled) {
             if (currentFrame > 0) {
@@ -1223,38 +1247,54 @@ function redraw() {
     if (editingSprite) drawSpritePreview();
     if (isBoxSelecting && boxSelectStart && boxSelectEnd) {
         const zoom = zoomFactors[zoomLevel] || 1.0;
+        const _boxColor = getComputedStyle(document.documentElement).getPropertyValue("--selection-border-color").trim() || localStorage.getItem("editorSelectionBorderColor") || "#00ff00";
+        const _drawBoxSelect = (sx1, sy1, sx2, sy2) => {
+            const rx = Math.min(sx1, sx2), ry = Math.min(sy1, sy2), rw = Math.abs(sx2 - sx1), rh = Math.abs(sy2 - sy1);
+            ctx.strokeStyle = _boxColor;
+            ctx.fillStyle = _boxColor + "22";
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 5]);
+            ctx.fillRect(rx, ry, rw, rh);
+            ctx.strokeRect(rx, ry, rw, rh);
+            ctx.setLineDash([]);
+        };
         if (splitViewEnabled && !currentAnimation.singleDir) {
             if (boxSelectQuadrant >= 0 && boxSelectQuadrant < 4) {
-                const quadWidth = width / 2;
-                const quadHeight = height / 2;
+                const quadWidth = width / 2, quadHeight = height / 2;
                 const quadX = (boxSelectQuadrant % 2) * quadWidth;
                 const quadY = Math.floor(boxSelectQuadrant / 2) * quadHeight;
-                const screenX1 = boxSelectStart.x * zoom + quadX + quadWidth / 2 + panX;
-                const screenY1 = boxSelectStart.y * zoom + quadY + quadHeight / 2 + panY;
-                const screenX2 = boxSelectEnd.x * zoom + quadX + quadWidth / 2 + panX;
-                const screenY2 = boxSelectEnd.y * zoom + quadY + quadHeight / 2 + panY;
                 ctx.save();
                 ctx.beginPath();
                 ctx.rect(quadX, quadY, quadWidth, quadHeight);
                 ctx.clip();
-                ctx.strokeStyle = "#00ff00";
-                ctx.lineWidth = 1;
-                ctx.setLineDash([5, 5]);
-                ctx.strokeRect(Math.min(screenX1, screenX2), Math.min(screenY1, screenY2), Math.abs(screenX2 - screenX1), Math.abs(screenY2 - screenY1));
-                ctx.setLineDash([]);
+                _drawBoxSelect(boxSelectStart.x * zoom + quadX + quadWidth / 2 + panX, boxSelectStart.y * zoom + quadY + quadHeight / 2 + panY, boxSelectEnd.x * zoom + quadX + quadWidth / 2 + panX, boxSelectEnd.y * zoom + quadY + quadHeight / 2 + panY);
                 ctx.restore();
             }
         } else {
-        const screenX1 = boxSelectStart.x * zoom + width / 2 + panX;
-        const screenY1 = boxSelectStart.y * zoom + height / 2 + panY;
-        const screenX2 = boxSelectEnd.x * zoom + width / 2 + panX;
-        const screenY2 = boxSelectEnd.y * zoom + height / 2 + panY;
-        ctx.strokeStyle = "#00ff00";
-        ctx.lineWidth = 1;
-        ctx.setLineDash([5, 5]);
-        ctx.strokeRect(Math.min(screenX1, screenX2), Math.min(screenY1, screenY2), Math.abs(screenX2 - screenX1), Math.abs(screenY2 - screenY1));
-        ctx.setLineDash([]);
+            _drawBoxSelect(boxSelectStart.x * zoom + width / 2 + panX, boxSelectStart.y * zoom + height / 2 + panY, boxSelectEnd.x * zoom + width / 2 + panX, boxSelectEnd.y * zoom + height / 2 + panY);
         }
+    }
+    if (_dragMoveIndicator && !isDragging) {
+        const zoom = zoomFactors[zoomLevel] || 1.0;
+        ctx.save();
+        ctx.translate(width / 2 + panX, height / 2 + panY);
+        ctx.scale(zoom, zoom);
+        for (const [piece, startPos] of _dragMoveIndicator.startPositions) {
+            const bb = piece.getBoundingBox(currentAnimation);
+            if (!bb) continue;
+            const hw = bb.width / 2, hh = bb.height / 2;
+            const sx = startPos.x + hw, sy = startPos.y + hh;
+            const cx = piece.xoffset + hw, cy = piece.yoffset + hh;
+            ctx.setLineDash([3 / zoom, 3 / zoom]);
+            ctx.strokeStyle = "rgba(255,200,0,0.7)";
+            ctx.lineWidth = 1 / zoom;
+            ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(cx, cy); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.beginPath(); ctx.arc(sx, sy, 5 / zoom, 0, Math.PI * 2);
+            ctx.fillStyle = "rgba(255,200,0,0.35)"; ctx.fill();
+            ctx.strokeStyle = "rgba(255,200,0,1)"; ctx.lineWidth = 1.5 / zoom; ctx.stroke();
+        }
+        ctx.restore();
     }
     if (insertPieces.length > 0 && insertPiece) {
         const rect = mainCanvas.getBoundingClientRect();
@@ -1401,6 +1441,7 @@ function drawQuadrant(ctx, frame, dir, quadrantX, quadrantY, quadrantWidth, quad
     if (showGrid) {
         drawGrid(ctx);
     }
+    if (pixelGridEnabled) drawPixelGrid(ctx);
     if (onionSkinEnabled) {
         if (currentFrame > 0) {
             const prevFrame = currentAnimation.getFrame(currentFrame - 1);
@@ -3394,6 +3435,7 @@ function addUndoCommand(command) {
 }
 
 function undo() {
+    _dragMoveIndicator = null;
     const undoStack = getCurrentUndoStack();
     let undoIndex = getCurrentUndoIndex();
     if (undoIndex >= 0 && undoStack[undoIndex]) {
@@ -4061,6 +4103,7 @@ function closeTab(index) {
         updateDefaultsTable();
         drawTimeline();
     } else {
+        if (index < currentTabIndex) currentTabIndex--;
         if (currentTabIndex >= animations.length) currentTabIndex = animations.length - 1;
         if (currentTabIndex < 0) currentTabIndex = 0;
         switchTab(currentTabIndex);
@@ -6722,6 +6765,10 @@ window.addEventListener("load", async () => {
         } else if (matchesKeybind(e, keybinds.infoDialog)) {
             e.preventDefault();
             openInfoDialog("about");
+        } else if (matchesKeybind(e, keybinds.settingsDialog)) {
+            e.preventDefault();
+            const btnSettings = document.getElementById("btnSettings");
+            if (btnSettings && btnSettings.onclick) btnSettings.onclick();
         } else if (matchesKeybind(e, keybinds.togglePanels)) {
             e.preventDefault();
             const leftPanel = document.querySelector(".left-panel");
@@ -7060,6 +7107,14 @@ window.addEventListener("load", async () => {
             }
         }
     });
+    pixelGridEnabled = localStorage.getItem("editorPixelGrid") === "true";
+    document.getElementById("btnPixelGrid").classList.toggle("active", pixelGridEnabled);
+    document.getElementById("btnPixelGrid").onclick = () => {
+        pixelGridEnabled = !pixelGridEnabled;
+        localStorage.setItem("editorPixelGrid", pixelGridEnabled ? "true" : "false");
+        document.getElementById("btnPixelGrid").classList.toggle("active", pixelGridEnabled);
+        redraw();
+    };
     document.getElementById("btnCenterView").onclick = () => {
         panX = 0;
         panY = 0;
@@ -7366,13 +7421,16 @@ window.addEventListener("load", async () => {
             comment: editingSprite.comment,
             attachments: editingSprite.attachedSprites.map(a => ({index: a.index, x: a.offset.x, y: a.offset.y}))
         };
-        navigator.clipboard.writeText(JSON.stringify(data));
+        _spriteClipboard = data;
+        if (navigator.clipboard) navigator.clipboard.writeText(JSON.stringify(data)).catch(() => {});
     };
     document.getElementById("btnPasteSprite").onclick = async () => {
         try {
-            const text = await navigator.clipboard.readText();
-            const data = JSON.parse(text);
-            if (data.type !== "sprite") return;
+            let data = _spriteClipboard;
+            if (!data && navigator.clipboard) { try { data = JSON.parse(await navigator.clipboard.readText()); } catch {} }
+            if (!data) return;
+            if (Array.isArray(data)) data = data[0];
+            if (!data || data.type !== "sprite") return;
             const sprite = new AniSprite();
             sprite.index = currentAnimation.nextSpriteIndex++;
             sprite.type = data.spriteType || "CUSTOM";
@@ -8182,11 +8240,12 @@ window.addEventListener("load", async () => {
         const settingsCancel = document.getElementById("settingsCancel");
         const settingsDefaults = document.getElementById("settingsDefaults");
         const settingsReset = document.getElementById("settingsReset");
-        const availableFonts = ["Arial", "chevyray", "chevyrayOeuf", "Comic Sans MS", "Courier New", "Georgia", "Helvetica", "Impact", "MesloLGS NF", "monospace", "PressStart2P", "Silkscreen", "Tahoma", "Tempus Sans ITC", "Times New Roman", "Trebuchet MS", "Verdana"];
-        availableFonts.sort();
-        if (settingsFont) {
+        const _builtinFonts = ["chevyray", "chevyrayOeuf", "MesloLGS NF", "PressStart2P", "Silkscreen"];
+        const _fallbackFonts = ["Arial", "Comic Sans MS", "Courier New", "Georgia", "Helvetica", "Impact", "monospace", "Tahoma", "Tempus Sans ITC", "Times New Roman", "Trebuchet MS", "Verdana"];
+        const _populateFontList = (fonts) => {
+            if (!settingsFont) return;
             settingsFont.innerHTML = "";
-            availableFonts.forEach(font => {
+            fonts.forEach(font => {
                 const option = document.createElement("option");
                 option.value = font;
                 option.textContent = font === "PressStart2P" ? "Press Start 2P" : font === "monospace" ? "Monospace" : font;
@@ -8194,7 +8253,22 @@ window.addEventListener("load", async () => {
             });
             const savedFont = localStorage.getItem("editorFont") || "chevyray";
             settingsFont.value = savedFont;
-        }
+            if (!settingsFont.value) { settingsFont.selectedIndex = 0; }
+            settingsFont.dispatchEvent(new Event("change", { bubbles: true }));
+        };
+        (async () => {
+            let fonts = [..._builtinFonts];
+            if (window.queryLocalFonts) {
+                try {
+                    const local = await window.queryLocalFonts();
+                    const systemNames = [...new Set(local.map(f => f.family))].filter(n => !_builtinFonts.includes(n)).sort();
+                    fonts = [..._builtinFonts, ...systemNames];
+                } catch { fonts = [..._builtinFonts, ..._fallbackFonts].sort((a,b) => a.localeCompare(b)); }
+            } else {
+                fonts = [..._builtinFonts, ..._fallbackFonts].sort((a,b) => a.localeCompare(b));
+            }
+            _populateFontList(fonts);
+        })();
     }
     function initCustomDropdowns() {
         document.querySelectorAll("select:not([data-custom-dropdown])").forEach(select => {
@@ -8398,7 +8472,8 @@ window.addEventListener("load", async () => {
             const currentShowGrid = localStorage.getItem("editorShowGrid") !== "false";
             const currentGifAnimations = localStorage.getItem("editorGifAnimations") !== "false";
             const currentLightEffects = localStorage.getItem("editorLightEffects") !== "false";
-            const currentSelectionBorderColor = localStorage.getItem("editorSelectionBorderColor") || "#00ff00";
+            const _cssColor = getComputedStyle(document.documentElement).getPropertyValue("--selection-border-color").trim();
+            const currentSelectionBorderColor = _cssColor || localStorage.getItem("editorSelectionBorderColor") || "#00ff00";
             const currentSelectionBorderThickness = parseInt(localStorage.getItem("editorSelectionBorderThickness")) || 2;
             const currentSelectionBorderOpacity = parseInt(localStorage.getItem("editorSelectionBorderOpacity") ?? "100");
             originalSettings = {
@@ -8434,6 +8509,7 @@ window.addEventListener("load", async () => {
             }
             if (settingsSelectionBorderOpacity) { settingsSelectionBorderOpacity.value = currentSelectionBorderOpacity; if (settingsSelectionBorderOpacityLabel) settingsSelectionBorderOpacityLabel.textContent = currentSelectionBorderOpacity + "%"; }
             settingsDialog.style.display = "flex";
+            switchSettingsTab("general");
         };
         if (settingsFont) {
             settingsFont.onchange = () => {
@@ -9054,9 +9130,10 @@ window.addEventListener("load", async () => {
         keysSwapped = !keysSwapped;
         btnSwapKeys.classList.toggle("active", keysSwapped);
         updateSwapTooltip();
+        if (_tooltipTarget === btnSwapKeys) _tooltipEl.textContent = btnSwapKeys.dataset.title;
         saveSession();
     };
-    const APP_VERSION = "2.1.1";
+    const APP_VERSION = "2.1.1b";
     const _infoDialog = document.getElementById("infoDialog");
     const _infoClose = document.getElementById("infoClose");
     const _infoContent = document.getElementById("infoContent");
@@ -9092,7 +9169,8 @@ window.addEventListener("load", async () => {
                 { key: "nextFrame", label: "Next Frame" },
                 { key: "togglePanels", label: "Toggle Panels" },
                 { key: "resetEditor", label: "Reset Editor" },
-                { key: "infoDialog", label: "Info / Help" },
+                { key: "infoDialog", label: "About / Info" },
+                { key: "settingsDialog", label: "Settings" },
             ];
             const kbRow = (label, key) => `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;margin-left:16px;"><span style="color:#c0c0c0;">${label}</span><button class="keybind-edit-btn" data-action="${key}" title="Click to rebind, right-click to reset" style="min-width:72px;text-align:center;cursor:pointer;background:#1a1a1a;border:1px solid #444;color:#e0e0e0;padding:2px 8px;border-radius:3px;font-size:11px;">${formatKeybind(keybinds[key])}</button></div>`;
             return `<div style="margin-bottom:8px;"><strong>Editable Shortcuts</strong> <span style="color:#555;font-size:10px;">click to rebind · right-click to reset</span></div>
@@ -9171,6 +9249,55 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
         _infoDialog.style.display = "flex";
         switchInfoTab(tab);
     }
+    function switchSettingsTab(tab) {
+        const generalPanel = document.getElementById("settingsGeneralPanel");
+        const canvasPanel = document.getElementById("settingsCanvasPanel");
+        const keybindsPanel = document.getElementById("settingsKeybindsPanel");
+        const footer = keybindsPanel?.nextElementSibling;
+        document.querySelectorAll(".settings-tab-btn").forEach(btn => {
+            const active = btn.dataset.tab === tab;
+            btn.style.color = active ? "#4a9eff" : "#888";
+            btn.style.background = active ? "#252525" : "transparent";
+        });
+        if (generalPanel) generalPanel.style.display = tab === "general" ? "" : "none";
+        if (canvasPanel) canvasPanel.style.display = tab === "canvas" ? "" : "none";
+        if (keybindsPanel) {
+            keybindsPanel.style.display = tab === "keybinds" ? "block" : "none";
+            if (tab === "keybinds") {
+                keybindsPanel.style.fontFamily = getFontFamily(localStorage.getItem("editorFont") || "chevyray");
+                keybindsPanel.innerHTML = _getInfoTabHTML("keybinds");
+                keybindsPanel.querySelectorAll(".keybind-edit-btn").forEach(btn => {
+                    btn.onclick = () => {
+                        if (btn.dataset.listening) return;
+                        btn.dataset.listening = "1";
+                        const orig = btn.textContent;
+                        btn.textContent = "…press key…";
+                        btn.style.color = "#4a9eff";
+                        const capture = (ev) => {
+                            if (ev.key === "Escape") { btn.textContent = orig; btn.style.color = "#e0e0e0"; delete btn.dataset.listening; document.removeEventListener("keydown", capture, true); return; }
+                            ev.preventDefault(); ev.stopPropagation();
+                            const parts = [];
+                            if (ev.ctrlKey) parts.push("ctrl");
+                            if (ev.shiftKey) parts.push("shift");
+                            if (ev.altKey) parts.push("alt");
+                            if (!["Control","Shift","Alt","Meta"].includes(ev.key)) parts.push(ev.key);
+                            if (parts.length === 0 || (parts.length === 1 && !["ctrl","shift","alt"].includes(parts[0])) || parts[parts.length - 1] !== ev.key) {
+                                keybinds[btn.dataset.action] = parts.join("+");
+                                saveKeybinds();
+                                btn.textContent = formatKeybind(keybinds[btn.dataset.action]);
+                                btn.style.color = "#e0e0e0";
+                                delete btn.dataset.listening;
+                                document.removeEventListener("keydown", capture, true);
+                            }
+                        };
+                        document.addEventListener("keydown", capture, true);
+                    };
+                    btn.oncontextmenu = (ev) => { ev.preventDefault(); keybinds[btn.dataset.action] = DEFAULT_KEYBINDS[btn.dataset.action]; saveKeybinds(); btn.textContent = formatKeybind(DEFAULT_KEYBINDS[btn.dataset.action]); };
+                });
+            }
+        }
+        if (footer) footer.style.display = tab === "keybinds" ? "none" : "";
+    }
     if (_infoDialog && _infoClose) {
         _infoClose.onclick = () => { _infoDialog.style.display = "none"; };
         _infoDialog.onclick = (e) => { if (e.target === _infoDialog) _infoDialog.style.display = "none"; };
@@ -9178,6 +9305,7 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
         const btnAbout = document.getElementById("btnAbout");
         if (btnAbout) btnAbout.onclick = () => openInfoDialog("about");
     }
+    document.querySelectorAll(".settings-tab-btn").forEach(btn => { btn.onclick = () => switchSettingsTab(btn.dataset.tab); });
     const updateHistoryFont = () => {
         const fontFamily = getFontFamily(localStorage.getItem("editorFont") || "chevyray");
         const historyList = document.getElementById("historyList");
@@ -9190,12 +9318,15 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
     document.querySelectorAll("h3").forEach(h3 => { h3.style.fontFamily = getFontFamily(localStorage.getItem("editorFont") || "chevyray"); });
     document.getElementById("btnDefaults").onclick = () => {
         const table = document.getElementById("defaultsTable");
+        const btn = document.getElementById("btnDefaults");
         if (table.style.visibility === "hidden" || table.style.visibility === "") {
             table.style.visibility = "visible";
             table.style.display = "table";
+            btn.textContent = "Defaults ▼";
         } else {
             table.style.visibility = "hidden";
             table.style.display = "none";
+            btn.textContent = "Defaults ▶";
         }
     };
     document.getElementById("btnEditScript").onclick = () => {
@@ -9778,6 +9909,28 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
         const visualSize = isY ? rect.height : rect.width;
         return visualCoord * (logicalSize / visualSize);
     };
+    const _updateBoxSelection = (x, y) => {
+        if (!boxSelectStart || !currentAnimation) return;
+        const frame = currentAnimation.getFrame(currentFrame);
+        if (!frame) return;
+        let dirToUse = currentDir;
+        if (splitViewEnabled && !currentAnimation.singleDir && boxSelectQuadrant >= 0) dirToUse = [0,1,2,3][Math.min(3, Math.max(0, boxSelectQuadrant))];
+        const actualDir = getDirIndex(dirToUse);
+        const pieces = frame.pieces[actualDir] || [];
+        const minX = Math.min(boxSelectStart.x, x), maxX = Math.max(boxSelectStart.x, x);
+        const minY = Math.min(boxSelectStart.y, y), maxY = Math.max(boxSelectStart.y, y);
+        selectedPieces.clear();
+        for (const piece of pieces) {
+            const bb = piece.getBoundingBox(currentAnimation);
+            const cx = bb.x + bb.width / 2, cy = bb.y + bb.height / 2;
+            if (cx >= minX && cx <= maxX && cy >= minY && cy <= maxY) selectedPieces.add(piece);
+        }
+        if (frame.sounds) for (const sound of frame.sounds) {
+            if (sound.xoffset >= minX && sound.xoffset <= maxX && sound.yoffset >= minY && sound.yoffset <= maxY) selectedPieces.add(sound);
+        }
+        updateItemsCombo();
+        updateItemSettings();
+    };
     mainCanvas.onmousedown = (e) => {
         const rect = mainCanvas.getBoundingClientRect();
         const uiScale = getUIScale();
@@ -9802,13 +9955,27 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
             y = (adjustedY - logicalHeight / 2 - panY) / zoom;
         }
         if (e.button === 2) {
-            isRightClickPanning = true;
-            rightClickPanStartX = e.clientX;
-            rightClickPanStartY = e.clientY;
-            rightClickPanStartPanX = panX;
-            rightClickPanStartPanY = panY;
-            mainCanvas.style.cursor = "grabbing";
-            e.preventDefault();
+            let _overSprite = false;
+            if (currentAnimation) {
+                const frame = currentAnimation.getFrame(currentFrame);
+                if (frame) {
+                    const actualDir2 = getDirIndex(currentDir);
+                    const pieces2 = frame.pieces[actualDir2] || [];
+                    for (let i = pieces2.length - 1; i >= 0; i--) {
+                        const bb = pieces2[i].getBoundingBox(currentAnimation);
+                        if (x >= bb.x && x < bb.x + bb.width && y >= bb.y && y < bb.y + bb.height) { _overSprite = true; break; }
+                    }
+                }
+            }
+            if (!_overSprite) {
+                isRightClickPanning = true;
+                rightClickPanStartX = e.clientX;
+                rightClickPanStartY = e.clientY;
+                rightClickPanStartPanX = panX;
+                rightClickPanStartPanY = panY;
+                mainCanvas.style.cursor = "grabbing";
+                e.preventDefault();
+            }
         } else if (e.button === 1 || (e.button === 0 && e.ctrlKey)) {
             if (e.button === 0 && e.ctrlKey && currentAnimation) {
                 const frame = currentAnimation.getFrame(currentFrame);
@@ -10052,14 +10219,36 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
                 }
             }
         } else if (e.button === 2) {
-            isRightClickPanning = true;
-            rightClickPanMoved = false;
-            rightClickPanStartX = e.clientX;
-            rightClickPanStartY = e.clientY;
-            rightClickPanStartPanX = panX;
-            rightClickPanStartPanY = panY;
-            mainCanvas.style.cursor = "grabbing";
-            e.preventDefault();
+            let _overSprite = false;
+            if (currentAnimation) {
+                const frame = currentAnimation.getFrame(currentFrame);
+                if (frame) {
+                    const rect2 = mainCanvas.getBoundingClientRect();
+                    const zoom2 = zoomFactors[zoomLevel] || 1.0;
+                    const lw = mainCanvas.width / (window.devicePixelRatio || 1);
+                    const lh = mainCanvas.height / (window.devicePixelRatio || 1);
+                    const ax2 = (e.clientX - rect2.left) * (lw / rect2.width);
+                    const ay2 = (e.clientY - rect2.top) * (lh / rect2.height);
+                    const cx2 = (ax2 - lw / 2 - panX) / zoom2;
+                    const cy2 = (ay2 - lh / 2 - panY) / zoom2;
+                    const actualDir2 = getDirIndex(currentDir);
+                    const pieces2 = frame.pieces[actualDir2] || [];
+                    for (let i = pieces2.length - 1; i >= 0; i--) {
+                        const bb = pieces2[i].getBoundingBox(currentAnimation);
+                        if (cx2 >= bb.x && cx2 < bb.x + bb.width && cy2 >= bb.y && cy2 < bb.y + bb.height) { _overSprite = true; break; }
+                    }
+                }
+            }
+            if (!_overSprite) {
+                isRightClickPanning = true;
+                rightClickPanMoved = false;
+                rightClickPanStartX = e.clientX;
+                rightClickPanStartY = e.clientY;
+                rightClickPanStartPanX = panX;
+                rightClickPanStartPanY = panY;
+                mainCanvas.style.cursor = "grabbing";
+                e.preventDefault();
+            }
         }
         redraw();
     };
@@ -10075,8 +10264,8 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
             const logicalWidth = mainCanvas.width / (window.devicePixelRatio || 1);
             const logicalHeight = mainCanvas.height / (window.devicePixelRatio || 1);
         const zoom = zoomFactors[zoomLevel] || 1.0;
-            const adjustedX = adjustCoordinateForUIScale(e.clientX, rect.left, rect, false);
-            const adjustedY = adjustCoordinateForUIScale(e.clientY, rect.top, rect, true);
+            const adjustedX = adjustCoordinateForUIScale(lastMouseX, rect.left, rect, false);
+            const adjustedY = adjustCoordinateForUIScale(lastMouseY, rect.top, rect, true);
             let x, y;
             if (splitViewEnabled && !currentAnimation.singleDir && isBoxSelecting && boxSelectQuadrant >= 0) {
                 const quadWidth = logicalWidth / 2;
@@ -10127,6 +10316,7 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
             updateItemSettings();
         } else if (isBoxSelecting && boxSelectStart) {
             boxSelectEnd = {x, y};
+            _updateBoxSelection(x, y);
             redraw();
         } else if (insertPiece) {
             redraw();
@@ -10142,12 +10332,6 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
                     insertPiece = null; insertPieces = [];
                     mainCanvas.style.cursor = "default";
                     redraw();
-                } else if (selectedPieces.size > 0) {
-                    selectedPieces.clear();
-                    updateItemsCombo();
-                    redraw();
-                } else {
-                    showCanvasContextMenu(e);
                 }
             }
             isRightClickPanning = false;
@@ -10181,6 +10365,9 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
                         undo: () => restoreAnimationState(dragStartState),
                         redo: () => restoreAnimationState(newState)
                     });
+                    _dragMoveIndicator = { startPositions: new Map(pieceInitialPositions), pieces: Array.from(selectedPieces) };
+                } else {
+                    _dragMoveIndicator = null;
                 }
             }
             dragButton = null;
@@ -10198,8 +10385,8 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
             const visualHeight = rect.height;
             const zoomFactors = [0.25, 0.5, 0.75, 1.0, 2, 3, 4, 8];
             const zoom = zoomFactors[zoomLevel] || 1.0;
-            const adjustedX = adjustCoordinateForUIScale(e.clientX, rect.left, rect);
-            const adjustedY = adjustCoordinateForUIScale(e.clientY, rect.top, rect);
+            const adjustedX = adjustCoordinateForUIScale(e.clientX, rect.left, rect, false);
+            const adjustedY = adjustCoordinateForUIScale(e.clientY, rect.top, rect, true);
             let x, y;
             if (splitViewEnabled && !currentAnimation.singleDir) {
                 const quadWidth = logicalWidth / 2;
@@ -10213,58 +10400,26 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
                 x = (adjustedX - logicalWidth / 2 - panX) / zoom;
                 y = (adjustedY - logicalHeight / 2 - panY) / zoom;
             }
-            const frame = currentAnimation.getFrame(currentFrame);
-            if (frame) {
-                let dirToUse = currentDir;
-                if (splitViewEnabled && !currentAnimation.singleDir && boxSelectQuadrant >= 0) {
-                    const directions = [0, 1, 2, 3];
-                    dirToUse = directions[Math.min(3, Math.max(0, boxSelectQuadrant))];
-                }
-                const actualDir = getDirIndex(dirToUse);
-                const pieces = frame.pieces[actualDir] || [];
-                const minX = Math.min(boxSelectStart.x, x);
-                const maxX = Math.max(boxSelectStart.x, x);
-                const minY = Math.min(boxSelectStart.y, y);
-                const maxY = Math.max(boxSelectStart.y, y);
-                const boxWidth = Math.abs(maxX - minX);
-                const boxHeight = Math.abs(maxY - minY);
-                const dist = Math.sqrt(Math.pow(boxSelectStart.x - x, 2) + Math.pow(boxSelectStart.y - y, 2));
-                if (boxWidth < 5 && boxHeight < 5 && dist < 5) {
-                    if (!e.shiftKey) {
-                        selectedPieces.clear();
-                        const combo = document.getElementById("itemsCombo");
-                        if (combo) combo.value = "";
-                        updateItemsCombo();
-                        updateItemSettings();
-                    }
-                } else {
-                    if (!e.shiftKey) {
-                        selectedPieces.clear();
-                    }
-                    for (const piece of pieces) {
-                        const bb = piece.getBoundingBox(currentAnimation);
-                        const centerX = bb.x + bb.width / 2;
-                        const centerY = bb.y + bb.height / 2;
-                        if (centerX >= minX && centerX <= maxX && centerY >= minY && centerY <= maxY) {
-                            if (!selectedPieces.has(piece)) {
-                                selectedPieces.add(piece);
-                            }
-                        }
-                    }
-                    if (frame.sounds && frame.sounds.length > 0) {
-                        for (const sound of frame.sounds) {
-                            const centerX = sound.xoffset;
-                            const centerY = sound.yoffset;
-                            if (centerX >= minX && centerX <= maxX && centerY >= minY && centerY <= maxY) {
-                                if (!selectedPieces.has(sound)) {
-                                    selectedPieces.add(sound);
-                                }
-                            }
-                        }
-                    }
-                    updateItemsCombo();
+            const boxWidth = Math.abs(boxSelectStart.x - x);
+            const boxHeight = Math.abs(boxSelectStart.y - y);
+            const dist = Math.sqrt(Math.pow(boxSelectStart.x - x, 2) + Math.pow(boxSelectStart.y - y, 2));
+            if (boxWidth < 5 && boxHeight < 5 && dist < 5) {
+                if (!e.shiftKey) {
+                    selectedPieces.clear();
+                    selectedPieceDir = null;
+                    const _combo = document.getElementById("itemsCombo");
+                    if (_combo) { _combo.value = ""; const _w = _combo.closest("div"); const _b = _w?.querySelector(".custom-dropdown-button span"); if (_b) _b.textContent = "(none)"; }
                     updateItemSettings();
+                    redraw();
                 }
+            } else {
+                if (!e.shiftKey) {
+                    selectedPieces.clear();
+                    const _c = document.getElementById("itemsCombo");
+                    if (_c) { _c.value = ""; const _w = _c.closest("div"); const _b = _w?.querySelector(".custom-dropdown-button span"); if (_b) _b.textContent = "(none)"; }
+                }
+                const _fx = boxSelectEnd ? boxSelectEnd.x : x, _fy = boxSelectEnd ? boxSelectEnd.y : y;
+                _updateBoxSelection(_fx, _fy);
             }
             isBoxSelecting = false;
             boxSelectStart = null;
@@ -10711,6 +10866,7 @@ function playAnimation() {
 }
 
 function positionContextMenu(menu, cx, cy) {
+    menu.style.display = "block";
     document.body.appendChild(menu);
     const mw = menu.offsetWidth, mh = menu.offsetHeight;
     const vw = window.innerWidth, vh = window.innerHeight;
@@ -10729,6 +10885,9 @@ function showSpriteContextMenu(e, sprite) {
     const menu = document.createElement("div");
     menu.className = "context-menu";
     menu.style.position = "fixed";
+    menu.style.background = "#444";
+    menu.style.border = "1px solid #555";
+    menu.style.padding = "4px";
     menu.style.zIndex = "10000";
     menu.style.minWidth = "150px";
     activeContextMenu = menu;
@@ -10765,6 +10924,7 @@ function showSpriteContextMenu(e, sprite) {
         div.textContent = item.text;
         div.style.padding = "4px 8px";
         div.style.cursor = "pointer";
+        div.style.color = "#fff";
         div.onmouseover = () => div.style.background = "#555";
         div.onmouseout = () => div.style.background = "transparent";
         div.onclick = () => {
@@ -10848,9 +11008,45 @@ function showCanvasContextMenu(e) {
     menu.style.minWidth = "150px";
     activeContextMenu = menu;
     const items = [];
+    let _hitSprite = null;
+    if (currentAnimation) {
+        const frame = currentAnimation.getFrame(currentFrame);
+        if (frame) {
+            const rect = mainCanvas.getBoundingClientRect();
+            const zoom = zoomFactors[zoomLevel] || 1.0;
+            const logicalWidth = mainCanvas.width / (window.devicePixelRatio || 1);
+            const logicalHeight = mainCanvas.height / (window.devicePixelRatio || 1);
+            const ax = (e.clientX - rect.left) * (logicalWidth / rect.width);
+            const ay = (e.clientY - rect.top) * (logicalHeight / rect.height);
+            const cx = (ax - logicalWidth / 2 - panX) / zoom;
+            const cy = (ay - logicalHeight / 2 - panY) / zoom;
+            const actualDir = getDirIndex(currentDir);
+            const pieces = frame.pieces[actualDir] || [];
+            for (let i = pieces.length - 1; i >= 0; i--) {
+                const piece = pieces[i];
+                const bb = piece.getBoundingBox(currentAnimation);
+                if (cx >= bb.x && cx < bb.x + bb.width && cy >= bb.y && cy < bb.y + bb.height) {
+                    _hitSprite = currentAnimation.getAniSprite(piece.spriteIndex, piece.spriteName || "");
+                    if (!selectedPieces.has(piece)) {
+                        selectedPieces.clear();
+                        selectedPieceDir = actualDir;
+                        selectedPieces.add(piece);
+                        updateItemsCombo();
+                        updateItemSettings();
+                        redraw();
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    if (_hitSprite) {
+        items.push({text: "Edit Sprite", action: () => editSprite(_hitSprite)});
+        items.push({text: "---", separator: true});
+    }
     if (selectedPieces.size > 0) {
-        items.push({text: `Copy Piece${selectedPieces.size > 1 ? 's' : ''}`, action: () => { clipboardPieces = Array.from(selectedPieces).map(p => p.duplicate()); }});
-        items.push({text: `Cut Piece${selectedPieces.size > 1 ? 's' : ''}`, action: () => {
+        items.push({text: selectedPieces.size > 1 ? "Copy Sprites" : "Copy Sprite", action: () => { clipboardPieces = Array.from(selectedPieces).map(p => p.duplicate()); }});
+        items.push({text: selectedPieces.size > 1 ? "Cut Sprites" : "Cut Sprite", action: () => {
             const frame = currentAnimation.getFrame(currentFrame);
             if (frame) {
                 const actualDir = getDirIndex(currentDir);
@@ -10866,7 +11062,7 @@ function showCanvasContextMenu(e) {
                 updateItemsCombo(); updateItemSettings(); redraw(); saveSession();
             }
         }});
-        items.push({text: `Delete Piece${selectedPieces.size > 1 ? 's' : ''}`, action: () => {
+        items.push({text: selectedPieces.size > 1 ? "Delete Sprites" : "Delete Sprite", action: () => {
             const frame = currentAnimation.getFrame(currentFrame);
             if (frame) {
                 const actualDir = getDirIndex(currentDir);
@@ -10907,7 +11103,7 @@ function showCanvasContextMenu(e) {
     }
     items.push(
         {text: "Add Sprite", action: () => document.getElementById("btnAddSprite").click()},
-        ...(clipboardPieces ? [{text: "Paste Pieces", action: () => {
+        ...(clipboardPieces ? [{text: `Paste Sprite${clipboardPieces.length > 1 ? "s" : ""}`, action: () => {
             const frame = currentAnimation.getFrame(currentFrame);
             if (frame) {
                 const actualDir = getDirIndex(currentDir);
@@ -10923,18 +11119,20 @@ function showCanvasContextMenu(e) {
                 addUndoCommand({ description: `Paste ${pasteNames}`, oldState, newState, undo: () => restoreAnimationState(oldState), redo: () => restoreAnimationState(newState) });
                 updateItemsCombo(); updateItemSettings(); redraw(); saveSession();
             }
-        }}] : []),
-        {text: "Paste Sprite", action: () => document.getElementById("btnPasteSprite").click()},
+        }}] : [{text: "Paste Sprite", action: () => document.getElementById("btnPasteSprite").click()}]),
         {text: "Center View", action: () => {
             panX = panY = 0;
             redraw();
-        }}
+        }},
+        ...(_dragMoveIndicator ? [{separator: true}, {text: "↩ Undo Move", action: () => { undo(); _dragMoveIndicator = null; redraw(); }}] : [])
     );
     for (const item of items) {
+        if (item.separator) { const hr = document.createElement("div"); hr.style.cssText = "height:1px;background:#555;margin:3px 4px;"; menu.appendChild(hr); continue; }
         const div = document.createElement("div");
         div.textContent = item.text;
         div.style.padding = "4px 8px";
         div.style.cursor = "pointer";
+        div.style.color = "#fff";
         div.onmouseover = () => div.style.background = "#555";
         div.onmouseout = () => div.style.background = "transparent";
         div.onclick = () => {
@@ -11240,7 +11438,7 @@ function showAddSpriteDialog(editSprite = null) {
     dialog.style.background = "rgba(0,0,0,0.7)";
     dialog.style.zIndex = "10000";
     const content = document.createElement("div");
-    content.className = "add-sprite-dialog-content";
+    content.className = "add-sprite-dialog-content dialog-content";
     const currentScheme = localStorage.getItem("ganiEditorColorScheme") || "default";
     let dialogColors = {panel: "#2b2b2b", border: "#0a0a0a", text: "#e0e0e0", inputBg: "#1a1a1a", buttonBg: "#2b2b2b", buttonText: "#e0e0e0", buttonHover: "#404040"};
     if (currentScheme !== "default") {
@@ -11258,6 +11456,14 @@ function showAddSpriteDialog(editSprite = null) {
         };
         if (schemes[currentScheme]) dialogColors = schemes[currentScheme];
     }
+    const _dcs = getComputedStyle(document.documentElement);
+    const _dcv = (v) => _dcs.getPropertyValue(v).trim();
+    if (_dcv('--dialog-bg')) dialogColors.panel = _dcv('--dialog-bg');
+    if (_dcv('--dialog-text')) dialogColors.text = _dcv('--dialog-text');
+    if (_dcv('--dialog-input-bg')) dialogColors.inputBg = _dcv('--dialog-input-bg');
+    if (_dcv('--dialog-border')) dialogColors.border = _dcv('--dialog-border');
+    if (_dcv('--dialog-button-bg')) dialogColors.buttonBg = _dcv('--dialog-button-bg');
+    if (_dcv('--dialog-button-text')) { dialogColors.buttonText = _dcv('--dialog-button-text'); }
     content.style.background = dialogColors.panel;
     content.style.padding = "2px";
     content.style.borderRadius = "0";
@@ -11275,6 +11481,17 @@ function showAddSpriteDialog(editSprite = null) {
     content.style.resize = "both";
     content.style.fontFamily = fontFamily;
     content.style.color = dialogColors.text;
+    const titlebar = document.createElement("div");
+    titlebar.className = "dialog-titlebar";
+    titlebar.style.cssText = "flex-shrink:0;padding:10px 14px;display:flex;align-items:center;gap:8px;";
+    const titleIcon = document.createElement("i");
+    titleIcon.className = "fas fa-pencil";
+    titleIcon.style.cssText = "flex-shrink:0;";
+    const titleText = document.createElement("span");
+    titleText.textContent = editSprite ? "Edit Sprite" : "Add Sprite";
+    titlebar.appendChild(titleIcon);
+    titlebar.appendChild(titleText);
+    content.appendChild(titlebar);
     const splitter = document.createElement("div");
     splitter.style.display = "flex";
     splitter.style.flex = "1";
@@ -11294,6 +11511,7 @@ function showAddSpriteDialog(editSprite = null) {
     leftPanel.style.flexShrink = "0";
     leftPanel.style.background = dialogColors.panel;
     leftPanel.style.color = dialogColors.text;
+    leftPanel.className = "add-sprite-dialog-left";
     const formLayout = document.createElement("div");
     formLayout.style.display = "flex";
     formLayout.style.flexDirection = "column";
@@ -11329,6 +11547,7 @@ function showAddSpriteDialog(editSprite = null) {
     spriteSizeGroup.style.marginTop = "8px";
     spriteSizeGroup.style.background = dialogColors.panel;
     spriteSizeGroup.style.boxShadow = "inset 0 1px 0 rgba(0,0,0,0.3)";
+    spriteSizeGroup.className = "add-sprite-dialog-group";
     spriteSizeGroup.innerHTML = `<div style="font-weight:bold;font-size:12px;margin-bottom:4px;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;">Sprite Size</div>`;
     const sizeGrid = document.createElement("div");
     sizeGrid.style.display = "grid";
@@ -11345,6 +11564,7 @@ function showAddSpriteDialog(editSprite = null) {
     gridGroup.style.marginTop = "8px";
     gridGroup.style.background = dialogColors.panel;
     gridGroup.style.boxShadow = "inset 0 1px 0 rgba(0,0,0,0.3)";
+    gridGroup.className = "add-sprite-dialog-group";
     gridGroup.innerHTML = `<div style="font-weight:bold;font-size:12px;margin-bottom:4px;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;">Grid Settings</div>`;
     const gridLayout = document.createElement("div");
     gridLayout.style.display = "grid";
@@ -11361,6 +11581,7 @@ function showAddSpriteDialog(editSprite = null) {
     effectsGroup.style.marginTop = "8px";
     effectsGroup.style.background = dialogColors.panel;
     effectsGroup.style.boxShadow = "inset 0 1px 0 rgba(0,0,0,0.3)";
+    effectsGroup.className = "add-sprite-dialog-group";
     effectsGroup.innerHTML = `<div style="font-weight:bold;font-size:12px;margin-bottom:4px;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;">Effects</div>`;
     const effectsGrid = document.createElement("div");
     effectsGrid.style.display = "grid";
@@ -11386,6 +11607,7 @@ function showAddSpriteDialog(editSprite = null) {
     rightPanel.style.minHeight = "0";
     rightPanel.style.background = dialogColors.panel;
     rightPanel.style.color = dialogColors.text;
+    rightPanel.className = "add-sprite-dialog-right";
     const previewHeader = document.createElement("div");
     previewHeader.style.display = "flex";
     previewHeader.style.justifyContent = "space-between";
@@ -11408,6 +11630,7 @@ function showAddSpriteDialog(editSprite = null) {
     previewCanvas.style.mozUserSelect = "none";
     previewCanvas.style.msUserSelect = "none";
     previewCanvas.style.boxShadow = "inset 0 1px 0 rgba(0,0,0,0.3)";
+    previewCanvas.className = "add-sprite-dialog-preview";
     previewCanvas.width = 300;
     previewCanvas.height = 400;
     const updatePreviewCanvasSize = () => {
@@ -11430,6 +11653,7 @@ function showAddSpriteDialog(editSprite = null) {
     splitter.appendChild(rightPanel);
     content.appendChild(splitter);
     const buttonBar = document.createElement("div");
+    buttonBar.className = "add-sprite-dialog-button-bar";
     buttonBar.style.display = "flex";
     buttonBar.style.justifyContent = "flex-end";
     buttonBar.style.gap = "4px";
@@ -11697,7 +11921,7 @@ function showAddSpriteDialog(editSprite = null) {
     function updateAddSpritePreview() {
         const ctx = previewCanvas.getContext("2d");
         ctx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
-        ctx.fillStyle = "#222";
+        ctx.fillStyle = dialogColors.inputBg;
         ctx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
         if (previewImg) {
             const cols = parseInt(document.getElementById("addSpriteCols").value) || 1;
@@ -11712,7 +11936,10 @@ function showAddSpriteDialog(editSprite = null) {
             ctx.scale(scale, scale);
             ctx.imageSmoothingEnabled = false;
             ctx.drawImage(previewImg, 0, 0);
-            ctx.strokeStyle = "#00ff00";
+            const _pcs = getComputedStyle(document.documentElement);
+            const previewGridColor = _pcs.getPropertyValue("--sprite-preview-grid").trim() || "#00ff00";
+            const previewSelColor = _pcs.getPropertyValue("--sprite-preview-selection").trim() || "#ffff00";
+            ctx.strokeStyle = previewGridColor;
             ctx.lineWidth = 1 / scale;
             for (let row = 0; row <= rows; row++) {
                 const y = row * (spriteH + rowSep);
@@ -11728,18 +11955,20 @@ function showAddSpriteDialog(editSprite = null) {
                 ctx.lineTo(x, previewImg.height);
                 ctx.stroke();
             }
-            ctx.strokeStyle = "#ffff00";
+            ctx.strokeStyle = previewSelColor;
             ctx.lineWidth = 2 / scale;
             ctx.strokeRect(selectionBox.x, selectionBox.y, selectionBox.w, selectionBox.h);
-            ctx.fillStyle = "rgba(255, 255, 0, 0.1)";
+            ctx.globalAlpha = 0.1;
+            ctx.fillStyle = previewSelColor;
             ctx.fillRect(selectionBox.x, selectionBox.y, selectionBox.w, selectionBox.h);
+            ctx.globalAlpha = 1;
             ctx.restore();
             const boxX = selectionBox.x * scale + offsetX;
             const boxY = selectionBox.y * scale + offsetY;
             const boxW = selectionBox.w * scale;
             const boxH = selectionBox.h * scale;
-            
-            ctx.fillStyle = "#ffff00";
+
+            ctx.fillStyle = previewSelColor;
             const handles = [
                 {x: boxX, y: boxY},
                 {x: boxX + boxW, y: boxY},
@@ -12928,6 +13157,8 @@ function setupContextMenus() {
                     menu.style.display = "none";
                 }
             });
+            const anyDialogOpen = [settingsDialog, aboutDialog, hotkeysDialog, defaultGaniDialog].some(d => d && d.style.display === "flex") || (colorSchemeDropdown && colorSchemeDropdown.style.display === "block");
+            if (!anyDialogOpen && _dragMoveIndicator) { undo(); _dragMoveIndicator = null; redraw(); }
         }
     });
     document.addEventListener("click", hideContextMenu);

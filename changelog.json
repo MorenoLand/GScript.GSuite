@@ -1,11 +1,28 @@
 [
   {
+    "version": "2.1.1b",
+    "date": "2026-03-26",
+    "changes": [
+      "Right-clicking a sprite or on the canvas shows a context menu — Edit Sprite, Copy/Cut/Delete, Paste, Add, Center View",
+      "Right-clicking a sprite that is part of a multi-selection preserves the full selection",
+      "Pixel grid toggle button added to canvas controls — overlays an alignment grid over the canvas, toggled on/off independently of the character grid",
+      "Keybinds moved from About dialog to Settings dialog (Settings | Canvas | Keybinds tabs) — F1 opens About, F2 opens Settings",
+      "Settings split into General, Canvas, and Keybinds tabs to reduce scrolling",
+      "System fonts loaded via queryLocalFonts() where available — font list now includes installed system fonts",
+      "Closing a tab no longer jumps to the wrong animation when the closed tab was to the left of the active one",
+      "Defaults button in right panel now shows open/close chevron indicator",
+      "Drag selection box color matches the selection border CSS variable — fully themeable",
+      "Drag selection box selects and deselects sprites live as you drag, not just on release",
+      "About/Info dialog is now a fixed height — switching to Changelog no longer resizes the window"
+    ]
+  },
+  {
     "version": "2.1.1",
     "date": "2026-03-26",
     "changes": [
       "Tab close confirmation now uses the custom styled dialog instead of the browser native popup",
       "Custom CSS variables --canvas-bg, --canvas-grid, --timeline-bg, --preview-bg, --monaco-theme, --timeline-frame-bg/selected/multi, --quadrant-divider for theming canvas, grid, timeline, sprite preview, frame colors, Monaco editor, and split view divider",
-      "Monaco editor (VS Code engine) used for Edit Script and Custom CSS dialogs — Graal script syntax highlighting with colors from graalcolors.xml, error checking disabled",
+      "Monaco editor (VS Code engine) used for Edit Script and Custom CSS dialogs — Graal script syntax highlighting, error checking disabled",
       "Native browser tooltips suppressed — custom styled tooltips now shown exclusively at correct z-index",
       "Custom dropdowns, settings checkboxes, context menus, sprite preview canvas, defaults table, and dialog titlebars now fully themeable via custom CSS",
       "All custom dialogs (Confirm, Alert, Settings, Edit Script, Custom CSS) now have titled headers with contextual icons",

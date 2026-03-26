@@ -50,6 +50,7 @@
         .fa-layer-group { background-image: var(--icon-layer-group, url("icons/layer-group.svg")); }
         .fa-crosshairs { background-image: var(--icon-crosshairs, url("icons/crosshairs.svg")); }
         .fa-border-all { background-image: var(--icon-border-all, url("icons/border-all.svg")); }
+        .fa-grid { background-image: var(--icon-grid, url("icons/grid.svg")); }
         .fa-magic { background-image: var(--icon-magic, url("icons/magnet.svg")); transform: scaleX(-1); }
         .fa-magnet { background-image: var(--icon-magnet, url("icons/magnet.svg")); }
         .fa-pencil { background-image: var(--icon-pencil, url("icons/pencil.svg")); }
@@ -60,7 +61,8 @@
         .fa-pause { background-image: var(--icon-pause, url("icons/pause.svg")); }
         .fa-stop { background-image: var(--icon-stop, url("icons/stop.svg")); }
         .fas { filter: var(--icon-filter, brightness(0) invert(1)); }
-        .dialog-titlebar i.fas { display: block !important; filter: var(--dialog-icon-filter, brightness(0) invert(1)) !important; opacity: 1 !important; flex-shrink: 0; }
+        .dialog-titlebar i.fas { display: block !important; filter: var(--dialog-icon-filter, var(--icon-filter, brightness(0) invert(1))) !important; opacity: 1 !important; flex-shrink: 0; transform: translateY(-2px); }
+        .dialog-titlebar img { transform: translateY(-3px); }
         @font-face {
             font-family: "Silkscreen";
             src: url("fonts/Silkscreen-Regular.ttf") format("truetype");
@@ -676,7 +678,7 @@
         }
         .playback-controls button:hover { background: #404040; border-color: #555; }
         .playback-controls button:active { background: #1a1a1a; border-color: #0a0a0a; box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5); }
-        .info-tab-btn { border-radius: 4px 4px 0 0; }
+        .info-tab-btn, .settings-tab-btn { border-radius: 4px 4px 0 0; }
         #floatingTooltip { display: none; position: fixed; z-index: 2147483647; background: var(--tooltip-bg, #1a1a1a); color: var(--tooltip-color, #e0e0e0); padding: var(--tooltip-padding, 3px 8px); border-radius: var(--tooltip-radius, 3px); font-size: var(--tooltip-font-size, 11px); font-family: var(--tooltip-font, 'chevyray', monospace); white-space: normal; width: max-content; max-width: var(--tooltip-max-width, 300px); text-align: left; pointer-events: none; border: var(--tooltip-border, 1px solid #444); }
         .right-panel {
             display: flex;
@@ -1537,7 +1539,7 @@
             <span id="mainCanvasZoomLevel" style="font-size: 12px; min-width: 40px; text-align: center; color: #e0e0e0; user-select: none; padding: 0 4px; display: inline-flex; align-items: center; justify-content: center;">1.0x</span>
             <button title="Zoom In" id="btnZoomIn"><i class="fas fa-plus"></i></button>
             <div style="width: 1px; background: #1a1a1a; margin: 0 4px;"></div>
-            <button title="About / Keybinds / Changelog (F1)" id="btnAbout"><i class="fas fa-info-circle"></i></button>
+            <button title="About / Changelog (F1)" id="btnAbout"><i class="fas fa-info-circle"></i></button>
         </div>
         <div class="tabs" id="tabsContainer"></div>
         <div class="content-area">
@@ -1672,6 +1674,7 @@
                                 <button id="btnCenterView" title="Center View"><i class="fas fa-crosshairs"></i></button>
                                 <button id="btnSplitView" title="Split View (4 Directions)"><i class="fas fa-border-all"></i></button>
                                 <button id="btnMirroredActions" title="Multi Select — click pieces to add to selection without Ctrl/Shift"><i class="fas fa-magnet"></i></button>
+                                <button id="btnPixelGrid" title="Toggle Pixel Grid — overlay a tile grid on the canvas for alignment"><i class="fas fa-grid"></i></button>
                             </div>
                         </div>
                     </div>
@@ -1696,14 +1699,14 @@
                         <label style="display: flex; align-items: center; gap: 8px;"><span id="continousCheckbox" style="display: inline-block; width: 16px; height: 16px; text-align: center; border: 1px solid #555; background: #1a1a1a; vertical-align: middle; line-height: 14px; font-size: 12px; cursor: pointer; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;">✓</span> Continuous</label>
                         <label>Next Ani:</label>
                         <input type="text" id="nextAni">
-                        <button id="btnDefaults" style="width: 100%; margin-bottom: 8px; background: #1a1a1a; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; color: #ffffff; padding: 8px; font-family: 'chevyray', monospace; font-size: 12px;">Defaults</button>
+                        <button id="btnDefaults" title="Defaults — show or hide the default attribute values table for this animation" style="width: 100%; margin-bottom: 8px; background: #1a1a1a; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; color: #ffffff; padding: 8px; font-family: 'chevyray', monospace; font-size: 12px;">Defaults ▶</button>
                         <table class="defaults-table" id="defaultsTable" style="display: none; visibility: hidden;">
                             <thead>
                                 <tr><th>Head</th><th>Value</th></tr>
                             </thead>
                             <tbody id="defaultsTableBody"></tbody>
                         </table>
-                        <button id="btnEditScript" style="width: 100%; background: #1a1a1a; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; color: #ffffff; padding: 8px; font-family: 'chevyray', monospace; font-size: 12px;">Edit Script</button>
+                        <button id="btnEditScript" title="Edit Script — open the GScript editor for this animation's per-frame logic" style="width: 100%; background: #1a1a1a; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; color: #ffffff; padding: 8px; font-family: 'chevyray', monospace; font-size: 12px;">Edit Script</button>
                     </div>
                     <div class="settings-group" id="historyGroup" style="display: none;">
                         <h3 style="display: flex; align-items: center; gap: 8px;">History <span id="historyLoggingToggleCheckbox" style="display: inline-block; width: 16px; height: 16px; text-align: center; border: 1px solid #555; background: #1a1a1a; vertical-align: middle; line-height: 14px; font-size: 12px; cursor: pointer; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;"> </span></h3>
@@ -1793,8 +1796,15 @@
     <input type="file" id="folderInput" webkitdirectory style="display: none;">
     <div id="settingsDialog" class="dialog-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0); z-index: 10000; justify-content: center; align-items: center;">
         <div class="dialog-content" style="background: #2b2b2b; border: 2px solid #1a1a1a; padding: 0 20px 20px; width: 400px; max-width: 90vw; max-height: 80vh; min-height: 300px; display: flex; flex-direction: column; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8); overflow: hidden;">
-            <div class="dialog-titlebar" style="margin: 0 -20px 16px; padding: 10px 14px; display: flex; align-items: center; gap: 8px; flex-shrink: 0;"><i class="fas fa-cog" style="flex-shrink:0;display:block;"></i><span style="font-family: 'chevyray', monospace; font-size: 13px; color: #c0c0c0; user-select: none; line-height: 16px;">Settings</span></div>
-            <div style="flex: 1; overflow-y: auto; padding-right: 8px; min-height: 0;">
+            <div class="dialog-titlebar" style="margin: 0 -20px 0; display: flex; align-items: stretch; flex-shrink: 0;">
+                <div style="display: flex; align-items: center; padding: 10px 14px; gap: 8px; flex: 1;"><i class="fas fa-cog" style="flex-shrink:0;display:block;"></i><span style="font-family: 'chevyray', monospace; font-size: 13px; color: #c0c0c0; user-select: none; line-height: 16px;">Settings</span></div>
+                <div style="display: flex; align-items: stretch;">
+                    <button class="settings-tab-btn" data-tab="general" style="background: #252525; border: none; border-left: 1px solid #0a0a0a; padding: 10px 16px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; color: #4a9eff; user-select: none; -webkit-user-select: none;">General</button>
+                    <button class="settings-tab-btn" data-tab="canvas" style="background: transparent; border: none; border-left: 1px solid #0a0a0a; padding: 10px 16px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; color: #888; user-select: none; -webkit-user-select: none;">Canvas</button>
+                    <button class="settings-tab-btn" data-tab="keybinds" style="background: transparent; border: none; border-left: 1px solid #0a0a0a; padding: 10px 16px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; color: #888; user-select: none; -webkit-user-select: none;">Keybinds</button>
+                </div>
+            </div>
+            <div id="settingsGeneralPanel" style="flex: 1; overflow-y: auto; padding-right: 8px; min-height: 0; padding-top: 16px;">
                 <div style="margin-bottom: 16px;">
                     <label style="display: block; margin-bottom: 8px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0;">Font:</label>
                     <select id="settingsFont" style="width: 100%; background: #1a1a1a; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; color: #ffffff; padding: 8px; font-family: 'chevyray', monospace; font-size: 12px;">
@@ -1851,25 +1861,28 @@
                         <span>Light Effects</span>
                     </label>
                 </div>
-                <div style="margin-bottom: 16px; border-top: 1px solid #0a0a0a; padding-top: 16px;">
+            </div>
+            <div id="settingsCanvasPanel" style="display: none; flex: 1; overflow-y: auto; padding-right: 8px; min-height: 0; padding-top: 16px;">
+                <div style="margin-bottom: 16px;">
                     <div style="margin-bottom: 12px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0;">Selection Border:</div>
                     <div style="margin-bottom: 12px;">
-                        <label style="display: block; margin-bottom: 8px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0;">Border Color:</label>
+                        <label style="display: block; margin-bottom: 8px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0;">Color:</label>
                         <input type="color" id="settingsSelectionBorderColor" value="#00ff00" style="width: 100%; height: 32px; background: #1a1a1a; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; cursor: pointer;">
                     </div>
                     <div style="margin-bottom: 12px;">
-                        <label style="display: block; margin-bottom: 8px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0;">Border Thickness:</label>
+                        <label style="display: block; margin-bottom: 8px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0;">Thickness:</label>
                         <div style="display: flex; flex-direction: column; gap: 4px;">
                             <input type="range" id="settingsSelectionBorderThickness" min="1" max="10" step="1" value="2" style="flex: 1; background: transparent; height: 8px; cursor: pointer; -webkit-appearance: none; appearance: none; border: none;">
                             <input type="number" id="settingsSelectionBorderThicknessNumber" min="1" max="10" step="1" value="2">
                         </div>
                     </div>
                     <div style="margin-bottom: 12px;">
-                        <label style="display: block; margin-bottom: 8px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0;">Border Opacity: <span id="settingsSelectionBorderOpacityLabel">100%</span></label>
+                        <label style="display: block; margin-bottom: 8px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0;">Opacity: <span id="settingsSelectionBorderOpacityLabel">100%</span></label>
                         <input type="range" id="settingsSelectionBorderOpacity" min="0" max="100" step="1" value="100" style="width: 100%; background: transparent; height: 8px; cursor: pointer; -webkit-appearance: none; appearance: none; border: none;">
                     </div>
                 </div>
             </div>
+            <div id="settingsKeybindsPanel" style="display: none; flex: 1; overflow-y: auto; padding: 16px 8px 0 0; min-height: 0; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0;"></div>
             <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 16px; border-top: 1px solid #0a0a0a; padding-top: 16px; flex-shrink: 0; min-width: 0; align-items: flex-start;">
                 <div style="display: flex; gap: 8px; flex-wrap: wrap; flex: 1; min-width: 0; align-items: flex-start;">
                     <button id="settingsDefaults" style="background: #1a1a1a; color: #ffffff; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; padding: 8px 16px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; white-space: nowrap; flex: 1; min-width: fit-content; align-self: flex-start;">Defaults</button>
@@ -1883,19 +1896,18 @@
         </div>
     </div>
     <div id="infoDialog" class="dialog-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); z-index: 10000; justify-content: center; align-items: center;">
-        <div class="dialog-content" style="background: #2b2b2b; border: 2px solid #1a1a1a; width: 720px; max-width: 92vw; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.9);">
+        <div class="dialog-content" style="background: #2b2b2b; border: 2px solid #1a1a1a; width: 720px; max-width: 92vw; height: 420px; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.9);">
             <div class="dialog-titlebar" style="background: #1e1e1e; border-bottom: 2px solid #0a0a0a; display: flex; align-items: stretch;">
                 <div style="display: flex; align-items: center; padding: 10px 14px; gap: 8px; flex: 1;">
-                    <img src="favicon.ico" style="width: 18px; height: 18px; image-rendering: pixelated;">
+                    <img src="favicon.ico" class="titlebar-logo" style="width: 18px; height: 18px; image-rendering: pixelated;">
                     <span style="font-family: 'chevyray', monospace; font-size: 13px; color: #c0c0c0; user-select: none; -webkit-user-select: none;">Gani Editor</span>
                 </div>
                 <div style="display: flex; align-items: stretch;">
                     <button class="info-tab-btn" data-tab="about" style="background: transparent; border: none; border-left: 1px solid #0a0a0a; padding: 10px 16px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; color: #888; user-select: none; -webkit-user-select: none;">About</button>
-                    <button class="info-tab-btn" data-tab="keybinds" style="background: transparent; border: none; border-left: 1px solid #0a0a0a; padding: 10px 16px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; color: #888; user-select: none; -webkit-user-select: none;">Keybinds</button>
                     <button class="info-tab-btn" data-tab="changelog" style="background: transparent; border: none; border-left: 1px solid #0a0a0a; padding: 10px 16px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; color: #888; user-select: none; -webkit-user-select: none;">Changelog</button>
                 </div>
             </div>
-            <div id="infoContent" style="flex: 1; overflow-y: auto; padding: 20px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0; line-height: 1.6; min-height: 280px; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;"></div>
+            <div id="infoContent" style="flex: 1; overflow-y: auto; padding: 20px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0; line-height: 1.6; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;"></div>
             <div style="border-top: 1px solid #0a0a0a; padding: 12px 16px; display: flex; justify-content: flex-end;">
                 <button id="infoClose" style="background: #1a1a1a; color: #ffffff; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; padding: 8px 16px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px;">Close</button>
             </div>
