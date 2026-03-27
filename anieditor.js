@@ -1274,27 +1274,37 @@ function redraw() {
             _drawBoxSelect(boxSelectStart.x * zoom + width / 2 + panX, boxSelectStart.y * zoom + height / 2 + panY, boxSelectEnd.x * zoom + width / 2 + panX, boxSelectEnd.y * zoom + height / 2 + panY);
         }
     }
-    if (_dragMoveIndicator && !isDragging) {
+    if (_dragMoveIndicator && isDragging) {
         const zoom = zoomFactors[zoomLevel] || 1.0;
-        ctx.save();
-        ctx.translate(width / 2 + panX, height / 2 + panY);
-        ctx.scale(zoom, zoom);
-        for (const [piece, startPos] of _dragMoveIndicator.startPositions) {
-            const bb = piece.getBoundingBox(currentAnimation);
-            if (!bb) continue;
-            const hw = bb.width / 2, hh = bb.height / 2;
-            const sx = startPos.x + hw, sy = startPos.y + hh;
-            const cx = piece.xoffset + hw, cy = piece.yoffset + hh;
-            ctx.setLineDash([3 / zoom, 3 / zoom]);
-            ctx.strokeStyle = "rgba(255,200,0,0.7)";
-            ctx.lineWidth = 1 / zoom;
-            ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(cx, cy); ctx.stroke();
-            ctx.setLineDash([]);
-            ctx.beginPath(); ctx.arc(sx, sy, 5 / zoom, 0, Math.PI * 2);
-            ctx.fillStyle = "rgba(255,200,0,0.35)"; ctx.fill();
-            ctx.strokeStyle = "rgba(255,200,0,1)"; ctx.lineWidth = 1.5 / zoom; ctx.stroke();
+        const _drawDragIndicator = (centerX, centerY) => {
+            ctx.save();
+            ctx.translate(centerX, centerY);
+            ctx.scale(zoom, zoom);
+            for (const [piece, startPos] of _dragMoveIndicator.startPositions) {
+                const bb = piece.getBoundingBox(currentAnimation);
+                if (!bb) continue;
+                const hw = bb.width / 2, hh = bb.height / 2;
+                const sx = startPos.x + hw, sy = startPos.y + hh;
+                const cx = piece.xoffset + hw, cy = piece.yoffset + hh;
+                ctx.setLineDash([6 / zoom, 6 / zoom]);
+                ctx.strokeStyle = "rgba(255,200,0,0.7)";
+                ctx.lineWidth = 2.5 / zoom;
+                ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(cx, cy); ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.beginPath(); ctx.arc(sx, sy, 9 / zoom, 0, Math.PI * 2);
+                ctx.fillStyle = "rgba(255,200,0,0.35)"; ctx.fill();
+                ctx.strokeStyle = "rgba(255,200,0,1)"; ctx.lineWidth = 2.5 / zoom; ctx.stroke();
+            }
+            ctx.restore();
+        };
+        if (splitViewEnabled && !currentAnimation.singleDir && selectedPieceDir !== null) {
+            const quadWidth = width / 2, quadHeight = height / 2;
+            const quadX = (selectedPieceDir % 2) * quadWidth;
+            const quadY = Math.floor(selectedPieceDir / 2) * quadHeight;
+            _drawDragIndicator(quadX + quadWidth / 2 + panX, quadY + quadHeight / 2 + panY);
+        } else {
+            _drawDragIndicator(width / 2 + panX, height / 2 + panY);
         }
-        ctx.restore();
     }
     if (insertPieces.length > 0 && insertPiece) {
         const rect = mainCanvas.getBoundingClientRect();
@@ -9133,7 +9143,7 @@ window.addEventListener("load", async () => {
         if (_tooltipTarget === btnSwapKeys) _tooltipEl.textContent = btnSwapKeys.dataset.title;
         saveSession();
     };
-    const APP_VERSION = "2.1.1b";
+    const APP_VERSION = "2.1.1c";
     const _infoDialog = document.getElementById("infoDialog");
     const _infoClose = document.getElementById("infoClose");
     const _infoContent = document.getElementById("infoContent");
@@ -10108,6 +10118,7 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
                         for (const p of selectedPieces) {
                             pieceInitialPositions.set(p, {x: p.xoffset, y: p.yoffset});
                         }
+                        _dragMoveIndicator = { startPositions: new Map(pieceInitialPositions), pieces: Array.from(selectedPieces) };
                         found = true;
                         if (splitViewEnabled && !currentAnimation.singleDir) {
                             selectedPieceDir = actualDir;
@@ -10161,6 +10172,7 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
                             for (const p of selectedPieces) {
                                 pieceInitialPositions.set(p, {x: p.xoffset, y: p.yoffset});
                             }
+                            _dragMoveIndicator = { startPositions: new Map(pieceInitialPositions), pieces: Array.from(selectedPieces) };
                             found = true;
                             if (splitViewEnabled && !currentAnimation.singleDir) {
                                 selectedPieceDir = actualDir;
@@ -10219,6 +10231,13 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
                 }
             }
         } else if (e.button === 2) {
+            if (isDragging && _dragMoveIndicator) {
+                for (const [piece, startPos] of _dragMoveIndicator.startPositions) { piece.xoffset = startPos.x; piece.yoffset = startPos.y; }
+                isDragging = false; dragButton = null; dragOffset = null; dragStartMousePos = null; dragStartState = null; pieceInitialPositions.clear();
+                _dragMoveIndicator = null;
+                updateItemsCombo(); updateItemSettings(); redraw();
+                return;
+            }
             let _overSprite = false;
             if (currentAnimation) {
                 const frame = currentAnimation.getFrame(currentFrame);
@@ -10365,9 +10384,6 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
                         undo: () => restoreAnimationState(dragStartState),
                         redo: () => restoreAnimationState(newState)
                     });
-                    _dragMoveIndicator = { startPositions: new Map(pieceInitialPositions), pieces: Array.from(selectedPieces) };
-                } else {
-                    _dragMoveIndicator = null;
                 }
             }
             dragButton = null;
@@ -10375,6 +10391,8 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
             dragStartMousePos = null;
             dragStartState = null;
             pieceInitialPositions.clear();
+            _dragMoveIndicator = null;
+            redraw();
             saveSession();
         }
         if (isBoxSelecting && boxSelectStart && e.button === 0) {
@@ -10431,8 +10449,18 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
     mainCanvas.onmouseleave = () => {
         isPanning = false;
         isDragging = false;
+        _dragMoveIndicator = null;
         mainCanvas.style.cursor = "default";
+        redraw();
     };
+    document.addEventListener("mouseup", (e) => {
+        if (e.button === 0 && isDragging) {
+            isDragging = false;
+            _dragMoveIndicator = null;
+            dragButton = null; dragOffset = null; dragStartMousePos = null; dragStartState = null; pieceInitialPositions.clear();
+            redraw();
+        }
+    });
     mainCanvas.oncontextmenu = (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -10679,6 +10707,7 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
             dragStartMousePos = null;
             dragStartState = null;
             pieceInitialPositions.clear();
+            _dragMoveIndicator = null;
             saveSession();
         }
 
@@ -13158,7 +13187,12 @@ function setupContextMenus() {
                 }
             });
             const anyDialogOpen = [settingsDialog, aboutDialog, hotkeysDialog, defaultGaniDialog].some(d => d && d.style.display === "flex") || (colorSchemeDropdown && colorSchemeDropdown.style.display === "block");
-            if (!anyDialogOpen && _dragMoveIndicator) { undo(); _dragMoveIndicator = null; redraw(); }
+            if (!anyDialogOpen && isDragging && _dragMoveIndicator) {
+                for (const [piece, startPos] of _dragMoveIndicator.startPositions) { piece.xoffset = startPos.x; piece.yoffset = startPos.y; }
+                isDragging = false; dragButton = null; dragOffset = null; dragStartMousePos = null; dragStartState = null; pieceInitialPositions.clear();
+                _dragMoveIndicator = null;
+                updateItemsCombo(); updateItemSettings(); redraw();
+            }
         }
     });
     document.addEventListener("click", hideContextMenu);

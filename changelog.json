@@ -1,5 +1,14 @@
 [
   {
+    "version": "2.1.1c",
+    "date": "2026-03-27",
+    "changes": [
+      "Fixed drag origin indicator — was incorrectly showing after drop instead of during drag",
+      "Right-clicking or pressing Escape while dragging a sprite cancels the drag and snaps it back to its origin",
+      "Drag origin line and dot scaled up for high-resolution displays"
+    ]
+  },
+  {
     "version": "2.1.1b",
     "date": "2026-03-26",
     "changes": [
