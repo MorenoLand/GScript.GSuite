@@ -830,11 +830,11 @@ function drawSprite(ctx, sprite, x, y, level = 0, drawnSprites = null) {
         if (child && level < 10) drawSprite(ctx, child, x + attached.offset.x, y + attached.offset.y, level + 1, drawnSprites);
     }
     const img = getSpriteImage(sprite);
+    const _sz = sprite._zoom || 1.0;
+    const _sx = sprite.xscale * _sz, _sy = sprite.yscale * _sz;
     if (img) {
         const imageName = sprite.type === "CUSTOM" ? sprite.customImageName.toLowerCase() : (currentAnimation ? currentAnimation.getDefaultImageName(sprite.type) : "").toLowerCase();
         const isLightImage = (sprite.mode === 0) || (sprite.mode === undefined && localStorage.getItem("editorLightEffects") !== "false" && (imageName.includes("light") || sprite.comment.toLowerCase().includes("light")));
-        const _sz = sprite._zoom || 1.0;
-        const _sx = sprite.xscale * _sz, _sy = sprite.yscale * _sz;
         ctx.save();
         ctx.imageSmoothingEnabled = false;
         ctx.translate(Math.round(x), Math.round(y));
@@ -4009,7 +4009,7 @@ function switchTab(index) {
     updateTabs();
     updateUIVisibility();
     updateHistoryMenu();
-    redraw();
+    requestAnimationFrame(() => { resizeCanvas(); redraw(); });
     updateFrameInfo();
     updateHistoryMenu();
     updateSpritesList();
@@ -7023,14 +7023,22 @@ window.addEventListener("load", async () => {
                 if (slider) slider.value = currentFrame;
             }
         } else if (matchesKeybind(e, keybinds.zoomIn) || e.key === "=") {
+            const oldZoom = zoomFactors[zoomLevel] || 1.0;
             zoomLevel++;
             if (zoomLevel >= zoomFactors.length) zoomLevel = zoomFactors.length - 1;
+            const newZoom = zoomFactors[zoomLevel] || 1.0;
+            panX *= newZoom / oldZoom;
+            panY *= newZoom / oldZoom;
             localStorage.setItem("mainCanvasZoom", zoomLevel);
             updateMainCanvasZoomDisplay();
             redraw();
         } else if (matchesKeybind(e, keybinds.zoomOut) || e.key === "_") {
+            const oldZoom = zoomFactors[zoomLevel] || 1.0;
             zoomLevel--;
             if (zoomLevel < 0) zoomLevel = 0;
+            const newZoom = zoomFactors[zoomLevel] || 1.0;
+            panX *= newZoom / oldZoom;
+            panY *= newZoom / oldZoom;
             localStorage.setItem("mainCanvasZoom", zoomLevel);
             updateMainCanvasZoomDisplay();
             redraw();
@@ -7128,9 +7136,6 @@ window.addEventListener("load", async () => {
     document.getElementById("btnCenterView").onclick = () => {
         panX = 0;
         panY = 0;
-        zoomLevel = 6;
-        localStorage.setItem("mainCanvasZoom", zoomLevel);
-        updateMainCanvasZoomDisplay();
         redraw();
     };
     const updateMainCanvasZoomDisplay = () => {
@@ -7139,15 +7144,23 @@ window.addEventListener("load", async () => {
         if (zoomDisplay) zoomDisplay.textContent = zoomFactor.toFixed(1) + "x";
     };
     document.getElementById("btnZoomOut").onclick = () => {
+        const oldZoom = zoomFactors[zoomLevel] || 1.0;
         zoomLevel--;
         if (zoomLevel < 0) zoomLevel = 0;
+        const newZoom = zoomFactors[zoomLevel] || 1.0;
+        panX *= newZoom / oldZoom;
+        panY *= newZoom / oldZoom;
         localStorage.setItem("mainCanvasZoom", zoomLevel);
         updateMainCanvasZoomDisplay();
         redraw();
     };
     document.getElementById("btnZoomIn").onclick = () => {
+        const oldZoom = zoomFactors[zoomLevel] || 1.0;
         zoomLevel++;
         if (zoomLevel >= zoomFactors.length) zoomLevel = zoomFactors.length - 1;
+        const newZoom = zoomFactors[zoomLevel] || 1.0;
+        panX *= newZoom / oldZoom;
+        panY *= newZoom / oldZoom;
         localStorage.setItem("mainCanvasZoom", zoomLevel);
         updateMainCanvasZoomDisplay();
         redraw();
@@ -9143,7 +9156,7 @@ window.addEventListener("load", async () => {
         if (_tooltipTarget === btnSwapKeys) _tooltipEl.textContent = btnSwapKeys.dataset.title;
         saveSession();
     };
-    const APP_VERSION = "2.1.1c";
+    const APP_VERSION = "2.1.1d";
     const _infoDialog = document.getElementById("infoDialog");
     const _infoClose = document.getElementById("infoClose");
     const _infoContent = document.getElementById("infoContent");
