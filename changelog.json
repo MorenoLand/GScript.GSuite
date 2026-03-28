@@ -1,5 +1,15 @@
 [
   {
+    "version": "2.1.1d",
+    "date": "2026-03-28",
+    "changes": [
+      "Fixed canvas blanking out after uploading a gani — canvas now resizes correctly on tab switch",
+      "Fixed _sx is not defined crash when drawing sprites without loaded images",
+      "Center View no longer resets zoom — only centers pan to grid origin",
+      "Zoom buttons and keyboard zoom no longer drift the view — pan is now properly adjusted to keep center anchored"
+    ]
+  },
+  {
     "version": "2.1.1c",
     "date": "2026-03-27",
     "changes": [
