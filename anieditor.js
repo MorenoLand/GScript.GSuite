@@ -280,12 +280,15 @@ const ENABLE_F12_LOGGING = false;
 let animations = [];
 let currentTabIndex = 0;
 let currentAnimation = null;
-let localFileCache = { images: [], ganis: [], sounds: [] };
+let localFileCache = { images: [], ganis: [], sounds: [], ganiFiles: [] };
+let workspaceImageKeys = new Set();
 
 const refreshLocalFileCache = async () => {
     localFileCache.images = [];
     localFileCache.ganis = [];
     localFileCache.sounds = [];
+    localFileCache.ganiFiles = [];
+    workspaceImageKeys.clear();
 };
 let currentFrame = 0;
 let currentDir = 2;
@@ -740,6 +743,8 @@ function resizeCanvas() {
                     timelineContainer.style.setProperty("opacity", "0", "important");
                     timelineContainer.style.setProperty("flex", "0 0 0px", "important");
                     timelineContainer.style.setProperty("height", "0px", "important");
+                    const _tw = timelineContainer.closest(".timeline-wrapper");
+                    if (_tw) _tw.style.setProperty("min-height", "0", "important");
                 }
                 if (timelineView) {
                     timelineView.style.setProperty("display", "none", "important");
@@ -1536,8 +1541,40 @@ function drawTimeline() {
     timelineCtx.clearRect(0, 0, width, height);
     timelineCtx.fillStyle = getTimelineBackgroundColor();
     timelineCtx.fillRect(0, 0, width, height);
-    if (currentAnimation.frames.length === 0) return;
     const headerHeight = 20;
+    const _rsT = getComputedStyle(document.documentElement);
+    const rulerBg = _rsT.getPropertyValue('--timeline-ruler-bg').trim() || "#808080";
+    const rulerTick = _rsT.getPropertyValue('--timeline-ruler-tick').trim() || "#e0e0e0";
+    const rulerText = _rsT.getPropertyValue('--timeline-ruler-text').trim() || "#ffffff";
+    if (currentAnimation.frames.length === 0) {
+        timelineCtx.fillStyle = rulerBg;
+        timelineCtx.fillRect(-2, 0, width + 4, headerHeight);
+        timelineCtx.font = "11px Arial";
+        timelineCtx.textAlign = "left";
+        timelineCtx.strokeStyle = rulerTick;
+        timelineCtx.lineWidth = 1;
+        const pixPerMs = 1.5 * timelineZoom;
+        const interval = Math.max(50, Math.round(50 / pixPerMs));
+        let lastLabelRight = -999;
+        for (let t = 0; ; t += interval) {
+            const rx = 2 - timelineScrollX + t * pixPerMs;
+            if (rx > width + 1) break;
+            if (rx >= -1) {
+                timelineCtx.beginPath();
+                timelineCtx.moveTo(rx, 8);
+                timelineCtx.lineTo(rx, headerHeight - 1);
+                timelineCtx.stroke();
+                const timeStr = (t / 1000.0).toFixed(3) + "s";
+                const labelX = rx + 2;
+                if (labelX > lastLabelRight) {
+                    timelineCtx.fillStyle = rulerText;
+                    timelineCtx.fillText(timeStr, labelX, 1);
+                    lastLabelRight = labelX + timelineCtx.measureText(timeStr).width + 4;
+                }
+            }
+        }
+        return;
+    }
     const isTouch = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
     const buttonHeight = isTouch ? 96 : 110;
     let totalTime = 0;
@@ -1757,11 +1794,11 @@ function drawTimeline() {
             timelineCtx.stroke();
         }
     }
-    timelineCtx.fillStyle = "#808080";
+    timelineCtx.fillStyle = rulerBg;
     timelineCtx.fillRect(-2, 0, width + 4, headerHeight);
     timelineCtx.font = "11px Arial";
     timelineCtx.textAlign = "left";
-    timelineCtx.strokeStyle = "#e0e0e0";
+    timelineCtx.strokeStyle = rulerTick;
     timelineCtx.lineWidth = 1;
     let rulerX = 2 - timelineScrollX;
     let accTime = 0;
@@ -1775,7 +1812,7 @@ function drawTimeline() {
             const timeStr = (accTime / 1000.0).toFixed(3) + "s";
             const labelX = rulerX + 2;
             if (labelX > lastLabelRight) {
-                timelineCtx.fillStyle = "#ffffff";
+                timelineCtx.fillStyle = rulerText;
                 timelineCtx.fillText(timeStr, labelX, 1);
                 lastLabelRight = labelX + timelineCtx.measureText(timeStr).width + 4;
             }
@@ -6854,6 +6891,8 @@ window.addEventListener("load", async () => {
                     timelineContainer.style.setProperty("opacity", "0", "important");
                     timelineContainer.style.setProperty("flex", "0 0 0px", "important");
                     timelineContainer.style.setProperty("height", "0px", "important");
+                    const _tw = timelineContainer.closest(".timeline-wrapper");
+                    if (_tw) _tw.style.setProperty("min-height", "0", "important");
                     if (timelineView) {
                         timelineView.style.setProperty("display", "none", "important");
                         timelineView.style.setProperty("visibility", "hidden", "important");
@@ -6876,6 +6915,8 @@ window.addEventListener("load", async () => {
                     timelineContainer.style.opacity = "1";
                     timelineContainer.style.removeProperty("flex");
                     timelineContainer.style.removeProperty("height");
+                    const _tw = timelineContainer.closest(".timeline-wrapper");
+                    if (_tw) _tw.style.removeProperty("min-height");
                     if (timelineView) {
                         timelineView.style.display = "block";
                         timelineView.style.visibility = "visible";
@@ -7329,28 +7370,24 @@ window.addEventListener("load", async () => {
             }
         }
         const imageFiles = files.filter(f => f.type.startsWith("image/") || f.name.toLowerCase().endsWith('.mng'));
+        const ganiFiles = files.filter(f => f.name.toLowerCase().endsWith('.gani'));
+        const soundFiles = files.filter(f => /\.(wav|mp3|ogg|mid|midi)$/i.test(f.name));
+        localFileCache.ganis = ganiFiles.map(f => f.webkitRelativePath || f.name);
+        localFileCache.sounds = soundFiles.map(f => f.webkitRelativePath || f.name);
+        localFileCache.ganiFiles = ganiFiles;
+        imageFiles.forEach(f => workspaceImageKeys.add(f.name.toLowerCase()));
         const totalFiles = imageFiles.length;
         let loading = null;
-        if (totalFiles > 0) {
-            loading = showLoadingMessage("Loading workspace... 0%");
-        }
+        if (totalFiles > 0) loading = showLoadingMessage("Loading workspace... 0%");
         let loadedCount = 0;
-        for (const file of imageFiles) {
-                try {
-                    await loadImage(file);
-                    loadedCount++;
-                if (loading) {
-                    const percent = Math.round((loadedCount / totalFiles) * 100);
-                    loading.update(`Loading workspace... ${percent}%`);
-                }
-                } catch (err) {
-                    console.error(`Failed to load ${file.name}:`, err);
+        const BATCH = 20;
+        for (let i = 0; i < imageFiles.length; i += BATCH) {
+            const batch = imageFiles.slice(i, i + BATCH);
+            await Promise.all(batch.map(async file => {
+                try { await loadImage(file); } catch (err) { console.error(`Failed to load ${file.name}:`, err); }
                 loadedCount++;
-                if (loading) {
-                    const percent = Math.round((loadedCount / totalFiles) * 100);
-                    loading.update(`Loading workspace... ${percent}%`);
-                }
-            }
+                if (loading) loading.update(`Loading workspace... ${Math.round((loadedCount / totalFiles) * 100)}%`);
+            }));
         }
         if (loading) loading.close();
         if (DEBUG_MODE) f12Log(`Loaded ${loadedCount} images from workspace`);
@@ -7584,6 +7621,7 @@ window.addEventListener("load", async () => {
             });
         }
     };
+    document.getElementById("btnBrowseWorkspace").onclick = () => showWorkspaceBrowserDialog();
     const btnDuplicateSprite = document.getElementById("btnDuplicateSprite");
     if (btnDuplicateSprite) {
         btnDuplicateSprite.onclick = () => {
@@ -7619,7 +7657,7 @@ window.addEventListener("load", async () => {
             if (oldStyle) oldStyle.remove();
             document.body.style.background = "";
             document.body.style.color = "";
-            ["--timeline-frame-bg","--timeline-frame-selected-bg","--timeline-frame-multi-bg","--quadrant-divider"].forEach(v => document.documentElement.style.removeProperty(v));
+            ["--timeline-frame-bg","--timeline-frame-selected-bg","--timeline-frame-multi-bg","--quadrant-divider","--timeline-ruler-bg","--timeline-ruler-tick","--timeline-ruler-text"].forEach(v => document.documentElement.style.removeProperty(v));
             const settingsDialog = document.getElementById("settingsDialog");
             const aboutDialog = document.getElementById("infoDialog");
             if (settingsDialog) {
@@ -7765,7 +7803,7 @@ window.addEventListener("load", async () => {
         const tabActive = colors.tabActive || colors.panel;
         const inputBg = colors.inputBg || colors.bg;
         style.textContent = `
-            :root { --timeline-frame-bg: ${colors.frameBg}; --timeline-frame-selected-bg: ${colors.frameSelected}; --timeline-frame-multi-bg: ${colors.frameMulti}; --quadrant-divider: ${colors.divider}; }
+            :root { --timeline-frame-bg: ${colors.frameBg}; --timeline-frame-selected-bg: ${colors.frameSelected}; --timeline-frame-multi-bg: ${colors.frameMulti}; --quadrant-divider: ${colors.divider}; --timeline-ruler-bg: ${colors.border}; --timeline-ruler-tick: ${colors.text}; --timeline-ruler-text: ${colors.text}; }
             .toolbar, .sprite-toolbar, .playback-controls { background: ${colors.panel} !important; }
             .left-panel, .right-panel, .sprite-edit-panel, .timeline-container, .settings-group { background: ${colors.panel} !important; }
             .sprite-item, .sprite-preview, .timeline-view { background: ${colors.panel} !important; }
@@ -9168,7 +9206,7 @@ window.addEventListener("load", async () => {
         if (_tooltipTarget === btnSwapKeys) _tooltipEl.textContent = btnSwapKeys.dataset.title;
         saveSession();
     };
-    const APP_VERSION = "2.1.1e";
+    const APP_VERSION = "2.1.1f";
     const _infoDialog = document.getElementById("infoDialog");
     const _infoClose = document.getElementById("infoClose");
     const _infoContent = document.getElementById("infoContent");
@@ -11476,7 +11514,201 @@ function showConfirmDialog(message, callback, showClearStorage = false) {
     setTimeout(() => document.addEventListener("keydown", handleKeyPress), 100);
 }
 
-function showAddSpriteDialog(editSprite = null) {
+function showWorkspaceBrowserDialog() {
+    const wsKeys = [...workspaceImageKeys].filter(k => imageLibrary.has(k));
+    const localKeys = [...imageLibrary.keys()].filter(k => !workspaceImageKeys.has(k));
+    const ganiFiles = localFileCache.ganiFiles || [];
+    if (!wsKeys.length && !localKeys.length && !ganiFiles.length) { showAlertDialog("No workspace loaded. Use Set Working Directory to load a workspace first."); return; }
+    const currentFont = localStorage.getItem("editorFont") || "chevyray";
+    const fontFamily = getFontFamily(currentFont);
+    const currentScheme = localStorage.getItem("ganiEditorColorScheme") || "default";
+    let dc = {panel:"#2b2b2b",border:"#0a0a0a",text:"#e0e0e0",inputBg:"#1a1a1a",buttonBg:"#2b2b2b",buttonText:"#e0e0e0",hover:"#404040"};
+    if (currentScheme !== "default") {
+        const schemes = {"fusion-light":{panel:"#ffffff",border:"#d0d0d0",text:"#1a1a1a",inputBg:"#ffffff",buttonBg:"#ffffff",buttonText:"#1a1a1a",hover:"#e8e8e8"},"fusion-dark":{panel:"#2d2d2d",border:"#0f0f0f",text:"#e8e8e8",inputBg:"#1e1e1e",buttonBg:"#2d2d2d",buttonText:"#e8e8e8",hover:"#3d3d3d"},"dark-style":{panel:"#252525",border:"#3c3c3c",text:"#cccccc",inputBg:"#1e1e1e",buttonBg:"#252525",buttonText:"#cccccc",hover:"#3e3e3e"},"dark-orange":{panel:"#3a2f2a",border:"#1a0f0a",text:"#ffaa55",inputBg:"#2a1f1a",buttonBg:"#3a2f2a",buttonText:"#ffaa55",hover:"#4a3f3a"},"aqua":{panel:"#1a2a2f",border:"#0a0a0a",text:"#55ffff",inputBg:"#0a1a1f",buttonBg:"#1a2a2f",buttonText:"#55ffff",hover:"#2a3a3f"},"elegant-dark":{panel:"#2d2d2d",border:"#404040",text:"#e8e8e8",inputBg:"#1a1a1a",buttonBg:"#2d2d2d",buttonText:"#e8e8e8",hover:"#3d3d3d"},"material-dark":{panel:"#1e1e1e",border:"#333333",text:"#ffffff",inputBg:"#121212",buttonBg:"#1e1e1e",buttonText:"#ffffff",hover:"#2e2e2e"},"light-style":{panel:"#ffffff",border:"#e0e0e0",text:"#000000",inputBg:"#ffffff",buttonBg:"#ffffff",buttonText:"#000000",hover:"#f5f5f5"},"ayu-mirage":{panel:"#232834",border:"#191e2a",text:"#cbccc6",inputBg:"#1f2430",buttonBg:"#232834",buttonText:"#cbccc6",hover:"#2a2f3a"},"dracula":{panel:"#343746",border:"#21222c",text:"#f8f8f2",inputBg:"#282a36",buttonBg:"#343746",buttonText:"#f8f8f2",hover:"#44475a"}};
+        if (schemes[currentScheme]) dc = schemes[currentScheme];
+    }
+    const _dcs = getComputedStyle(document.documentElement);
+    const _dcv = v => _dcs.getPropertyValue(v).trim();
+    if (_dcv('--dialog-bg')) dc.panel = _dcv('--dialog-bg');
+    if (_dcv('--dialog-text')) dc.text = _dcv('--dialog-text');
+    if (_dcv('--dialog-input-bg')) dc.inputBg = _dcv('--dialog-input-bg');
+    if (_dcv('--dialog-border')) dc.border = _dcv('--dialog-border');
+    if (_dcv('--dialog-button-bg')) dc.buttonBg = _dcv('--dialog-button-bg');
+    if (_dcv('--dialog-button-text')) dc.buttonText = _dcv('--dialog-button-text');
+    const borderTL = dc.border === "#0a0a0a" ? "#404040" : dc.border;
+    const overlay = document.createElement("div");
+    overlay.className = "dialog-overlay";
+    overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;display:flex;justify-content:center;align-items:center;";
+    overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+    const content = document.createElement("div");
+    content.className = "dialog-content";
+    content.style.cssText = `background:${dc.panel};border:1px solid ${borderTL};box-shadow:inset 0 1px 0 rgba(0,0,0,0.3),0 2px 4px rgba(0,0,0,0.5);width:760px;max-width:93vw;height:580px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;resize:both;font-family:${fontFamily};color:${dc.text};`;
+    const titlebar = document.createElement("div");
+    titlebar.className = "dialog-titlebar";
+    titlebar.style.cssText = "flex-shrink:0;padding:10px 14px;display:flex;align-items:center;gap:8px;";
+    titlebar.innerHTML = `<i class="fas fa-folder-open" style="flex-shrink:0;"></i><span>Workspace Browser</span>`;
+    content.appendChild(titlebar);
+    const tabRow = document.createElement("div");
+    tabRow.style.cssText = `display:flex;flex-shrink:0;align-items:center;border-bottom:1px solid ${dc.border};padding:0 8px;gap:2px;background:${dc.inputBg};`;
+    let activeTab = wsKeys.length ? "workspace" : (localKeys.length ? "local" : "ganis");
+    const tabs = {};
+    const makeTab = (id, label) => {
+        const t = document.createElement("button");
+        t.textContent = label;
+        t.style.cssText = `background:none;border:none;border-bottom:2px solid transparent;padding:8px 14px;cursor:pointer;font-size:12px;font-family:${fontFamily};color:${dc.text};`;
+        t.onclick = () => { activeTab = id; navState[id] = null; Object.entries(tabs).forEach(([k,el]) => el.style.borderBottomColor = k===activeTab ? dc.text : "transparent"); render(); };
+        tabs[id] = t; tabRow.appendChild(t);
+    };
+    if (wsKeys.length) makeTab("workspace", `Workspace (${wsKeys.length})`);
+    if (localKeys.length) makeTab("local", `Local (${localKeys.length})`);
+    makeTab("ganis", `Ganis (${ganiFiles.length})`);
+    tabs[activeTab].style.borderBottomColor = dc.text;
+    const spacer = document.createElement("div"); spacer.style.flex = "1"; tabRow.appendChild(spacer);
+    const searchInput = document.createElement("input");
+    searchInput.type = "text"; searchInput.placeholder = "Search...";
+    searchInput.style.cssText = `background:${dc.inputBg};color:${dc.text};border:1px solid ${borderTL};padding:3px 7px;font-size:11px;font-family:${fontFamily};border-radius:3px;width:140px;margin:4px 0;`;
+    searchInput.oninput = () => render();
+    tabRow.appendChild(searchInput);
+    const tabPane = document.createElement("div");
+    tabPane.style.cssText = "flex:1;overflow:hidden;min-height:0;display:flex;flex-direction:column;";
+    const navState = { workspace: null, local: null };
+    let activeObserver = null;
+    const PAGE = 200;
+    const buildPrefixGroups = (keys) => {
+        const folders = new Map(), files = [];
+        for (const k of keys) { const i = k.indexOf('_'); const p = i>0 ? k.slice(0,i) : null; if (p) { if (!folders.has(p)) folders.set(p,[]); folders.get(p).push(k); } else files.push(k); }
+        const result = { folders: new Map(), files: [...files] };
+        for (const [p,items] of folders) { if (items.length>=2) result.folders.set(p,items); else result.files.push(...items); }
+        return result;
+    };
+    const renderImages = (allKeys) => {
+        if (activeObserver) { activeObserver.disconnect(); activeObserver = null; }
+        const q = searchInput.value.trim().toLowerCase();
+        const folder = navState[activeTab];
+        const wrap = document.createElement("div"); wrap.style.cssText = "display:flex;flex-direction:column;flex:1;overflow:hidden;min-height:0;";
+        const breadcrumb = document.createElement("div");
+        breadcrumb.style.cssText = `display:flex;align-items:center;gap:4px;padding:5px 10px;font-size:11px;border-bottom:1px solid ${dc.border};flex-shrink:0;background:${dc.inputBg};`;
+        const homeLink = Object.assign(document.createElement("span"), {textContent:"Home"});
+        homeLink.style.cssText = `cursor:${folder?"pointer":"default"};opacity:${folder?1:0.5};`;
+        if (folder) homeLink.onclick = () => { navState[activeTab]=null; render(); };
+        breadcrumb.appendChild(homeLink);
+        if (folder) {
+            breadcrumb.appendChild(Object.assign(document.createElement("span"),{textContent:" › ",style:"opacity:0.4;"}));
+            breadcrumb.appendChild(Object.assign(document.createElement("span"),{textContent:`${folder}`}));
+        }
+        wrap.appendChild(breadcrumb);
+        const scrollArea = document.createElement("div"); scrollArea.style.cssText = "flex:1;overflow:auto;padding:8px;";
+        let showFolders = [], displayKeys = [];
+        if (folder) {
+            displayKeys = allKeys.filter(k => k.startsWith(folder+'_') && (!q || k.includes(q)));
+        } else if (q) {
+            displayKeys = allKeys.filter(k => k.includes(q));
+        } else {
+            const groups = buildPrefixGroups(allKeys);
+            showFolders = [...groups.folders.entries()].sort(([a],[b])=>a.localeCompare(b));
+            displayKeys = [...groups.files].sort();
+        }
+        let shownCount = PAGE;
+        const renderPage = () => {
+            scrollArea.innerHTML = "";
+            if (activeObserver) activeObserver.disconnect();
+            activeObserver = new IntersectionObserver(entries => {
+                for (const e of entries) {
+                    if (!e.isIntersecting || e.target.dataset.loaded) continue;
+                    e.target.dataset.loaded = "1";
+                    const img = imageLibrary.get(e.target.dataset.key);
+                    const c = e.target.querySelector("canvas");
+                    if (img && c) {
+                        const ctx = c.getContext("2d");
+                        for (let cy=0;cy<80;cy+=8) for (let cx=0;cx<80;cx+=8) { ctx.fillStyle=((cx+cy)/8%2<1)?"#555":"#888"; ctx.fillRect(cx,cy,8,8); }
+                        const sc=Math.min(80/img.width,80/img.height,1);
+                        ctx.drawImage(img,(80-img.width*sc)/2,(80-img.height*sc)/2,img.width*sc,img.height*sc);
+                    }
+                    activeObserver.unobserve(e.target);
+                }
+            }, { root: scrollArea, rootMargin:"200px" });
+            if (showFolders.length) {
+                const fg = document.createElement("div"); fg.style.cssText = "display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:6px;margin-bottom:8px;";
+                for (const [prefix,items] of showFolders) {
+                    const fi = document.createElement("div");
+                    fi.style.cssText = `display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 4px;cursor:pointer;border:1px solid transparent;border-radius:3px;text-align:center;user-select:none;`;
+                    fi.onmouseenter=()=>{fi.style.background=dc.hover;fi.style.borderColor=borderTL;}; fi.onmouseleave=()=>{fi.style.background="";fi.style.borderColor="transparent";};
+                    fi.innerHTML=`<i class="fas fa-folder" style="font-size:34px;color:#e8b84b;"></i><div style="font-size:10px;color:${dc.text};max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${prefix}">${prefix}</div><div style="font-size:9px;color:${dc.text};opacity:0.45;">${items.length}</div>`;
+                    fi.ondblclick=()=>{navState[activeTab]=prefix;render();}; fi.onclick=()=>{scrollArea.querySelectorAll(".wbi").forEach(d=>{d.style.background="";d.style.borderColor="transparent";});fi.style.background=dc.hover;fi.style.borderColor=dc.text;fi.className="wbi";};
+                    fg.appendChild(fi);
+                }
+                scrollArea.appendChild(fg);
+                if (displayKeys.length) { const sep=document.createElement("div"); sep.style.cssText=`border-top:1px solid ${dc.border};margin:4px 0 8px;`; scrollArea.appendChild(sep); }
+            }
+            const visible = displayKeys.slice(0, shownCount);
+            if (visible.length) {
+                const grid = document.createElement("div"); grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:6px;";
+                for (const key of visible) {
+                    const item = document.createElement("div"); item.className="wbi"; item.dataset.key=key;
+                    item.style.cssText=`display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 4px;cursor:pointer;border:1px solid transparent;border-radius:3px;user-select:none;`;
+                    item.onmouseenter=()=>{item.style.background=dc.hover;item.style.borderColor=borderTL;}; item.onmouseleave=()=>{item.style.background="";item.style.borderColor="transparent";};
+                    const c=document.createElement("canvas"); c.width=80; c.height=80;
+                    const lbl=document.createElement("div"); lbl.style.cssText=`font-size:10px;color:${dc.text};text-align:center;max-width:92px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;`; lbl.textContent=key; lbl.title=key;
+                    item.appendChild(c); item.appendChild(lbl);
+                    item.ondblclick=()=>{overlay.remove();showAddSpriteDialog(null,key);};
+                    item.onclick=()=>{scrollArea.querySelectorAll(".wbi").forEach(d=>{d.style.background="";d.style.borderColor="transparent";});item.style.background=dc.hover;item.style.borderColor=dc.text;};
+                    grid.appendChild(item); activeObserver.observe(item);
+                }
+                scrollArea.appendChild(grid);
+            }
+            if (shownCount < displayKeys.length) {
+                const more=document.createElement("button"); more.style.cssText=`display:block;margin:12px auto;background:${dc.buttonBg};color:${dc.buttonText};border:1px solid ${borderTL};padding:5px 16px;cursor:pointer;font-size:12px;font-family:${fontFamily};border-radius:3px;`;
+                more.textContent=`Load more (${displayKeys.length-shownCount} remaining)`; more.onclick=()=>{shownCount+=PAGE;renderPage();}; scrollArea.appendChild(more);
+            }
+            if (!showFolders.length && !displayKeys.length) {
+                const empty=document.createElement("div"); empty.style.cssText=`padding:20px;color:${dc.text};opacity:0.5;text-align:center;`; empty.textContent=q?"No matches.":"No images."; scrollArea.appendChild(empty);
+            }
+        };
+        renderPage(); wrap.appendChild(scrollArea); return wrap;
+    };
+    const render = () => {
+        tabPane.innerHTML = "";
+        if (activeTab === "ganis") {
+            const q = searchInput.value.trim().toLowerCase();
+            const filtered = q ? ganiFiles.filter(f=>f.name.toLowerCase().includes(q)) : ganiFiles;
+            if (!filtered.length) { tabPane.innerHTML=`<div style="padding:20px;color:${dc.text};opacity:0.5;text-align:center;">${ganiFiles.length?"No matches.":"No ganis in workspace."}</div>`; return; }
+            const list = document.createElement("div"); list.style.cssText="display:flex;flex-direction:column;gap:1px;padding:8px;overflow:auto;flex:1;";
+            for (const file of filtered) {
+                const item=document.createElement("div"); item.style.cssText=`padding:7px 10px;cursor:pointer;border-radius:3px;font-size:12px;color:${dc.text};display:flex;align-items:center;gap:8px;font-family:${fontFamily};`;
+                item.onmouseenter=()=>item.style.background=dc.hover; item.onmouseleave=()=>item.style.background="";
+                item.innerHTML=`<i class="fas fa-file-code" style="opacity:0.55;width:14px;"></i><span>${file.name}</span>`;
+                item.onclick=async()=>{
+                    overlay.remove();
+                    try {
+                        const text=await file.text(); const importAni=parseGani(text);
+                        if(!importAni||importAni.sprites.size===0){showAlertDialog("No sprites found in "+file.name);return;}
+                        for(const[k,v]of importAni.defaultImages){if(!currentAnimation.getDefaultImageName(k))currentAnimation.setDefaultImage(k,v);}
+                        const oldState=serializeAnimationState();let existsOptionAll=null,importedCount=0;
+                        for(const sprite of importAni.sprites.values()){
+                            let spriteIndex=sprite.index,existsOption=existsOptionAll;
+                            if(currentAnimation.sprites.has(spriteIndex)){if(existsOptionAll===null){showConfirmDialog("Sprite index already in use.\n\nOK to skip, Cancel to assign new index.\n\nApply to all?",applyAll=>{existsOption=applyAll?"skip":"new";if(applyAll)existsOptionAll=existsOption;});}if(existsOption==="skip")continue;if(existsOption==="new")spriteIndex=currentAnimation.nextSpriteIndex++;}
+                            const ns=new AniSprite();ns.index=spriteIndex;ns.comment=sprite.comment||"Imported Sprite";ns.type=sprite.type||"CUSTOM";ns.customImageName=sprite.customImageName||"";
+                            ns.left=sprite.left||0;ns.top=sprite.top||0;ns.width=sprite.width||32;ns.height=sprite.height||32;ns.rotation=sprite.rotation||0;ns.xscale=sprite.xscale||1;ns.yscale=sprite.yscale||1;
+                            ns.colorEffectEnabled=sprite.colorEffectEnabled||false;ns.colorEffect=sprite.colorEffect?{...sprite.colorEffect}:{r:255,g:255,b:255,a:255};ns.m_drawIndex=sprite.m_drawIndex||0;
+                            ns.attachedSprites=(sprite.attachedSprites||[]).map(a=>({index:a.index||a,offset:a.offset?{...a.offset}:(a.x!==undefined?{x:a.x,y:a.y}:{x:0,y:0})}));
+                            ns.updateBoundingBox();currentAnimation.addSprite(ns);importedCount++;
+                        }
+                        if(importedCount>0){const newState=serializeAnimationState();addUndoCommand({description:`Import ${importedCount} Sprite${importedCount>1?'s':''}`,oldState,newState,undo:()=>restoreAnimationState(oldState),redo:()=>restoreAnimationState(newState)});}
+                        updateSpritesList();updateDefaultsTable();redraw();showAlertDialog(`Imported ${importedCount} sprite(s) from ${file.name}`);
+                    } catch(err){showAlertDialog("Failed to import: "+err.message);}
+                };
+                list.appendChild(item);
+            }
+            tabPane.appendChild(list);
+        } else {
+            tabPane.appendChild(renderImages(activeTab==="workspace" ? wsKeys : localKeys));
+        }
+    };
+    render();
+    content.appendChild(tabRow); content.appendChild(tabPane);
+    overlay.appendChild(content); document.body.appendChild(overlay);
+}
+function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
     const currentFont = localStorage.getItem("editorFont") || "chevyray";
     const fontFamily = getFontFamily(currentFont);
     const dialog = document.createElement("div");
@@ -11837,6 +12069,15 @@ function showAddSpriteDialog(editSprite = null) {
     fileInput.style.display = "none";
     document.body.appendChild(fileInput);
     let previewImg = null;
+    if (preSelectImage) {
+        const _psi = imageLibrary.get(preSelectImage.toLowerCase());
+        if (_psi) {
+            previewImg = _psi;
+            const _psf = document.getElementById("addSpriteImageFile");
+            if (_psf) { _psf.value = preSelectImage; document.getElementById("addSpriteSource").value = "CUSTOM"; }
+            setTimeout(() => updateAddSpritePreview(), 0);
+        }
+    }
     document.getElementById("addSpriteBrowse").onclick = () => {
         fileInput.onchange = async (e) => {
             const file = e.target.files[0];
@@ -13085,6 +13326,8 @@ function setupContextMenus() {
                     timelineContainer.style.opacity = "1";
                     timelineContainer.style.removeProperty("flex");
                     timelineContainer.style.removeProperty("height");
+                    const _tw = timelineContainer.closest(".timeline-wrapper");
+                    if (_tw) _tw.style.removeProperty("min-height");
                     if (timelineView) {
                         timelineView.style.display = "block";
                         timelineView.style.visibility = "visible";
@@ -13108,6 +13351,8 @@ function setupContextMenus() {
                     timelineContainer.style.setProperty("opacity", "0", "important");
                     timelineContainer.style.setProperty("flex", "0 0 0px", "important");
                     timelineContainer.style.setProperty("height", "0px", "important");
+                    const _tw = timelineContainer.closest(".timeline-wrapper");
+                    if (_tw) _tw.style.setProperty("min-height", "0", "important");
                     if (timelineView) {
                         timelineView.style.setProperty("display", "none", "important");
                         timelineView.style.setProperty("visibility", "hidden", "important");

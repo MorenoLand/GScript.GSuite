@@ -1,5 +1,13 @@
 [
   {
+    "version": "2.1.1f",
+    "date": "2026-03-29",
+    "changes": [
+      "Added workspace browser for browsing gani and sound files from the current workspace directory",
+      "Workspace loading now loads images in parallel batches — large workspaces load significantly faster"
+    ]
+  },
+  {
     "version": "2.1.1e",
     "date": "2026-03-29",
     "changes": [
