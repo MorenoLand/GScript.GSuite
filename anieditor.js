@@ -5338,6 +5338,18 @@ window.addEventListener("load", async () => {
         f12Log("After updateDefaultsTable, currentAnimation.defaultImages: " + JSON.stringify(Array.from(currentAnimation.defaultImages.entries())));
         e.target.value = "";
     };
+    document.addEventListener("dragover", (e) => { e.preventDefault(); });
+    document.addEventListener("drop", async (e) => {
+        e.preventDefault();
+        const files = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith(".gani"));
+        for (const file of files) {
+            const text = await file.text();
+            const ani = parseGani(text);
+            ani.fileName = file.name;
+            addTab(ani);
+        }
+        if (files.length) updateDefaultsTable();
+    });
     document.getElementById("btnSave").onclick = async () => {
         if (!currentAnimation) return;
         if (currentAnimation.fileHandle) {
@@ -9156,7 +9168,7 @@ window.addEventListener("load", async () => {
         if (_tooltipTarget === btnSwapKeys) _tooltipEl.textContent = btnSwapKeys.dataset.title;
         saveSession();
     };
-    const APP_VERSION = "2.1.1d";
+    const APP_VERSION = "2.1.1e";
     const _infoDialog = document.getElementById("infoDialog");
     const _infoClose = document.getElementById("infoClose");
     const _infoContent = document.getElementById("infoContent");

@@ -1,5 +1,12 @@
 [
   {
+    "version": "2.1.1e",
+    "date": "2026-03-29",
+    "changes": [
+      "Drag and drop a .gani file anywhere onto the page to open it in a new tab — supports dropping multiple files at once"
+    ]
+  },
+  {
     "version": "2.1.1d",
     "date": "2026-03-28",
     "changes": [
