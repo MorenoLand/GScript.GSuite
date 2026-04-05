@@ -41,21 +41,21 @@ const server = http.createServer((req, res) => {
         }
         if (stats.isDirectory()) {
             fs.readdir(filePath, (err, files) => {
-                if (err) {
-                    res.writeHead(500);
-                    res.end('Server error: ' + err.code);
-                    return;
+                if (err) { res.writeHead(500); res.end('Server error: ' + err.code); return; }
+                const dir = urlPath.replace(/\/?$/, '/');
+                if (dir === '/ganis/') {
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify(files.filter(f => f.endsWith('.gani'))));
+                } else if (dir === '/levels/') {
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify(files.filter(f => /\.(nw|zelda|graal|gmap)$/i.test(f))));
+                } else {
+                    let html = '<!DOCTYPE html><html><head><title>Directory Listing</title><base href="' + req.url + '"></head><body><ul>';
+                    for (const file of files) { const ext = path.extname(file).toLowerCase(); if (['.png','.jpg','.jpeg','.gif','.svg','.bmp'].includes(ext)) html += `<li><a href="${file}">${file}</a></li>`; }
+                    html += '</ul></body></html>';
+                    res.writeHead(200, { 'Content-Type': 'text/html' });
+                    res.end(html);
                 }
-                let html = '<!DOCTYPE html><html><head><title>Directory Listing</title><base href="' + req.url + '"></head><body><ul>';
-                for (const file of files) {
-                    const ext = path.extname(file).toLowerCase();
-                    if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.bmp'].includes(ext)) {
-                        html += `<li><a href="${file}">${file}</a></li>`;
-                    }
-                }
-                html += '</ul></body></html>';
-                res.writeHead(200, { 'Content-Type': 'text/html' });
-                res.end(html);
             });
             return;
         }
