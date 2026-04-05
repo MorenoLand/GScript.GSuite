@@ -1,0 +1,151 @@
+[
+  {
+    "version": "1.0.9",
+    "date": "2026-04-02",
+    "changes": [
+      "Layers panel — new Layers tab in right panel with thumbnail preview of each layer's tiles",
+      "Layers panel — Add/Delete buttons to dynamically create or remove layers (max 8)",
+      "Layers panel — click a layer row to switch active layer; visibility checkbox per layer",
+      "Layers panel — Up/Down arrow buttons and drag-to-reorder for changing layer draw order",
+      "Layers panel — active layer highlighted in blue; layer spinbox max updates dynamically"
+    ]
+  },
+  {
+    "version": "1.0.8",
+    "date": "2026-03-30",
+    "changes": [
+      "Play mode — walk around the level with WASD/arrow keys, full tile collision, camera follow, Shift to toggle noclip",
+      "Play mode — NPC collision using full image bounds; setshape(1,w,h) and setshape2(tw,th,{array}) override via NPC script",
+      "Play mode — link warping between levels with enter-edge detection to prevent looping",
+      "Play mode — link helper: walk to a position and press Spacebar to pin link destination using player collision center",
+      "Play mode — link helper shows rubber-band tile selection and confirm dialog (Accept/Retry/Cancel) with editable fields",
+      "Play mode — link helper disables warping through other links while active",
+      "Play mode — GS1 script parsing: setcharani, this.ani, this.head/body/shield, setcharprop (#1/#2/#3/#8/#m/#c/#n/#g/C0-C4/P0+), this.colors[], this.nick",
+      "Play mode — NPC nickname and guild displayed above character",
+      "Play mode — sitting tile detection using player collision center",
+      "Play mode — keyboard input blocked while any dialog input has focus",
+      "Play mode — debug overlay (key 2) shows NPC hitboxes, link bounds, player collision box, sitting tile highlights",
+      "Play mode — edit bypass toggle (key 3) to double-click and edit objects without exiting play mode",
+      "Player settings dialog — customize HEAD, BODY, SHIELD, SWORD, HAT, colors, and per-action ganis",
+      "Player settings dialog — animated preview canvas with pan/drag, scroll-wheel zoom, +/- buttons, 4-direction d-pad, double-click to recenter",
+      "NW parser fix — level names with spaces (e.g. 'new 2.nw') no longer corrupt link x/y/width fields; binary graal link parser patched to match",
+      "Link serialization — empty nextLevel writes as '-' placeholder to keep token count valid on reload"
+    ]
+  },
+  {
+    "version": "1.0.7",
+    "date": "2026-03-29",
+    "changes": [
+      ".graal and .zelda binary format support — open, view, and save classic Graal/Zelda Online levels",
+      "Zelda format enforces object restrictions — NPC and Chest placement blocked for .zelda tabs",
+      "Binary tile RLE decoder with LSB-first bitstream (12-bit V0/V1, 13-bit V2/V3)",
+      "Sign text decoded/encoded using classic Graal character table and control code sequences",
+      "this.ani = \"name\" as alternative to setcharani()",
+      "Fixed GANI body sprite — first sprite per direction line was hardcoded to sprite 0",
+      "GANI inline image sprite types (e.g. unbomber_shadow.png) now render correctly",
+      "Working dir rescan clears GANI cache so custom ganis load properly after scan",
+      "this.colors[] now only recolors explicitly set slots — unset slots keep original body pixel colors",
+      "Tileset switching now works for all images in fileCache (not just file-picker uploads)",
+      "Tileset persists when switching tabs — levels with default tileset inherit the combo selection",
+      "Tab bar scrolls horizontally instead of wrapping to multiple rows",
+      "Newly loaded levels correctly show as active tab without requiring manual click",
+      "loadDefaultTileset no longer overwrites custom tilesets on already-open tabs",
+      "pics1.gif added to default tileset combo list"
+    ]
+  },
+  {
+    "version": "1.0.6",
+    "date": "2026-03-28",
+    "changes": [
+      "NPC showcharacter/showcharacter() renders idle.gani character in the level",
+      "setcharani support — GS1 (setcharani gani,) and GS2 (setCharAni(\"gani\", null)) both parsed",
+      "this.head/body/shield overrides gani defaults if file is in working dir cache",
+      "this.colors[0-4] recolors BODY sprites using Graal palette",
+      "no-shield.png / no-head.png / no-body.png skip rendering that sprite layer",
+      "Missing gani falls back to idle.gani",
+      "Screenshot excludes NPC placeholders, selection highlight, signs, and links",
+      "Escape key closes any open dialog",
+      "Working dir scan batched (64 parallel) with UI yield between batches — no freeze on large folders",
+      "NPC list double-click opens editor without text selection race condition",
+      "Color scheme palette button added to toolbar next to working dir"
+    ]
+  },
+  {
+    "version": "1.0.5",
+    "date": "2026-03-28",
+    "changes": [
+      "GS1/GS2 syntax checker in NPC editor — flags unclosed strings, block comments, mismatched braces/parens/brackets, and missing parentheses on if/while/for/function",
+      "Layer visibility toggles in View menu — show/hide Layer 1, 2, 3 independently",
+      "Tile selection copy/paste: right-click selection to clone as stamp, Ctrl+C to copy, Ctrl+V to paste",
+      "Delete key on tile selection erases the selected area",
+      "NPC click priority over links — clicking a tile with both an NPC and a link always selects the NPC",
+      "Fixed link resize handles misfiring at low zoom levels",
+      "Fixed NPC hit detection for fractional tile positions loaded from .nw files"
+    ]
+  },
+  {
+    "version": "1.0.4",
+    "date": "2026-03-28",
+    "changes": [
+      "Save level now uses the tab name as the filename (e.g. mymap.nw instead of always level.nw)",
+      "Save As prompts to rename the level and downloads with the new name",
+      "Right-click a tab to rename, save as, or close it",
+      "GMAP save dialog — choose Save All or Save Changed, downloads a ZIP with all sub-levels + the .gmap file",
+      "Save As icon updated to layered double-disc SVG",
+      "Tile Objects now includes all 5 groups: Standard, Castle, House Inside, Snow, Volcano",
+      "Fixed: chest editor sometimes not opening on double-click"
+    ]
+  },
+  {
+    "version": "1.0.3",
+    "date": "2026-03-28",
+    "changes": [
+      "Undo/redo now covers NPC, link, sign, and chest add/delete — full object state including scripts is preserved",
+      "Double-clicking an NPC in the NPC list opens its script editor",
+      "Link resize anchors fixed — hit detection now matches rendered handle positions exactly",
+      "Tiles button removed from Built-In Objects panel"
+    ]
+  },
+  {
+    "version": "1.0.2",
+    "date": "2026-03-28",
+    "changes": [
+      "Edit Links and Edit Signs now open popup dialogs matching C++ TilesEditor — table of all links/signs with Edit, Delete, Create, and Close actions",
+      "Add Link and Add Sign buttons now use the active tile selection for position and size; disabled when no selection is active",
+      "Add Link places a link at selection bounds with matching width and height",
+      "Add Sign places a sign at selection top-left (always standard 2×1 tile size)",
+      "Add Link and Add Sign icons updated — composite link+plus and sign+plus SVGs"
+    ]
+  },
+  {
+    "version": "1.0.1",
+    "date": "2026-03-28",
+    "changes": [
+      "Tile stamp now places on click — no longer requires dragging to paint",
+      "Load Tileset button adds the loaded file to the tileset combo list and selects it",
+      "Delete button hidden for built-in tile objects",
+      "Clicking and dragging an NPC/object now works on first click without prior selection"
+    ]
+  },
+  {
+    "version": "1.0.0",
+    "date": "2026-03-28",
+    "changes": [
+      "Object selection pink overlay matching C++ TilesEditor",
+      "Drag-to-place objects from panel instead of click-to-place",
+      "Tile stamp only paints when dragging, not on single click",
+      "Right-click cancels active tile selection",
+      "Mousewheel zooms without requiring Ctrl",
+      "Working dir chest/baddy/npc images shown in level",
+      "Grid color changed to gray for better contrast",
+      "Sign/link transparent fill overlay added",
+      "Delete key removes selected object",
+      "Multi-tab session persistence — all open tabs restored on page reload",
+      "Monaco NPC script editor with GraalScript LSP",
+      "Flip H/V and rotate tile selection",
+      "About dialog with changelog tab",
+      "Status bar shows 'Tile: empty' for unmodified tiles — new levels no longer pre-fill with tile 0",
+      "Toolbar icons for Miscellaneous Functions, Screenshot, and Selection Filter buttons"
+    ]
+  }
+]

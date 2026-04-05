@@ -11,7 +11,7 @@ class AniSprite {
         this.yscale = 1.0;
         this._zoom = 1.0;
         this.mode = undefined;
-        this.colorEffectEnabled = false;
+        this.colorEffectEnabled = false; 
         this.colorEffect = {r: 255, g: 255, b: 255, a: 255};
         this.comment = "";
         this.customImageName = "";
@@ -634,11 +634,11 @@ function resizeCanvas() {
     const containerHeight = container.clientHeight || window.innerHeight;
 
     if (leftPanel && rightPanel) {
-        const leftWidth = parseInt(leftPanel.style.width) || 300;
+        const leftWidth = parseInt(leftPanel.style.width) || 270;
         const rightWidth = parseInt(rightPanel.style.width) || 250;
         const totalFixedWidth = leftWidth + rightWidth;
         const minCenterWidth = 200;
-        const defaultLeftWidth = 300;
+        const defaultLeftWidth = 270;
         const defaultRightWidth = 250;
         const defaultTotalWidth = defaultLeftWidth + defaultRightWidth;
 
@@ -1043,6 +1043,11 @@ function getSpriteImage(sprite) {
                 }
             }
         }
+    }
+    if (!img && _isTauri && imageKey) {
+        _tauri.core.invoke('resolve_path', { name: imageKey }).then(filePath => {
+            if (filePath) loadImageFromPath(filePath, imageKey).then(() => { imageLibrary.has(imageKey) && requestAnimationFrame(redraw); }).catch(() => {});
+        }).catch(() => {});
     }
     return img;
 }
@@ -1484,7 +1489,7 @@ function drawQuadrant(ctx, frame, dir, quadrantX, quadrantY, quadrantWidth, quad
 function getTimelineBackgroundColor() {
     const cssBg = getComputedStyle(document.documentElement).getPropertyValue('--timeline-bg').trim();
     if (cssBg) return cssBg;
-    const scheme = localStorage.getItem("ganiEditorColorScheme") || "default";
+    const scheme = localStorage.getItem("editorColorScheme") || "default";
     if (scheme === "default") return "#2b2b2b";
     const schemes = {
         "fusion-light": { panel: "#ffffff" },
@@ -2404,6 +2409,122 @@ function loadImage(file) {
         reader.readAsDataURL(file);
         }
     });
+}
+
+const _isTauri = window.__TAURI__ != null;
+const _tauri = _isTauri ? window.__TAURI__ : null;
+let workspacePathIndex = new Map();
+async function loadImageFromPath(filePath, name) {
+    const data = await _tauri.fs.readFile(filePath);
+    const isMng = name.toLowerCase().endsWith('.mng');
+    if (isMng) {
+        const header = data.slice(0, 8);
+        let valid = true;
+        for (let i = 0; i < 8; i++) { if (header[i] !== MNG_SIG[i]) { valid = false; break; } }
+        if (!valid) throw new Error('Invalid MNG file');
+        const pngData = extractFirstFrame(data.buffer);
+        const blob = new Blob([pngData], { type: 'image/png' });
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        return new Promise((resolve, reject) => {
+            img.onload = () => { imageLibrary.set(name.toLowerCase(), img); URL.revokeObjectURL(url); resolve(img); };
+            img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Failed to load MNG')); };
+            img.src = url;
+        });
+    }
+    const ext = name.split('.').pop().toLowerCase();
+    const mime = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : ext === 'bmp' ? 'image/bmp' : 'image/png';
+    const blob = new Blob([data], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    return new Promise((resolve, reject) => {
+        img.onload = () => { imageLibrary.set(name.toLowerCase(), img); URL.revokeObjectURL(url); resolve(img); };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Failed to load ' + name)); };
+        img.src = url;
+    });
+}
+
+async function loadWorkspaceFromDisk(dirPath) {
+    const ext = dirPath.split(/[\\/]/).pop();
+    workingDirectory = ext;
+    lastWorkingDirectory = ext;
+    localStorage.setItem("ganiEditorLastWorkingDir", lastWorkingDirectory);
+    window._tauriLastDir = dirPath;
+    workspaceImageKeys.clear();
+    localFileCache = { ganis: [], sounds: [], ganiFiles: [] };
+    localFileCache._isTauri = true;
+
+    if (window._workspaceScanUnlisten) {
+        window._workspaceScanUnlisten();
+        window._workspaceScanUnlisten = null;
+    }
+
+    window._workspaceScanUnlisten = await _tauri.event.listen('workspace_chunk', (event) => {
+        const chunk = event.payload;
+        chunk.image_keys.forEach(n => workspaceImageKeys.add(n));
+        chunk.gani_files.forEach(([n]) => workspaceImageKeys.add(n));
+        localFileCache.ganis.push(...chunk.gani_files.map(([, p]) => p));
+        localFileCache.sounds.push(...chunk.sound_files);
+        localFileCache.ganiFiles.push(...chunk.gani_files.map(([n, p]) => ({ name: n, path: p })));
+
+        if (chunk.done) {
+            if (window._workspaceScanUnlisten) {
+                window._workspaceScanUnlisten();
+                window._workspaceScanUnlisten = null;
+            }
+            console.log(`[TAURI] Workspace indexed: ${chunk.image_count} images, ${chunk.gani_count} ganis (streamed)`);
+            refreshAllAnimationsSprites();
+            drawSpritePreview();
+            updateSpritesList();
+            saveSession();
+            redraw();
+        } else {
+            redraw();
+        }
+    });
+
+    await _tauri.core.invoke('scan_workspace', { dir: dirPath });
+}
+
+async function restoreWorkspaceFromCache() {
+    const cached = await _tauri.core.invoke('load_workspace_cache').catch(() => null);
+    if (!cached) return false;
+    const dirPath = cached.dir;
+    const ext = dirPath.split(/[\\/]/).pop();
+    workingDirectory = ext;
+    lastWorkingDirectory = ext;
+    localStorage.setItem("ganiEditorLastWorkingDir", lastWorkingDirectory);
+    window._tauriLastDir = dirPath;
+    workspaceImageKeys.clear();
+    workspacePathIndex = new Map();
+    localFileCache = { ganis: [], sounds: [], ganiFiles: [] };
+    localFileCache._isTauri = true;
+    const imageExts = new Set(['png','gif','jpg','jpeg','webp','bmp','mng']);
+    const soundExts = new Set(['wav','mp3','ogg','mid','midi']);
+    cached.entries.forEach(([name, path, crc]) => {
+        workspacePathIndex.set(name, path);
+        const dot = name.lastIndexOf('.');
+        const e = dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
+        if (imageExts.has(e)) workspaceImageKeys.add(name.toLowerCase());
+        if (name.endsWith('.gani')) localFileCache.ganiFiles.push({ name, path });
+        if (soundExts.has(e)) localFileCache.sounds.push(path);
+    });
+    localFileCache.ganis = localFileCache.ganiFiles.map(g => g.path);
+    console.log(`[TAURI] Workspace restored from cache: ${workspacePathIndex.size} files, dir=${cached.dir}`);
+    refreshAllAnimationsSprites();
+    drawSpritePreview();
+    updateSpritesList();
+    saveSession();
+    redraw();
+    return true;
+}
+
+async function tauriOpenDialog(opts) {
+    return _tauri.dialog.open(opts);
+}
+
+async function tauriReadTextFile(filePath) {
+    return _tauri.fs.readTextFile(filePath);
 }
 
 function updateSpritesList() {
@@ -4823,18 +4944,12 @@ function createMonacoEditor(container, value, language) {
 
 window.addEventListener("load", async () => {
     const loading = showLoadingMessage("Loading Gani Editor...");
-    await new Promise(resolve => setTimeout(resolve, 0));
     resizeCanvas();
     window.addEventListener("resize", resizeCanvas);
     const criticalImages = ["sprites.png", "body.png", "head19.png", "shield1.png"];
-    for (const fileName of criticalImages) {
-        if (!imageLibrary.has(fileName.toLowerCase())) {
-            try {
-                const img = await loadImageFromUrl(`images/${fileName}`, fileName.toLowerCase());
-            } catch (e) {}
-        }
-    }
+    await Promise.all(criticalImages.filter(f => !imageLibrary.has(f.toLowerCase())).map(f => loadImageFromUrl(`images/${f}`, f.toLowerCase()).catch(() => {})));
     await refreshLocalFileCache();
+    if (_isTauri) await restoreWorkspaceFromCache();
     await loadLocalImages(loading);
     loading.close();
     resizeCanvas();
@@ -5035,7 +5150,7 @@ window.addEventListener("load", async () => {
     const leftPanel = document.querySelector(".left-panel");
     const centerPanel = document.querySelector(".center-panel");
     if (leftCenterSplitter && leftPanel && centerPanel) {
-        leftPanel.style.width = "300px";
+        leftPanel.style.width = "270px";
         leftCenterSplitter.onmousedown = (e) => {
             leftCenterSplitterDragging = true;
             e.preventDefault();
@@ -5260,7 +5375,17 @@ window.addEventListener("load", async () => {
         }
         addTab(ani);
     };
-    document.getElementById("btnOpen").onclick = () => {
+    document.getElementById("btnOpen").onclick = async () => {
+        if (_isTauri) {
+            const selected = await tauriOpenDialog({ multiple: false, filters: [{ name: 'Gani Files', extensions: ['gani'] }] });
+            if (selected) {
+                const text = await tauriReadTextFile(selected);
+                if (/[\x00-\x08\x0e-\x1f]/.test(text.substring(0, 256))) { showAlertDialog('Not a valid plain-text .gani file'); return; }
+                const ani = parseGani(text);
+                if (ani) { ani.fileName = selected.split(/[\\/]/).pop(); addTab(ani, ani.fileName); }
+            }
+            return;
+        }
         const fileInput = document.getElementById("fileInput");
         if (lastOpenDirectory && fileInput.setAttribute) {
             try {
@@ -5502,7 +5627,7 @@ window.addEventListener("load", async () => {
                 const rightPanel = document.querySelector(".right-panel");
                 const timelineContainer = document.querySelector(".timeline-container");
                 const spriteList = document.querySelector(".sprite-list");
-                if (leftPanel) leftPanel.style.width = "300px";
+                if (leftPanel) leftPanel.style.width = "270px";
                 if (rightPanel) rightPanel.style.width = "250px";
                 if (timelineContainer) {
                     const timelineVisible = localStorage.getItem("timelineVisible") !== "false";
@@ -5529,7 +5654,7 @@ window.addEventListener("load", async () => {
                 localStorage.setItem("editorPixelRendering", "true");
                 localStorage.setItem("editorAutoSave", "true");
                 localStorage.setItem("editorShowGrid", "true");
-                localStorage.setItem("ganiEditorColorScheme", "default");
+                localStorage.setItem("editorColorScheme", "default");
                 location.reload();
             }
         }, true);
@@ -7254,7 +7379,7 @@ window.addEventListener("load", async () => {
         loopedCheckbox.onclick = () => {
             currentAnimation.looped = !currentAnimation.looped;
             loopedCheckbox.textContent = currentAnimation.looped ? "✓" : " ";
-            saveSession();
+            saveSession(); if (connections.length) broadcastTabs();
         };
     }
     const continousCheckbox = document.getElementById("continousCheckbox");
@@ -7353,7 +7478,12 @@ window.addEventListener("load", async () => {
         };
         input.click();
     };
-    document.getElementById("btnWorkingDir").onclick = () => {
+    document.getElementById("btnWorkingDir").onclick = async () => {
+        if (_isTauri) {
+            const selected = await tauriOpenDialog({ directory: true, multiple: false, title: "Select Working Directory" });
+            if (selected) await loadWorkspaceFromDisk(selected);
+            return;
+        }
         const folderInput = document.getElementById("folderInput");
         folderInput.click();
     };
@@ -7404,7 +7534,16 @@ window.addEventListener("load", async () => {
         saveSession();
         redraw();
     };
-    document.getElementById("btnImportSprites").onclick = () => {
+    document.getElementById("btnImportSprites").onclick = async () => {
+        if (_isTauri) {
+            const selected = await tauriOpenDialog({ multiple: false, filters: [{ name: 'Gani Files', extensions: ['gani'] }] });
+            if (!selected) return;
+            const text = await tauriReadTextFile(selected);
+            const fname = selected.split(/[\\/]/).pop();
+            if (/[\x00-\x08\x0e-\x1f]/.test(text.substring(0, 256))) { showAlertDialog(`${fname} is not a valid plain-text .gani file`); return; }
+            await doImportSprites(text, fname);
+            return;
+        }
         const input = document.createElement("input");
         input.type = "file";
         input.accept = ".gani";
@@ -7414,6 +7553,16 @@ window.addEventListener("load", async () => {
             try {
                 const text = await file.text();
                 if (/[\x00-\x08\x0e-\x1f]/.test(text.substring(0, 256))) { showAlertDialog(`${file.name} is not a valid plain-text .gani file (may be encrypted or binary).`); return; }
+                await doImportSprites(text, file.name);
+            } catch (err) {
+                console.error("Import error:", err);
+                showAlertDialog("Failed to import sprites: " + err.message);
+            }
+        };
+        input.click();
+    };
+    async function doImportSprites(text, fileName) {
+        try {
                 const importAni = parseGani(text);
                 if (!importAni || importAni.sprites.size === 0) {
                     showAlertDialog("No sprites found in .gani file");
@@ -7481,9 +7630,7 @@ window.addEventListener("load", async () => {
                 console.error("Import error:", err);
                 showAlertDialog("Failed to import sprites: " + err.message);
             }
-        };
-        input.click();
-    };
+    }
     document.getElementById("btnCopySprite").onclick = () => {
         if (!editingSprite) return;
         const data = {
@@ -7755,7 +7902,7 @@ window.addEventListener("load", async () => {
             if (timelineCanvas) {
                 timelineCanvas.style.background = "";
             }
-            localStorage.setItem("ganiEditorColorScheme", scheme);
+            localStorage.setItem("editorColorScheme", scheme);
             return;
         }
         const schemes = {
@@ -7892,6 +8039,11 @@ window.addEventListener("load", async () => {
             .dialog-overlay > div[style*="background: #2b2b2b"] > div[style*="display: flex"] > div[style*="border: 1px solid #0a0a0a"] { border-color: ${colors.border} !important; background: ${colors.panel} !important; }
             .dialog-overlay > div[style*="background: #2b2b2b"] > div[style*="display: flex"] > div[style*="background: #353535"] { background: ${colors.panel} !important; border-color: ${colors.border} !important; }
             .dialog-overlay > div[style*="background: #2b2b2b"] > div[style*="display: flex"] > div[style*="background: #1a1a1a"] { background: ${inputBg} !important; border-color: ${colors.border} !important; }
+            #collabDropdown { background: ${colors.panel} !important; border-color: ${colors.border} !important; color: ${colors.text} !important; }
+            #collabDropdown > div { color: ${colors.text} !important; }
+            #collabPeers { background: ${colors.bg} !important; border-color: ${colors.border} !important; }
+            #collabCopy, #collabJoin { background: ${buttonBg} !important; color: ${buttonText} !important; border-color: ${colors.border} !important; }
+            #collabCopy:hover, #collabJoin:hover { background: ${buttonHover} !important; }
         `;
         document.head.appendChild(style);
         const settingsDialog = document.getElementById("settingsDialog");
@@ -7984,12 +8136,12 @@ window.addEventListener("load", async () => {
         if (timelineCanvas) {
             timelineCanvas.style.background = colors.panel;
         }
-        localStorage.setItem("ganiEditorColorScheme", scheme);
+        localStorage.setItem("editorColorScheme", scheme);
     }
     const btnColorScheme = document.getElementById("btnColorScheme");
     const colorSchemeDropdown = document.getElementById("colorSchemeDropdown");
     if (btnColorScheme && colorSchemeDropdown) {
-        const savedScheme = localStorage.getItem("ganiEditorColorScheme") || "default";
+        const savedScheme = localStorage.getItem("editorColorScheme") || "default";
         applyColorScheme(savedScheme);
         const updateColorSchemeFont = () => {
             const currentFont = localStorage.getItem("editorFont") || "chevyray";
@@ -8344,7 +8496,7 @@ window.addEventListener("load", async () => {
         };
         (async () => {
             let fonts = [..._builtinFonts];
-            if (window.queryLocalFonts) {
+            if (window.queryLocalFonts && !window.__TAURI__) {
                 try {
                     const local = await window.queryLocalFonts();
                     const systemNames = [...new Set(local.map(f => f.family))].filter(n => !_builtinFonts.includes(n)).sort();
@@ -8904,7 +9056,7 @@ window.addEventListener("load", async () => {
             if (leftPanel) {
                 leftPanel.style.display = "flex";
                 leftPanel.style.visibility = "visible";
-                leftPanel.style.width = "300px";
+                leftPanel.style.width = "270px";
                 localStorage.setItem("leftPanelVisible", "true");
             }
             if (rightPanel) {
@@ -9219,7 +9371,7 @@ window.addEventListener("load", async () => {
         if (_tooltipTarget === btnSwapKeys) _tooltipEl.textContent = btnSwapKeys.dataset.title;
         saveSession();
     };
-    const APP_VERSION = "2.1.2b";
+    const APP_VERSION = "2.1.3";
     const _infoDialog = document.getElementById("infoDialog");
     const _infoClose = document.getElementById("infoClose");
     const _infoContent = document.getElementById("infoContent");
@@ -9295,7 +9447,7 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
         if (tab === "changelog") {
             if (_changelogData) { _renderChangelog(); return; }
             _infoContent.innerHTML = `<div style="color:#888;">Loading...</div>`;
-            fetch("changelog.json").then(r => r.json()).then(data => { _changelogData = data; _renderChangelog(); }).catch(() => { _infoContent.innerHTML = `<div style="color:#888;">Failed to load changelog.</div>`; });
+            fetch("changelog.gani.json").then(r => r.json()).then(data => { _changelogData = data; _renderChangelog(); }).catch(() => { _infoContent.innerHTML = `<div style="color:#888;">Failed to load changelog.</div>`; });
         } else {
             _infoContent.innerHTML = _getInfoTabHTML(tab);
             if (tab === "keybinds") {
@@ -9427,16 +9579,19 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
         dialog.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;display:flex;justify-content:center;align-items:center;";
         const content = document.createElement("div");
         content.className = "dialog-content";
-        content.style.cssText = "width:660px;max-width:92vw;height:80vh;display:flex;flex-direction:column;background:var(--dialog-bg,#2b2b2b);border:2px solid var(--dialog-border,#1a1a1a);box-shadow:0 4px 16px rgba(0,0,0,0.9);";
+        content.style.cssText = "width:660px;max-width:92vw;height:55vh;display:flex;flex-direction:column;background:var(--dialog-bg,#2b2b2b);border:2px solid var(--dialog-border,#1a1a1a);box-shadow:0 4px 16px rgba(0,0,0,0.9);";
+        const _btnStyle = `background:#2b2b2b;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#e0e0e0;padding:4px 14px;cursor:pointer;font-family:${fontFamily};font-size:12px;`;
         content.innerHTML = `
-            <div class="dialog-titlebar" style="flex-shrink:0;padding:10px 14px;display:flex;align-items:center;gap:8px;">
-                <i class="fas fa-code" style="flex-shrink:0;display:block;"></i>
+            <div class="dialog-titlebar" style="flex-shrink:0;padding:8px 12px;display:flex;align-items:center;gap:8px;">
+                <img src="images/npc.png" style="width:16px;height:16px;image-rendering:pixelated;flex-shrink:0;">
                 <span style="font-family:${fontFamily};font-size:13px;line-height:16px;">Edit Script</span>
             </div>
             <div id="scriptEditorContainer" style="flex:1;min-height:0;position:relative;overflow:hidden;"></div>
-            <div style="text-align:right;padding:10px 14px;flex-shrink:0;border-top:1px solid #0a0a0a;">
-                <button id="scriptCancel" style="margin-right:8px;padding:6px 14px;cursor:pointer;font-family:${fontFamily};">Cancel</button>
-                <button id="scriptSave" style="padding:6px 14px;cursor:pointer;font-family:${fontFamily};">Save</button>
+            <div id="scriptTestOutput" style="display:none;max-height:80px;overflow-y:auto;background:#111;border-top:1px solid #333;padding:4px 8px;font-family:monospace;font-size:11px;flex-shrink:0;"></div>
+            <div style="padding:8px 12px;background:#353535;border-top:1px solid #0a0a0a;display:flex;justify-content:flex-end;gap:8px;flex-shrink:0;">
+                <button id="scriptTest" style="${_btnStyle}margin-right:auto;">&#9654; Test</button>
+                <button id="scriptCancel" style="${_btnStyle}">Cancel</button>
+                <button id="scriptSave" style="background:#2a6496;border:1px solid #1a4a70;border-top:1px solid #3a74a6;color:#fff;padding:4px 14px;cursor:pointer;font-family:${fontFamily};font-size:12px;">Save</button>
             </div>
         `;
         dialog.appendChild(content);
@@ -9457,6 +9612,38 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
         });
         content.querySelector("#scriptCancel").onclick = () => { if (scriptEditorInstance) scriptEditorInstance.dispose(); document.body.removeChild(dialog); };
         content.querySelector("#scriptSave").onclick = () => { currentAnimation.script = getScriptValue(); if (scriptEditorInstance) scriptEditorInstance.dispose(); document.body.removeChild(dialog); };
+        content.querySelector("#scriptTest").onclick = () => {
+            const code = getScriptValue();
+            const out = content.querySelector('#scriptTestOutput');
+            const errs = (() => {
+                const markers = []; let i = 0, len = code.length, line = 1, col = 1;
+                const braces = [], parens = [], brackets = [];
+                const err = (msg, sl, sc) => markers.push({ message: msg, startLine: sl, startCol: sc });
+                const adv = () => { const c = code[i++]; c === '\n' ? (line++, col = 1) : col++; return c; };
+                const ws = () => { while (i < len && /[ \t\r]/.test(code[i])) adv(); };
+                while (i < len) {
+                    const [sl, sc, ch] = [line, col, code[i]];
+                    if (ch === '/' && code[i+1] === '*') { adv(); adv(); let ok = false; while (i < len) { if (code[i]==='*'&&code[i+1]==='/') { adv(); adv(); ok=true; break; } adv(); } if (!ok) err('Unclosed block comment', sl, sc); }
+                    else if (ch === '/' && code[i+1] === '/') { while (i < len && code[i] !== '\n') adv(); }
+                    else if (ch === '"' || ch === "'") { const q = adv(); let ok = false; while (i < len) { if (code[i]==='\\') { adv(); i < len && adv(); continue; } if (code[i]===q) { adv(); ok=true; break; } if (code[i]==='\n') break; adv(); } if (!ok) err('Unclosed string literal', sl, sc); }
+                    else if (ch === '{') { braces.push([sl,sc]); adv(); } else if (ch === '}') { braces.length ? braces.pop() : err("Unexpected '}'", sl, sc); adv(); }
+                    else if (ch === '(') { parens.push([sl,sc]); adv(); } else if (ch === ')') { parens.length ? parens.pop() : err("Unexpected ')'", sl, sc); adv(); }
+                    else if (ch === '[') { brackets.push([sl,sc]); adv(); } else if (ch === ']') { brackets.length ? brackets.pop() : err("Unexpected ']'", sl, sc); adv(); }
+                    else if (/[a-zA-Z_$]/.test(ch)) { let w = ''; const [wl,wc] = [sl,sc]; while (i < len && /[\w$]/.test(code[i])) w += adv(); if (['if','while','for'].includes(w)) { ws(); if (i >= len || code[i] !== '(') err(`'${w}' missing '('`, wl, wc); } else if (w === 'function') { ws(); if (i < len && /[a-zA-Z_$]/.test(code[i])) { while (i < len && /[\w$]/.test(code[i])) adv(); ws(); } if (i >= len || code[i] !== '(') err("'function' missing '('", wl, wc); } }
+                    else adv();
+                }
+                braces.forEach(([sl,sc]) => err("Unclosed '{'", sl, sc));
+                parens.forEach(([sl,sc]) => err("Unclosed '('", sl, sc));
+                brackets.forEach(([sl,sc]) => err("Unclosed '['", sl, sc));
+                const blockHeaders = /^\s*(if|else\s*if|elseif|while|for|function|switch|case|default|else|do|try|catch|finally)\b/i;
+                code.split('\n').forEach((rawLine, li) => { let ln = rawLine; const ci = ln.indexOf('//'); if (ci >= 0) ln = ln.substring(0, ci); ln = ln.replace(/"(?:[^"\\]|\\.)*"/g, '""').replace(/'(?:[^'\\]|\\.)*'/g, "''"); const tr = ln.trim(); if (!tr || /^[{}]/.test(tr) || /[{};,\\]$/.test(tr) || /^\/\//.test(tr) || blockHeaders.test(tr)) return; if (/\)\s*$/.test(tr)) err("Statement possibly missing ';'", li + 1, ln.trimEnd().length); });
+                return markers;
+            })();
+            out.style.display = 'block';
+            if (!errs.length) { out.style.color = '#4c4'; out.textContent = 'No syntax errors found.'; return; }
+            out.style.color = '#f88';
+            out.innerHTML = errs.map(e => `<div>Line ${e.startLine}: ${e.message}</div>`).join('');
+        };
         dialog.onclick = (e) => { if (e.target === dialog) { if (scriptEditorInstance) scriptEditorInstance.dispose(); document.body.removeChild(dialog); } };
     };
     document.getElementById("btnAttachmentBack").onclick = () => {
@@ -10869,7 +11056,7 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
         lastTouchIdentifier = null;
         redraw();
     }, {passive: false});
-});
+}, { once: true });
 
 let lastPlayedFrame = -1;
 function playAnimation() {
@@ -11361,7 +11548,7 @@ function showSpritesListContextMenu(e) {
 }
 
 function getColorSchemeColors() {
-    const scheme = localStorage.getItem("ganiEditorColorScheme") || "default";
+    const scheme = localStorage.getItem("editorColorScheme") || "default";
     if (scheme === "default") {
         return {
             panel: "#2b2b2b",
@@ -11558,7 +11745,7 @@ function showWorkspaceBrowserDialog() {
     if (!wsKeys.length && !localKeys.length && !ganiFiles.length) { showAlertDialog("No workspace loaded. Use Set Working Directory to load a workspace first."); return; }
     const currentFont = localStorage.getItem("editorFont") || "chevyray";
     const fontFamily = getFontFamily(currentFont);
-    const currentScheme = localStorage.getItem("ganiEditorColorScheme") || "default";
+    const currentScheme = localStorage.getItem("editorColorScheme") || "default";
     let dc = {panel:"#2b2b2b",border:"#0a0a0a",text:"#e0e0e0",inputBg:"#1a1a1a",buttonBg:"#2b2b2b",buttonText:"#e0e0e0",hover:"#404040"};
     if (currentScheme !== "default") {
         const schemes = {"fusion-light":{panel:"#ffffff",border:"#d0d0d0",text:"#1a1a1a",inputBg:"#ffffff",buttonBg:"#ffffff",buttonText:"#1a1a1a",hover:"#e8e8e8"},"fusion-dark":{panel:"#2d2d2d",border:"#0f0f0f",text:"#e8e8e8",inputBg:"#1e1e1e",buttonBg:"#2d2d2d",buttonText:"#e8e8e8",hover:"#3d3d3d"},"dark-style":{panel:"#252525",border:"#3c3c3c",text:"#cccccc",inputBg:"#1e1e1e",buttonBg:"#252525",buttonText:"#cccccc",hover:"#3e3e3e"},"dark-orange":{panel:"#3a2f2a",border:"#1a0f0a",text:"#ffaa55",inputBg:"#2a1f1a",buttonBg:"#3a2f2a",buttonText:"#ffaa55",hover:"#4a3f3a"},"aqua":{panel:"#1a2a2f",border:"#0a0a0a",text:"#55ffff",inputBg:"#0a1a1f",buttonBg:"#1a2a2f",buttonText:"#55ffff",hover:"#2a3a3f"},"elegant-dark":{panel:"#2d2d2d",border:"#404040",text:"#e8e8e8",inputBg:"#1a1a1a",buttonBg:"#2d2d2d",buttonText:"#e8e8e8",hover:"#3d3d3d"},"material-dark":{panel:"#1e1e1e",border:"#333333",text:"#ffffff",inputBg:"#121212",buttonBg:"#1e1e1e",buttonText:"#ffffff",hover:"#2e2e2e"},"light-style":{panel:"#ffffff",border:"#e0e0e0",text:"#000000",inputBg:"#ffffff",buttonBg:"#ffffff",buttonText:"#000000",hover:"#f5f5f5"},"ayu-mirage":{panel:"#232834",border:"#191e2a",text:"#cbccc6",inputBg:"#1f2430",buttonBg:"#232834",buttonText:"#cbccc6",hover:"#2a2f3a"},"dracula":{panel:"#343746",border:"#21222c",text:"#f8f8f2",inputBg:"#282a36",buttonBg:"#343746",buttonText:"#f8f8f2",hover:"#44475a"}};
@@ -11753,7 +11940,7 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
     dialog.style.zIndex = "10000";
     const content = document.createElement("div");
     content.className = "add-sprite-dialog-content dialog-content";
-    const currentScheme = localStorage.getItem("ganiEditorColorScheme") || "default";
+    const currentScheme = localStorage.getItem("editorColorScheme") || "default";
     let dialogColors = {panel: "#2b2b2b", border: "#0a0a0a", text: "#e0e0e0", inputBg: "#1a1a1a", buttonBg: "#2b2b2b", buttonText: "#e0e0e0", buttonHover: "#404040"};
     if (currentScheme !== "default") {
         const schemes = {
@@ -12106,7 +12293,18 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
             setTimeout(() => updateAddSpritePreview(), 0);
         }
     }
-    document.getElementById("addSpriteBrowse").onclick = () => {
+    document.getElementById("addSpriteBrowse").onclick = async () => {
+        if (_isTauri) {
+            const selected = await tauriOpenDialog({ multiple: false, filters: [{ name: 'Images', extensions: ['png', 'gif', 'jpg', 'jpeg', 'webp', 'bmp', 'mng'] }] });
+            if (selected) {
+                const name = selected.split(/[\\/]/).pop();
+                document.getElementById("addSpriteImageFile").value = name;
+                previewImg = await loadImageFromPath(selected, name);
+                if (selectionBox.w === 0 || selectionBox.h === 0) { selectionBox.w = 32; selectionBox.h = 32; }
+                updateAddSpritePreview();
+            }
+            return;
+        }
         fileInput.onchange = async (e) => {
             const file = e.target.files[0];
             if (file) {
@@ -12816,8 +13014,8 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
                     const sprite = new AniSprite();
                     sprite.index = index++;
                     sprite.type = document.getElementById("addSpriteSource").value;
-                    if (sprite.type === "CUSTOM" && fileInput.files[0]) {
-                        sprite.customImageName = fileInput.files[0].name;
+                    if (sprite.type === "CUSTOM") {
+                        sprite.customImageName = fileInput.files[0] ? fileInput.files[0].name : document.getElementById("addSpriteImageFile").value;
                     }
                     sprite.comment = document.getElementById("addSpriteComment").value + (rows * cols > 1 ? ` (${row * cols + col})` : "");
                     sprite.left = selectionBox.x + col * (spriteW + colSep);
@@ -13500,3 +13698,421 @@ function setupContextMenus() {
         }
     });
 }
+
+(function initP2PCollab() {
+    if (typeof Peer === "undefined") return;
+    const collabBtn = document.getElementById("btnCollab");
+    const collabDropdown = document.getElementById("collabDropdown");
+    const collabMyCode = document.getElementById("collabMyCode");
+    const collabStatus = document.getElementById("collabStatus");
+    const collabPeers = document.getElementById("collabPeers");
+    const collabJoinCode = document.getElementById("collabJoinCode");
+    const collabJoinBtn = document.getElementById("collabJoin");
+    const collabCopyBtn = document.getElementById("collabCopy");
+    const collabDisconnect = document.getElementById("collabDisconnect");
+    const collabToggleTrack = document.getElementById("collabToggleTrack");
+    const collabToggleThumb = document.getElementById("collabToggleThumb");
+    const collabToggleLabel = document.getElementById("collabToggleLabel");
+    const collabCodeSection = document.getElementById("collabCodeSection");
+    if (!collabBtn || !collabDropdown) return;
+    let collabEnabled = true;
+    function teardownPeer() { connections.forEach(c => c.conn.close()); connections = []; remoteGhosts.clear(); if (peer) { peer.destroy(); peer = null; } hooksInit = false; }
+    function setCollabEnabled(on) {
+        collabEnabled = on;
+        collabToggleTrack.style.borderColor = on ? "#4a4" : "#404040";
+        collabToggleThumb.style.left = on ? "19px" : "1px";
+        collabToggleThumb.style.background = on ? "#4a4" : "#555";
+        collabCodeSection.style.display = on ? "" : "none";
+        if (!on) { teardownPeer(); updatePeerList(); collabStatus.textContent = ""; collabDisconnect.style.display = "none"; }
+        else { createPeer(); }
+    }
+    collabToggleTrack.addEventListener("click", () => setCollabEnabled(!collabEnabled));
+    collabDisconnect.addEventListener("click", () => { teardownPeer(); collabDisconnect.style.display = "none"; collabStatus.textContent = "Disconnected"; collabStatus.style.color = "#888"; updatePeerList(); createPeer(); });
+
+    let peer = null, connections = [], suppressBroadcast = false;
+    let remoteGhosts = new Map();
+    let ghostDirty = false;
+    const imgDataCache = new Map();
+    const sentImageKeys = new Set();
+
+    const ghostCanvas = document.createElement("canvas");
+    ghostCanvas.style.cssText = "position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:99999;pointer-events:none;";
+    const ghostCtx = ghostCanvas.getContext("2d");
+    document.body.appendChild(ghostCanvas);
+    ghostCanvas.width = window.innerWidth * dpr;
+    ghostCanvas.height = window.innerHeight * dpr;
+    window.addEventListener("resize", () => { ghostCanvas.width = window.innerWidth * dpr; ghostCanvas.height = window.innerHeight * dpr; drawGhosts(); });
+
+    function genCode() {
+        const c = "abcdefghijkmnpqrstuvwxyz23456789";
+        let r = "";
+        for (let i = 0; i < 6; i++) r += c[Math.floor(Math.random() * c.length)];
+        return "gani-" + r;
+    }
+
+    const ghostColors = ["#00e5ff", "#ff4081", "#76ff03", "#ffab00"];
+    let ghostColorIdx = 0, hooksInit = false;
+    const myCode = genCode();
+    let myLabel = myCode;
+    collabMyCode.value = myCode;
+
+    collabBtn.addEventListener("click", () => { collabDropdown.style.display = collabDropdown.style.display === "none" ? "block" : "none"; });
+    collabCopyBtn.addEventListener("click", () => {
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(myCode).then(() => { collabCopyBtn.textContent = "Copied!"; setTimeout(() => collabCopyBtn.textContent = "Copy", 1500); }).catch(fallbackCopy);
+        } else fallbackCopy();
+        function fallbackCopy() {
+            const ta = document.createElement("textarea");
+            ta.value = myCode;
+            ta.style.cssText = "position:fixed;opacity:0";
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand("copy"); collabCopyBtn.textContent = "Copied!"; } catch(e) { collabCopyBtn.textContent = "Failed"; }
+            setTimeout(() => collabCopyBtn.textContent = "Copy", 1500);
+            document.body.removeChild(ta);
+        }
+    });
+    document.addEventListener("click", (e) => { if (!collabBtn.contains(e.target) && !collabDropdown.contains(e.target)) collabDropdown.style.display = "none"; });
+
+    function updatePeerList() {
+        collabDisconnect.style.display = (!isHost && connections.length > 0) ? "block" : "none";
+        if (connections.length === 0) { collabPeers.style.display = "none"; collabBtn.classList.remove("active"); return; }
+        collabPeers.style.display = "block";
+        collabPeers.innerHTML = "";
+        for (const c of connections) {
+            const g = remoteGhosts.get(c.label);
+            const col = g ? g.color : "#888";
+            const d = document.createElement("div");
+            d.style.cssText = `display:flex;align-items:center;gap:6px;margin-bottom:3px;font-size:11px;`;
+            d.innerHTML = `<span style="display:flex;align-items:center;gap:4px;flex:1;background:#111;border:1px solid #333;padding:2px 6px;min-width:0;overflow:hidden;"><span style="width:6px;height:6px;border-radius:50%;background:${c.conn.open ? col : '#a44'};flex-shrink:0;"></span><span style="color:${c.conn.open ? col : '#a44'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.label}${c.conn.open ? '' : ' (disconnected)'}</span></span>${isHost ? `<button data-label="${c.label}" style="flex-shrink:0;background:#5a2222;border:1px solid #804040;color:#e0e0e0;padding:2px 8px;cursor:pointer;font-size:10px;margin-left:4px;">Kick</button>` : ''}`;
+            if (isHost) { const kb = d.querySelector("button"); if (kb) kb.addEventListener("click", () => { const target = connections.find(x => x.label === kb.dataset.label); if (target) { target.conn.close(); } }); }
+            collabPeers.appendChild(d);
+        }
+        const openCount = connections.filter(c => c.conn.open).length;
+        collabStatus.textContent = isHost ? (openCount === 1 ? "1 peer connected" : `${openCount} peers connected`) : "Connected to host";
+        collabStatus.style.color = "#4a4";
+        collabBtn.classList.add("active");
+    }
+
+    function broadcast(msg) {
+        if (suppressBroadcast) return;
+        for (const c of connections) { if (c.conn.open) try { c.conn.send(msg); } catch (e) {} }
+    }
+
+    function broadcastCurrentState() { const s = serializeAnimationState(); if (s) broadcast({ type: "state", tab: currentTabIndex, state: s }); }
+    function broadcastTabs() { broadcast({ type: "tabs", tabs: animations.map(a => saveGani(a)), names: animations.map(a => a.fileName || ""), active: currentTabIndex }); }
+
+    function applyIncomingTabs(data) {
+        suppressBroadcast = true;
+        animations.length = 0;
+        for (let i = 0; i < data.tabs.length; i++) { const a = parseGani(data.tabs[i]); a.fileName = data.names[i] || ""; animations.push(a); }
+        if (animations.length > 0) switchTab(Math.min(data.active || 0, animations.length - 1));
+        suppressBroadcast = false;
+    }
+
+    function applyIncomingState(data) {
+        suppressBroadcast = true;
+        const active = document.activeElement;
+        const selStart = active && active.selectionStart;
+        const selEnd = active && active.selectionEnd;
+        if (data.tab !== undefined && data.tab !== currentTabIndex && data.tab < animations.length) switchTab(data.tab);
+        if (data.state) restoreAnimationState(data.state);
+        suppressBroadcast = false;
+        if (active && active !== document.activeElement) {
+            active.focus();
+            if (selStart !== undefined) { try { active.setSelectionRange(selStart, selEnd); } catch(e) {} }
+        }
+    }
+
+    function imgToDataUrl(img) {
+        try { const c = document.createElement("canvas"); c.width = img.naturalWidth; c.height = img.naturalHeight; c.getContext("2d").drawImage(img, 0, 0); return c.toDataURL("image/png"); } catch (e) { return null; }
+    }
+
+    function cacheImgDataUrl(key) {
+        if (imgDataCache.has(key)) return imgDataCache.get(key);
+        const img = imageLibrary.get(key);
+        if (!img || !img.complete || !img.naturalWidth) return null;
+        const d = imgToDataUrl(img);
+        if (d) imgDataCache.set(key, d);
+        return d;
+    }
+
+    function queueImageSend(key) {
+        if (connections.length === 0 || sentImageKeys.has(key)) return;
+        const img = imageLibrary.get(key);
+        if (!img) return;
+        sentImageKeys.add(key);
+        const doSend = () => {
+            if (connections.length === 0) return;
+            const d = imgToDataUrl(img);
+            if (d) broadcast({ type: "images", images: { [key]: d } });
+        };
+        if (img.complete && img.naturalWidth) setTimeout(doSend, 50);
+        else img.addEventListener("load", () => setTimeout(doSend, 50), { once: true });
+    }
+
+    async function sendAllImages(conn) {
+        if (!conn.open) return;
+        const keys = [...imageLibrary.keys()];
+        if (keys.length === 0) { conn.send({ type: "images_end" }); return; }
+        collabStatus.textContent = `Sending 0/${keys.length}...`;
+        collabStatus.style.color = "#ca4";
+        for (let i = 0; i < keys.length; i++) {
+            if (!conn.open) break;
+            const d = cacheImgDataUrl(keys[i]);
+            if (d) { const o = {}; o[keys[i]] = d; conn.send({ type: "images", images: o }); sentImageKeys.add(keys[i]); }
+            if (i % 10 === 0) { collabStatus.textContent = `Sending ${i}/${keys.length}...`; await new Promise(r => setTimeout(r, 5)); }
+        }
+        conn.send({ type: "images_end" });
+        collabStatus.textContent = connections.length ? "1 peer connected" : "";
+        collabStatus.style.color = "#4a4";
+    }
+
+    let applyImgTimer = null;
+    function applyImages(imgs) {
+        for (const [key, url] of Object.entries(imgs)) {
+            if (imageLibrary.has(key)) continue;
+            const i = new Image();
+            i.onload = () => { imageLibrary.set(key, i); workspaceImageKeys.add(key); };
+            i.src = url;
+        }
+        if (applyImgTimer) clearTimeout(applyImgTimer);
+        applyImgTimer = setTimeout(() => { refreshAllAnimationsSprites(); redraw(); applyImgTimer = null; }, 300);
+    }
+
+    function hookImageLibrary() {
+        const origSet = imageLibrary.set.bind(imageLibrary);
+        for (const k of imageLibrary.keys()) sentImageKeys.add(k);
+        imageLibrary.set = function(key, img) { origSet(key, img); queueImageSend(key); };
+    }
+
+    function hookUndoBroadcast() {
+        const orig = window.addUndoCommand;
+        window.addUndoCommand = function(cmd) {
+            orig(cmd);
+            if (cmd.newState) broadcast({ type: "state", tab: currentTabIndex, state: cmd.newState, desc: cmd.description });
+        };
+    }
+
+    function hookHistorySync() {
+        const origUndo = window.undo;
+        const origRedo = window.redo;
+        window.undo = function() { origUndo(); broadcast({ type: "undo", tab: currentTabIndex }); };
+        window.redo = function() { origRedo(); broadcast({ type: "redo", tab: currentTabIndex }); };
+    }
+
+    function hookClipboardDetect() {
+        collabDropdown.addEventListener("click", async () => {
+            if (connections.length > 0) return;
+            try {
+                const text = await navigator.clipboard.readText();
+                if (text && text.startsWith("gani-")) collabJoinCode.value = text;
+            } catch (e) {}
+        });
+    }
+
+    function hookTabOps() {
+        const origSwitch = window.switchTab;
+        window.switchTab = function(i) { origSwitch(i); broadcast({ type: "switchtab", tab: i }); };
+        const origAdd = window.addTab;
+        window.addTab = function(a, f) { origAdd(a, f); broadcastTabs(); };
+        const origClose = window.closeTab;
+        window.closeTab = function(i) { origClose(i); broadcastTabs(); };
+    }
+
+    function hookMouseMoveBroadcast() {
+        let last = 0;
+        document.addEventListener("mousemove", (e) => {
+            const now = performance.now();
+            if (now - last < 50 || connections.length === 0) return;
+            last = now;
+            const g = { x: e.clientX, y: e.clientY, frame: currentFrame, tab: currentTabIndex };
+            if (isDragging && selectedPieces.size > 0) {
+                g.dragging = true;
+                g.pieces = [];
+                const hasStartPos = pieceInitialPositions.size > 0;
+                for (const p of selectedPieces) {
+                    const sp = currentAnimation ? currentAnimation.getAniSprite(p.spriteIndex, p.spriteName || "") : null;
+                    g.pieces.push({
+                        id: p.id, si: p.spriteIndex, sn: p.spriteName,
+                        xo: p.xoffset, yo: p.yoffset,
+                        xs: p.xscale, ys: p.yscale, r: p.rotation,
+                        sl: sp ? sp.left : 0, st: sp ? sp.top : 0, sw: sp ? sp.width : 32, sh: sp ? sp.height : 32
+                    });
+                    if (hasStartPos && !g.starts) g.starts = [];
+                    if (hasStartPos) {
+                        const ip = pieceInitialPositions.get(p);
+                        g.starts.push({ id: p.id, sx: ip.x, sy: ip.y, sw: sp ? sp.width : 32, sh: sp ? sp.height : 32 });
+                    }
+                }
+            }
+            broadcast({ type: "cursor", label: myLabel, g });
+        });
+    }
+
+    function drawGhosts() {
+        const ctx = ghostCtx;
+        ctx.clearRect(0, 0, ghostCanvas.width, ghostCanvas.height);
+        if (remoteGhosts.size === 0) return;
+        const cr = mainCanvas.getBoundingClientRect();
+        const z = zoomFactors[zoomLevel] || 1;
+        for (const [label, gh] of remoteGhosts) {
+            if (label === myLabel) continue;
+            ctx.save();
+            const cx = gh.x * dpr, cy = gh.y * dpr;
+            if (gh.dragging && gh.pieces && currentAnimation) {
+                ctx.translate(cr.left * dpr + cr.width * dpr / 2 + panX * dpr, cr.top * dpr + cr.height * dpr / 2 + panY * dpr);
+                ctx.scale(z, z);
+                ctx.globalAlpha = 0.5;
+                for (const gp of gh.pieces) {
+                    const sp = currentAnimation.getAniSprite(gp.si, gp.sn || "");
+                    if (!sp) continue;
+                    const img = getSpriteImage(sp);
+                    if (!img) continue;
+                    const xs = gp.xs !== undefined ? gp.xs : sp.xscale;
+                    const ys = gp.ys !== undefined ? gp.ys : sp.yscale;
+                    const r = gp.r !== undefined ? gp.r : sp.rotation;
+                    const zm = sp._zoom || 1;
+                    const sl = gp.sl !== undefined ? gp.sl : sp.left;
+                    const st = gp.st !== undefined ? gp.st : sp.top;
+                    const sw = gp.sw !== undefined ? gp.sw : sp.width;
+                    const sh = gp.sh !== undefined ? gp.sh : sp.height;
+                    ctx.save();
+                    ctx.translate(gp.xo, gp.yo);
+                    ctx.translate(sw / 2, sh / 2);
+                    ctx.scale(xs * zm, ys * zm);
+                    ctx.rotate(r * Math.PI / 180);
+                    ctx.translate(-sw / 2, -sh / 2);
+                    ctx.drawImage(img, sl, st, sw, sh, sl, st, sw, sh);
+                    ctx.strokeStyle = gh.color;
+                    ctx.lineWidth = 2 / (z * xs * zm);
+                    ctx.strokeRect(0, 0, sw, sh);
+                    ctx.restore();
+                }
+                if (gh.starts) {
+                    ctx.globalAlpha = 0.7;
+                    for (const s of gh.starts) {
+                        const hw = (s.sw || 32) / 2, hh = (s.sh || 32) / 2;
+                        const matchedPiece = gh.pieces.find(p => p.id === s.id);
+                        const ex = matchedPiece ? matchedPiece.xo + hw : s.sx + hw;
+                        const ey = matchedPiece ? matchedPiece.yo + hh : s.sy + hh;
+                        ctx.setLineDash([6 / z, 6 / z]);
+                        ctx.strokeStyle = gh.color;
+                        ctx.lineWidth = 2.5 / z;
+                        ctx.beginPath(); ctx.moveTo(s.sx + hw, s.sy + hh); ctx.lineTo(ex, ey); ctx.stroke();
+                        ctx.setLineDash([]);
+                        ctx.beginPath(); ctx.arc(s.sx + hw, s.sy + hh, 9 / z, 0, Math.PI * 2);
+                        ctx.fillStyle = gh.color.replace(")", ",0.35)").replace("rgb", "rgba").replace("#", "");
+                        if (ctx.fillStyle === gh.color || ctx.fillStyle === "transparent") ctx.fillStyle = gh.color + "59";
+                        ctx.fill();
+                        ctx.strokeStyle = gh.color;
+                        ctx.lineWidth = 2.5 / z;
+                        ctx.stroke();
+                    }
+                }
+                ctx.restore();
+                ctx.save();
+            }
+            const displayLabel = label.startsWith("gani-") ? label.slice(5) : label;
+            ctx.fillStyle = gh.color;
+            ctx.globalAlpha = 0.8;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy); ctx.lineTo(cx, cy + 16 * dpr); ctx.lineTo(cx + 4 * dpr, cy + 13 * dpr); ctx.lineTo(cx + 9 * dpr, cy + 20 * dpr); ctx.lineTo(cx + 11 * dpr, cy + 18 * dpr); ctx.lineTo(cx + 7 * dpr, cy + 11 * dpr); ctx.lineTo(cx + 12 * dpr, cy + 12 * dpr);
+            ctx.closePath(); ctx.fill();
+            ctx.globalAlpha = 1;
+            ctx.font = `bold ${11 * dpr}px 'chevyray',monospace`;
+            ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+            ctx.strokeStyle = "rgba(0,0,0,0.9)"; ctx.lineWidth = 3 * dpr;
+            ctx.lineJoin = "round";
+            ctx.strokeText(displayLabel, cx + 15 * dpr, cy + 3 * dpr);
+            ctx.fillStyle = gh.color;
+            ctx.fillText(displayLabel, cx + 15 * dpr, cy + 3 * dpr);
+            ctx.restore();
+        }
+    }
+
+    let lastSyncedFrame = -1;
+
+    function hookRedrawGhost() {
+        const orig = window.redraw;
+        window.redraw = function() { orig(); drawGhosts(); };
+    }
+
+    function hookFrameSync() {
+        const orig = window.redraw;
+        window.redraw = function() {
+            orig();
+            if (connections.length && !suppressBroadcast && currentFrame !== lastSyncedFrame) {
+                lastSyncedFrame = currentFrame;
+                broadcast({ type: "frame", frame: currentFrame });
+            }
+        };
+    }
+
+    function hookRedrawGhost() {
+        const origRedraw = window.redraw;
+        window.redraw = function() { origRedraw(); drawGhosts(); };
+    }
+
+    function startGhostLoop() {
+        (function loop() {
+            if (connections.length > 0) drawGhosts();
+            requestAnimationFrame(loop);
+        })();
+    }
+
+    function setupConn(conn, label) {
+        const color = ghostColors[ghostColorIdx++ % ghostColors.length];
+        remoteGhosts.set(label, { x: -100, y: -100, color, tab: 0, frame: 0 });
+        connections.push({ conn, label });
+        conn.on("open", () => {
+            updatePeerList();
+            if (isHost) { conn.send({ type: "fullsync", tabs: animations.map(a => saveGani(a)), names: animations.map(a => a.fileName || ""), active: currentTabIndex }); sendAllImages(conn); }
+            else broadcastCurrentState();
+        });
+        conn.on("data", (data) => {
+            switch (data.type) {
+                case "state": applyIncomingState(data); break;
+                case "undo": suppressBroadcast = true; if (data.tab !== undefined && data.tab !== currentTabIndex) switchTab(data.tab); undo(); suppressBroadcast = false; break;
+                case "redo": suppressBroadcast = true; if (data.tab !== undefined && data.tab !== currentTabIndex) switchTab(data.tab); redo(); suppressBroadcast = false; break;
+                case "tabs": case "fullsync": applyIncomingTabs(data); break;
+                case "images": applyImages(data.images); break;
+                case "images_end": collabStatus.textContent = connections.length ? (isHost ? `${connections.filter(c=>c.conn.open).length} peer${connections.filter(c=>c.conn.open).length===1?'':'s'} connected` : "Connected to host") : ""; collabStatus.style.color = "#4a4"; break;
+                case "switchtab": suppressBroadcast = true; if (data.tab !== undefined && data.tab !== currentTabIndex) switchTab(data.tab); suppressBroadcast = false; break;
+                case "frame": if (data.frame !== undefined && data.frame !== currentFrame && data.frame >= 0 && currentAnimation && data.frame < currentAnimation.frames.length) { suppressBroadcast = true; currentFrame = data.frame; redraw(); suppressBroadcast = false; } break;
+                case "cursor": if (data.g) { const gh = Object.assign(remoteGhosts.get(label) || {}, data.g); if (!data.g.dragging) { gh.pieces = null; gh.starts = null; } remoteGhosts.set(label, gh); } break;
+            }
+        });
+        conn.on("close", () => { remoteGhosts.delete(label); connections = connections.filter(c => c.conn !== conn); updatePeerList(); redraw(); });
+        conn.on("error", () => { updatePeerList(); });
+    }
+
+    function createPeer() {
+        peer = new Peer(myCode, { debug: 0 });
+        peer.on("open", () => {
+            isHost = true;
+            myLabel = peer.id || myCode;
+            collabStatus.textContent = "Waiting for peers..."; collabStatus.style.color = "#888";
+            if (!hooksInit) { hooksInit = true; hookUndoBroadcast(); hookTabOps(); hookMouseMoveBroadcast(); hookRedrawGhost(); hookImageLibrary(); hookFrameSync(); hookHistorySync(); hookClipboardDetect(); startGhostLoop(); }
+        });
+        peer.on("connection", (conn) => setupConn(conn, conn.peer || "Peer"));
+        peer.on("error", (err) => { if (err.type === "unavailable-id") createPeer(); else { collabStatus.textContent = "Error: " + err.type; collabStatus.style.color = "#a44"; } });
+    }
+
+    collabJoinBtn.addEventListener("click", () => {
+        const code = collabJoinCode.value.trim();
+        if (!code || connections.length > 0) return;
+        collabStatus.textContent = "Connecting..."; collabStatus.style.color = "#ca4";
+        peer = new Peer(undefined, { debug: 0 });
+        peer.on("open", () => {
+            isHost = false;
+            myLabel = peer.id || "Peer";
+            const conn = peer.connect(code, { reliable: true });
+            setupConn(conn, "Host (" + code + ")");
+            if (!hooksInit) { hooksInit = true; hookUndoBroadcast(); hookTabOps(); hookMouseMoveBroadcast(); hookRedrawGhost(); hookImageLibrary(); hookFrameSync(); hookHistorySync(); hookClipboardDetect(); startGhostLoop(); }
+        });
+        peer.on("error", () => { collabStatus.textContent = "Failed to connect"; collabStatus.style.color = "#a44"; });
+    });
+
+    if (collabEnabled) createPeer();
+})();

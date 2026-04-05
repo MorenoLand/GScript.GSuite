@@ -1,6 +1,6 @@
-# Gani Editor Web
+# GScript Editor Suite
 
-A web-based editor for Graal animation files (.gani). Lets you create and edit animations directly in your browser.
+A web-based editor suite for Graal files. Includes a Gani animation editor (.gani) and a level editor (.nw), merged into a single interface. Built on Stefan/39sters level editor work. Work in progress.
 
 ## Legal Stoof
 

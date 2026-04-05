@@ -1,1511 +1,199 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gani Editor</title>
-    <link rel="icon" type="image/x-icon" href="favicon.ico">
-    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs/loader.js"></script>
-    <script src="anieditor.js" defer></script>
-    <style>
-        :root {
-            --slider-box-shadow: inset 0px 2px 0px 0px #5B5B5B, inset 0px -2px 0px 0px #5B5B5B, inset -2px 0px 0px 0px #5B5B5B, inset 2px 0px 0px 0px #5B5B5B, 0px 2px 0px 0px #1E1E1E, 2px 0px 0px 0px #191919, -2px 0px 0px 0px #191919, 0px -2px 0px 0px #191919, 0px 4px 0px 0px rgba(25, 25, 25, .8);
-        }
-        .fas {
-            display: inline-block;
-            width: 16px;
-            height: 16px;
-            background-size: contain;
-            background-repeat: no-repeat;
-            background-position: center;
-            vertical-align: middle;
-            filter: brightness(0) invert(1);
-            image-rendering: pixelated;
-            image-rendering: -moz-crisp-edges;
-            image-rendering: crisp-edges;
-        }
-        .fa-file { background-image: var(--icon-file, url("icons/file.svg")); }
-        .fa-folder-open { background-image: var(--icon-folder-open, url("icons/folder-open.svg")); }
-        .fa-book { background-image: var(--icon-book, url("icons/book.svg")); }
-        .fa-save { background-image: var(--icon-save, url("icons/save.svg")); }
-        .fa-save-all { background-image: var(--icon-save-all, url("icons/save-all.svg")); }
-        .fa-folder { background-image: var(--icon-folder, url("icons/folder.svg")); }
-        .fa-palette { background-image: var(--icon-palette, url("icons/palette.svg")); }
-        .fa-code { background-image: var(--icon-code, url("icons/code.svg")); }
-        .fa-exclamation-circle { background-image: var(--icon-exclamation-circle, url("icons/exclamation-circle.svg")); }
-        .fa-cog { background-image: var(--icon-cog, url("icons/gear.svg")); }
-        .fa-exchange-alt { background-image: var(--icon-exchange-alt, url("icons/exchange-alt.svg")); }
-        .fa-times { background-image: var(--icon-times, url("icons/times.svg")); }
-        .fa-undo { background-image: var(--icon-undo, url("icons/undo.svg")); }
-        .fa-redo { background-image: var(--icon-redo, url("icons/redo.svg")); }
-        .fa-recycle { background-image: var(--icon-recycle, url("icons/recycle.svg")); }
-        .fa-info-circle { background-image: var(--icon-info-circle, url("icons/circle-info.svg")); }
-        .fa-plus { background-image: var(--icon-plus, url("icons/plus.svg")); }
-        .fa-file-import { background-image: var(--icon-file-import, url("icons/file-import.svg")); }
-        .fa-copy { background-image: var(--icon-copy, url("icons/copy.svg")); }
-        .fa-paste { background-image: var(--icon-paste, url("icons/paste.svg")); }
-        .fa-trash { background-image: var(--icon-trash, url("icons/trash.svg")); }
-        .fa-arrow-left { background-image: var(--icon-arrow-left, url("icons/arrow-left.svg")); }
-        .fa-arrow-right { background-image: var(--icon-arrow-right, url("icons/arrow-right.svg")); }
-        .fa-layer-group { background-image: var(--icon-layer-group, url("icons/layer-group.svg")); }
-        .fa-crosshairs { background-image: var(--icon-crosshairs, url("icons/crosshairs.svg")); }
-        .fa-border-all { background-image: var(--icon-border-all, url("icons/border-all.svg")); }
-        .fa-grid { background-image: var(--icon-grid, url("icons/grid.svg")); }
-        .fa-magic { background-image: var(--icon-magic, url("icons/magnet.svg")); transform: scaleX(-1); }
-        .fa-magnet { background-image: var(--icon-magnet, url("icons/magnet.svg")); }
-        .fa-pencil { background-image: var(--icon-pencil, url("icons/pencil.svg")); }
-        .fa-minus { background-image: var(--icon-minus, url("icons/minus.svg")); }
-        .fa-arrow-up { background-image: var(--icon-arrow-up, url("icons/arrow-up.svg")); }
-        .fa-arrow-down { background-image: var(--icon-arrow-down, url("icons/arrow-down.svg")); }
-        .fa-play { background-image: var(--icon-play, url("icons/play.svg")); }
-        .fa-pause { background-image: var(--icon-pause, url("icons/pause.svg")); }
-        .fa-stop { background-image: var(--icon-stop, url("icons/stop.svg")); }
-        .fas { filter: var(--icon-filter, brightness(0) invert(1)); }
-        .dialog-titlebar i.fas { display: block !important; filter: var(--dialog-icon-filter, var(--icon-filter, brightness(0) invert(1))) !important; opacity: 1 !important; flex-shrink: 0; transform: translateY(-2px); }
-        .dialog-titlebar img { transform: translateY(-3px); }
-        .dialog-titlebar img.titlebar-logo { filter: none !important; }
-        @font-face {
-            font-family: "Silkscreen";
-            src: url("fonts/Silkscreen-Regular.ttf") format("truetype");
-            font-weight: normal;
-        }
-        @font-face {
-            font-family: "Silkscreen";
-            src: url("fonts/Silkscreen-Bold.ttf") format("truetype");
-            font-weight: bold;
-        }
-        @font-face {
-            font-family: "PressStart2P";
-            src: url("fonts/PressStart2P-Regular.ttf") format("truetype");
-            font-weight: normal;
-        }
-        @font-face {
-            font-family: "Tempus Sans ITC";
-            src: url("fonts/tempus-sans-itc.ttf") format("truetype");
-            font-weight: normal;
-        }
-        @font-face {
-            font-family: "Tempus Sans ITC";
-            src: url("fonts/tempus-sans-itc.ttf") format("truetype");
-            font-weight: normal;
-        }
-        @font-face {
-            font-family: "MesloLGS NF";
-            src: url("fonts/MesloLGS NF Regular.ttf") format("truetype");
-            font-weight: normal;
-        }
-        @font-face {
-            font-family: "chevyray";
-            src: url("fonts/chevyray.ttf") format("truetype");
-            font-weight: normal;
-        }
-        @font-face {
-            font-family: "chevyrayOeuf";
-            src: url("fonts/chevyrayOeuf.ttf") format("truetype");
-            font-weight: normal;
-        }
-        * { margin: 0; padding: 0; box-sizing: border-box; image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges; }
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-        .loading-favicon {
-            width: 32px;
-            height: 32px;
-            animation: spin 1s linear infinite;
-            image-rendering: pixelated;
-            flex-shrink: 0;
-        }
-        body {
-            font-family: "chevyray", monospace;
-            background: #1a1a1a;
-            color: #e0e0e0;
-            overflow: hidden;
-            height: 100vh;
-            margin: 0;
-            padding: 0;
-            font-size: 12px;
-            line-height: 1.5;
-        }
-        html {
-            overflow: hidden;
-            height: 100vh;
-            margin: 0;
-            padding: 0;
-        }
-        h1, h2, h3, h4, h5, h6, label, .sprite-item div, button {
-            user-select: none;
-            -webkit-user-select: none;
-            -moz-user-select: none;
-            -ms-user-select: none;
-        }
-        .main-container {
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            overflow: hidden;
-        }
-        .toolbar {
-            background: #2b2b2b;
-            border-bottom: 1px solid #0a0a0a;
-            padding: 8px;
-            display: flex;
-            gap: 4px;
-            box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05);
-            position: relative;
-        }
-        #btnSaveAs {
-            display: none;
-        }
-        .toolbar button {
-            background: #353535;
-            border: 1px solid #0a0a0a;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-            color: #e0e0e0;
-            padding: 8px;
-            cursor: pointer;
-            font-family: "chevyray", monospace;
-            font-size: 12px;
-            box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.3), 0 1px 0 rgba(255, 255, 255, 0.1);
-        }
-        .toolbar button:hover { background: #404040; border-color: #555; }
-        .toolbar button:active { background: #2b2b2b; border-color: #0a0a0a; box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5); }
-        .toolbar button.active { background: #2a6496 !important; border-color: #1a4a70 !important; }
-        .toolbar button.active:hover { background: #3a74a6 !important; }
-        .color-scheme-item:hover {
-            background: #404040 !important;
-        }
-        .custom-dropdown-button,
-        .custom-dropdown-item {
-            user-select: none;
-            -webkit-user-select: none;
-            -moz-user-select: none;
-            -ms-user-select: none;
-        }
-        .custom-dropdown-button:hover {
-            background: #404040 !important;
-            border-color: #555 !important;
-        }
-        .custom-dropdown-button:active {
-            background: #2b2b2b !important;
-            border-color: #0a0a0a !important;
-            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5) !important;
-        }
-        .custom-dropdown-item:hover {
-            background: #404040 !important;
-        }
-        .default-gani-item { user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; }
-        .default-gani-item:hover { background: #4472C4; }
-        .default-gani-item.selected { background: #4472C4; }
-        .tabs {
-            background: #2b2b2b;
-            display: flex;
-            gap: 2px;
-            padding: 4px 4px 0 4px;
-            box-shadow: none;
-            overflow-x: auto;
-            scrollbar-width: none;
-            flex: 1;
-            min-width: 0;
-            width: 0;
-        }
-        .tab {
-            background: transparent;
-            border: 1px solid transparent;
-            border-bottom: none;
-            padding: 8px 16px;
-            cursor: pointer;
-            position: relative;
-            user-select: none;
-            -webkit-user-select: none;
-            -moz-user-select: none;
-            -ms-user-select: none;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 140px;
-            flex-shrink: 0;
-            font-family: "chevyray", monospace;
-            font-size: 12px;
-            color: #888;
-            box-shadow: none;
-        }
-        .tabs::-webkit-scrollbar { display: none; }
-        .tab:hover {
-            background: rgba(255, 255, 255, 0.05);
-            color: #ccc;
-        }
-        .tab.active {
-            background: #2b2b2b;
-            border: 1px solid #0a0a0a;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-            border-bottom: none;
-            color: #e0e0e0;
-            margin-bottom: -1px;
-        }
-        .tab-close { margin-left: 8px; cursor: pointer; font-size: 20px; font-weight: bold; color: #666; border-radius: 3px; padding: 0 3px; transition: color 0.1s, background 0.1s; }
-        .tab-close:hover { color: #ff6666; background: rgba(255, 60, 60, 0.18); }
-        .content-area {
-            flex: 1 1 0;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            min-height: 0;
-            position: relative;
-        }
-        .splitter {
-            display: flex;
-            overflow: visible;
-        }
-        .splitter.horizontal { flex-direction: row; }
-        .splitter.vertical { flex-direction: column; }
-        .splitter-handle {
-            background: #0a0a0a;
-            cursor: col-resize;
-            width: 4px;
-            flex-shrink: 0;
-            z-index: 10;
-            border-left: 1px solid #404040;
-            border-right: 1px solid #0a0a0a;
-        }
-        .splitter.vertical .splitter-handle {
-            cursor: row-resize;
-            height: 4px;
-            width: 100%;
-        }
-        .left-panel {
-            display: flex;
-            flex-direction: column;
-            background: #2b2b2b;
-            min-width: 200px;
-            z-index: 2;
-            border-right: 1px solid #0a0a0a;
-        }
-        .sprite-toolbar {
-            display: flex;
-            gap: 4px;
-            padding: 8px;
-            background: #353535;
-            border-bottom: 1px solid #0a0a0a;
-        }
-        .sprite-toolbar button {
-            background: #2b2b2b;
-            border: 1px solid #0a0a0a;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-            color: #e0e0e0;
-            padding: 4px;
-            cursor: pointer;
-            width: 32px;
-            height: 32px;
-            font-family: "chevyray", monospace;
-            box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.3), 0 1px 0 rgba(255, 255, 255, 0.1);
-        }
-        .sprite-toolbar button:hover { background: #404040; border-color: #555; }
-        .sprite-toolbar button:active { background: #1a1a1a; border-color: #0a0a0a; box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5); }
-        .sprites-list {
-            overflow-y: auto;
-            padding: 4px;
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
-            gap: 4px;
-        }
-        .sprite-item {
-            background: #353535;
-            border: 1px solid #0a0a0a;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-            padding: 8px;
-            cursor: pointer;
-            text-align: center;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: flex-start;
-            height: 105px;
-        }
-        .sprite-item.selected { border-color: #00ff00; border-width: 2px; }
-        .sprite-item canvas { 
-            width: 100%; 
-            height: auto; 
-            max-width: 64px;
-            max-height: 64px;
-            object-fit: contain;
-            flex-shrink: 0;
-            image-rendering: pixelated;
-            image-rendering: -moz-crisp-edges;
-            image-rendering: crisp-edges;
-        }
-        .sprite-item > div {
-            font-size: 12px;
-            margin-top: 8px;
-            line-height: 1.5;
-            font-family: "chevyray", monospace;
-            color: #e0e0e0;
-            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8), 0 0 4px rgba(0, 0, 0, 0.5);
-        }
-        .sprite-edit-panel {
-            background: #2b2b2b;
-            border-top: 1px solid #0a0a0a;
-            overflow-y: auto;
-            flex: 1;
-            min-height: 200px;
-        }
-        .sprite-settings {
-            padding: 8px;
-        }
-        .sprite-settings label {
-            display: block;
-            margin-bottom: 6px;
-            margin-top: 10px;
-            font-size: 12px;
-            font-family: "chevyray", monospace;
-            border: none;
-            border-bottom: none;
-            border-top: none;
-            box-shadow: none;
-        }
-        .sprite-settings label:first-child {
-            margin-top: 4px;
-        }
-        .sprite-settings label + .slider-group {
-            margin-top: 5px;
-            padding-top: 0;
-        }
-        .sprite-settings label:has(+ .slider-group) {
-            margin-bottom: 0;
-        }
-        .sprite-settings input,
-        .sprite-settings select {
-            width: 100%;
-            background: #1a1a1a;
-            border: 1px solid #0a0a0a;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-            border-bottom: 1px solid #0a0a0a;
-            color: #e0e0e0;
-            padding: 8px;
-            margin-bottom: 12px;
-            font-family: "chevyray", monospace;
-            font-size: 12px;
-        }
-        .sprite-settings input[type="range"] {
-            margin-bottom: 0;
-            border: none;
-        }
-        .sprite-settings .slider-group {
-            margin-top: 0;
-        }
-        .sprite-settings input:not([type="range"]) + .slider-group {
-            margin-top: -1px;
-        }
-        .sprite-settings input:not([type="range"]) {
-            border-bottom: 1px solid #0a0a0a;
-        }
-        .sprite-settings label + .slider-group {
-            margin-top: 5px;
-            padding-top: 0;
-        }
-        .sprite-settings .slider-group {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            border: none;
-            border-top: none;
-            box-shadow: none;
-            background: transparent;
-            margin-top: 0;
-            padding-top: 0;
-        }
-        .sprite-settings .slider-group input[type="range"] {
-            flex: 1;
-            background: transparent;
-            border: none;
-            border-top: none;
-            border-bottom: none;
-            height: 8px;
-            -webkit-appearance: none;
-            appearance: none;
-            cursor: pointer;
-            margin-top: 0;
-            padding-top: 0;
-        }
-        .sprite-settings .slider-group input[type="range"]::-webkit-slider-runnable-track {
-            background: transparent;
-            height: 8px;
-            box-shadow: var(--slider-box-shadow);
-        }
-        .sprite-settings .slider-group input[type="range"]::-moz-range-track {
-            background: transparent;
-            height: 8px;
-            box-shadow: var(--slider-box-shadow);
-        }
-        .sprite-settings .slider-group input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 16px;
-            height: 24px;
-            background: #2b2d31;
-            border: none;
-            cursor: pointer;
-            margin-top: -8px;
-            box-shadow: var(--slider-box-shadow);
-        }
-        .sprite-settings .slider-group input[type="range"]::-moz-range-thumb {
-            width: 16px;
-            height: 24px;
-            background: #2b2d31;
-            border: 3px solid #404248;
-            cursor: pointer;
-            box-shadow: var(--slider-box-shadow);
-        }
-        .sprite-settings .slider-group input[type="number"] {
-            width: 100%;
-            height: 32px;
-            background: #1a1a1a;
-            border: 1px solid #0a0a0a;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-            padding: 8px;
-            font-family: "chevyray", monospace;
-            font-size: 12px;
-        }
-        .center-panel {
-            flex: 1;
-            display: flex;
-            background: transparent;
-            overflow: hidden;
-            min-width: 0;
-            position: relative;
-        }
-        .canvas-container {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 0 !important;
-            overflow: hidden;
-            background: #006400;
-            border-top: 1px solid #0a0a0a;
-        }
-        #mainCanvas {
-            display: block;
-            cursor: default;
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 1;
-        }
-        .canvas-controls {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            z-index: 10;
-            display: flex;
-            gap: 5px;
-        }
-        .canvas-controls button {
-            background: rgba(0, 0, 0, 0.7);
-            border: 1px solid #555;
-            color: #e0e0e0;
-            padding: 4px 8px;
-            cursor: pointer;
-            border-radius: 3px;
-        }
-        .canvas-controls button:hover {
-            background: rgba(0, 0, 0, 0.9);
-        }
-        .canvas-controls button.active {
-            background: #888888 !important;
-        }
-        .canvas-controls {
-            position: absolute;
-            top: 4px;
-            left: 4px;
-            display: flex;
-            gap: 4px;
-        }
-        .canvas-controls button {
-            background: #353535;
-            border: 1px solid #0a0a0a;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-            color: #e0e0e0;
-            padding: 8px;
-            cursor: pointer;
-            font-family: "chevyray", monospace;
-            font-size: 12px;
-            box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.3), 0 1px 0 rgba(255, 255, 255, 0.1);
-        }
-        .timeline-wrapper {
-            width: 100%;
-            box-sizing: border-box;
-        }
-        .timeline-container {
-            background: #2b2b2b;
-            border-top: 1px solid #0a0a0a;
-            padding: 8px 8px 0 8px;
-            height: 224px;
-            min-height: 192px;
-            max-height: 400px;
-            flex: 0 0 224px;
-            width: 100%;
-            max-width: 100%;
-            display: flex !important;
-            flex-direction: column;
-            visibility: visible !important;
-            opacity: 1 !important;
-            position: relative;
-            z-index: 1;
-            overflow: hidden;
-            box-sizing: border-box;
-            align-items: stretch;
-            box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.05);
-        }
-        .timeline-header {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 4px;
-            flex-shrink: 0;
-            flex-grow: 0;
-            height: 24px;
-            min-height: 24px;
-            max-height: 24px;
-        }
-        .timeline-header label { font-size: 12px; font-family: "chevyray", monospace; }
-        .timeline-header span { font-size: 12px; font-family: "chevyray", monospace; }
-        .timeline-header .frame-count { min-width: 40px; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; }
-        .timeline-slider {
-            width: 100%;
-            max-width: 91%;
-            margin-bottom: 8px;
-            flex-shrink: 0;
-            background: transparent;
-            border: none;
-            height: 8px;
-            -webkit-appearance: none;
-            appearance: none;
-            cursor: pointer;
-        }
-        .timeline-slider::-webkit-slider-runnable-track {
-            background: transparent;
-            height: 8px;
-            box-shadow: var(--slider-box-shadow);
-        }
-        .timeline-slider::-moz-range-track {
-            background: transparent;
-            height: 8px;
-            box-shadow: var(--slider-box-shadow);
-        }
-        .timeline-slider::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 16px;
-            height: 24px;
-            background: #2b2d31;
-            border: none;
-            cursor: pointer;
-            margin-top: -8px;
-            box-shadow: var(--slider-box-shadow);
-        }
-        .timeline-slider::-moz-range-thumb {
-            width: 16px;
-            height: 24px;
-            background: #2b2d31;
-            border: 3px solid #404248;
-            cursor: pointer;
-            box-shadow: var(--slider-box-shadow);
-        }
-        .timeline-view {
-            flex: 1 1 0;
-            min-height: 50px;
-            background: #353535;
-            border: 1px solid #0a0a0a;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-            position: relative;
-            overflow: hidden;
-            width: 100%;
-            max-width: 100%;
-            display: block !important;
-            visibility: visible !important;
-            opacity: 1 !important;
-            box-sizing: border-box;
-        }
-        #timelineCanvas {
-            display: block !important;
-            visibility: visible !important;
-            opacity: 1 !important;
-            position: relative;
-            z-index: 1;
-            background: #353535;
-            width: 100%;
-            max-width: 100%;
-            height: 100%;
-            box-sizing: border-box;
-        }
-        .playback-controls {
-            display: flex !important;
-            gap: 4px;
-            padding: 8px 8px 10px;
-            background: #353535;
-            flex-shrink: 0;
-            flex-grow: 0;
-            width: 100%;
-            position: relative;
-            z-index: 100;
-            border-top: 1px solid #0a0a0a;
-            visibility: visible !important;
-            opacity: 1 !important;
-            box-sizing: border-box;
-        }
-        .playback-controls button {
-            background: #2b2b2b;
-            border: 1px solid #0a0a0a;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-            color: #e0e0e0;
-            padding: 4px;
-            cursor: pointer;
-            width: 32px;
-            height: 32px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            position: relative;
-            z-index: 101;
-            flex-shrink: 0;
-            box-sizing: border-box;
-            margin: 0;
-            outline: none;
-            font-family: "chevyray", monospace;
-            box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.3), 0 1px 0 rgba(255, 255, 255, 0.1);
-        }
-        .playback-controls button:hover { background: #404040; border-color: #555; }
-        .playback-controls button:active { background: #1a1a1a; border-color: #0a0a0a; box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5); }
-        .info-tab-btn, .settings-tab-btn { border-radius: 4px 4px 0 0; }
-        #floatingTooltip { display: none; position: fixed; z-index: 2147483647; background: var(--tooltip-bg, #1a1a1a); color: var(--tooltip-color, #e0e0e0); padding: var(--tooltip-padding, 3px 8px); border-radius: var(--tooltip-radius, 3px); font-size: var(--tooltip-font-size, 11px); font-family: var(--tooltip-font, 'chevyray', monospace); white-space: normal; width: max-content; max-width: var(--tooltip-max-width, 300px); text-align: left; pointer-events: none; border: var(--tooltip-border, 1px solid #444); }
-        .right-panel {
-            display: flex;
-            flex-direction: column;
-            background: #2b2b2b;
-            min-width: 200px;
-            overflow-y: auto;
-            z-index: 2;
-            border-left: 1px solid #0a0a0a;
-        }
-        .direction-selector {
-            padding: 8px;
-            display: flex;
-            gap: 8px;
-            align-items: center;
-            background: #353535;
-            border-bottom: 1px solid #0a0a0a;
-        }
-        .direction-selector label { font-size: 12px; font-family: "chevyray", monospace; }
-        .direction-selector select {
-            flex: 1;
-            background: #1a1a1a;
-            border: 1px solid #0a0a0a;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-            color: #e0e0e0;
-            padding: 8px;
-            font-family: "chevyray", monospace;
-            font-size: 12px;
-        }
-        .settings-group {
-            border: 1px solid #0a0a0a;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-            margin: 8px;
-            padding: 8px;
-            background: #2b2b2b;
-        }
-        .settings-group h3 {
-            font-size: 12px;
-            margin-bottom: 8px;
-            color: #e0e0e0;
-            font-family: "chevyray", monospace;
-        }
-        .settings-group label {
-            display: block;
-            font-size: 12px;
-            margin-bottom: 8px;
-            font-family: "chevyray", monospace;
-        }
-        .settings-group input[type="checkbox"] {
-            margin-right: 4px;
-        }
-        .settings-group input[type="text"],
-        .settings-group input[type="number"],
-        #settingsUIScaleNumber {
-            width: 100%;
-            background: #1a1a1a;
-            border: 1px solid #0a0a0a;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-            color: #e0e0e0;
-            padding: 8px;
-            margin-bottom: 8px;
-            font-family: "chevyray", monospace;
-            font-size: 12px;
-        }
-        #settingsUIScaleNumber {
-            margin-bottom: 0;
-            margin-top: 10px;
-            padding: 6px;
-        }
-        #settingsDialog .number-input-wrapper .number-spinner-container {
-            top: 10px;
-        }
-        .settings-group select {
-            width: 100%;
-            background: #1a1a1a;
-            border: 1px solid #0a0a0a;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-            color: #ffffff;
-            padding: 8px;
-            margin-bottom: 8px;
-            font-family: "chevyray", monospace;
-            font-size: 12px;
-        }
-        .settings-group button {
-            background: #1a1a1a;
-            border: 1px solid #0a0a0a;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-            color: #ffffff;
-            padding: 8px;
-            cursor: pointer;
-            font-family: "chevyray", monospace;
-            font-size: 12px;
-            box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.3), 0 1px 0 rgba(255, 255, 255, 0.1);
-        }
-        .settings-group button:hover,
-        #settingsOK:hover,
-        #settingsCancel:hover,
-        #settingsDefaults:hover,
-        #settingsReset:hover,
-        #aboutOK:hover {
-            background: #2b2b2b !important;
-            border-color: #555 !important;
-        }
-        .settings-group button:active,
-        #settingsOK:active,
-        #settingsCancel:active,
-        #settingsDefaults:active,
-        #settingsReset:active,
-        #aboutOK:active {
-            background: #0a0a0a !important;
-            border-color: #0a0a0a !important;
-            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5) !important;
-        }
-        #settingsDialog .dialog-content {
-            overflow: hidden !important;
-        }
-        #settingsDialog .dialog-content > div:last-child {
-            overflow: visible !important;
-        }
-        #settingsDialog button:not(#settingsDefaults):not(#settingsReset):not(#settingsCancel):not(#settingsOK) {
-            max-width: 100%;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        #settingsDefaults, #settingsReset, #settingsCancel, #settingsOK {
-            overflow: visible !important;
-            text-overflow: clip !important;
-            max-width: none !important;
-            height: auto !important;
-            align-self: flex-start !important;
-            line-height: normal !important;
-        }
-        .defaults-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 12px;
-            font-family: "chevyray", monospace;
-        }
-        .defaults-table th,
-        .defaults-table td {
-            border: 1px solid #0a0a0a;
-            padding: 8px;
-            text-align: left;
-        }
-        .defaults-table th {
-            background: #353535;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-        }
-        .defaults-table input {
-            width: 100%;
-            background: #1a1a1a;
-            border: none;
-            color: #e0e0e0;
-            padding: 8px;
-            font-family: "chevyray", monospace;
-            font-size: 12px;
-        }
-        .item-settings {
-            padding: 8px;
-        }
-        .item-settings label {
-            display: block;
-            font-size: 12px;
-            margin-bottom: 8px;
-            font-family: "chevyray", monospace;
-            border: none;
-            border-bottom: none;
-            border-top: none;
-            box-shadow: none;
-        }
-        .item-settings label + .slider-group {
-            margin-top: -8px;
-            padding-top: 0;
-        }
-        .item-settings input {
-            width: 100%;
-            background: #1a1a1a;
-            border: 1px solid #0a0a0a;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-            border-bottom: 1px solid #0a0a0a;
-            color: #e0e0e0;
-            padding: 8px;
-            margin-bottom: 8px;
-            font-family: "chevyray", monospace;
-            font-size: 12px;
-        }
-        .item-settings input[type="range"] {
-            margin-bottom: 0;
-            border: none;
-        }
-        .item-settings .slider-group {
-            margin-top: 0;
-        }
-        .item-settings input:not([type="range"]) + .slider-group {
-            margin-top: -1px;
-        }
-        .item-settings .slider-group input[type="range"] {
-            flex: 1;
-            background: transparent;
-            border: none;
-            border-top: none;
-            border-bottom: none;
-            height: 8px;
-            -webkit-appearance: none;
-            appearance: none;
-            cursor: pointer;
-            margin-top: 0;
-            padding-top: 0;
-        }
-        .item-settings .slider-group input[type="range"]::-webkit-slider-runnable-track {
-            background: transparent;
-            height: 8px;
-            box-shadow: var(--slider-box-shadow);
-        }
-        .item-settings .slider-group input[type="range"]::-moz-range-track {
-            background: transparent;
-            height: 8px;
-            box-shadow: var(--slider-box-shadow);
-        }
-        .item-settings .slider-group input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 16px;
-            height: 24px;
-            background: #2b2d31;
-            border: none;
-            cursor: pointer;
-            margin-top: -8px;
-            box-shadow: var(--slider-box-shadow);
-        }
-        .item-settings .slider-group input[type="range"]::-moz-range-thumb {
-            width: 16px;
-            height: 24px;
-            background: #2b2d31;
-            border: 3px solid #404248;
-            cursor: pointer;
-            box-shadow: var(--slider-box-shadow);
-        }
-        .item-settings .slider-group {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            border: none;
-            border-top: none;
-            box-shadow: none;
-            background: transparent;
-            margin-top: 0;
-            padding-top: 0;
-        }
-        .item-settings .slider-group input[type="number"] {
-            width: 100% !important;
-            height: 32px;
-            background: #1a1a1a;
-            border: 1px solid #0a0a0a;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-            padding: 8px;
-            font-family: "chevyray", monospace;
-            font-size: 12px;
-        }
-        .item-settings .slider-group .number-input-wrapper {
-            width: 100% !important;
-        }
-        .item-controls {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 8px;
-            margin-left: -4px;
-            align-items: flex-start;
-            justify-content: center;
-            padding: 10px 0;
-        }
-        .item-controls-layer {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-        .item-controls-direction {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            align-items: center;
-        }
-        .item-controls-direction-row {
-            display: flex;
-            gap: 6px;
-        }
-        .item-controls button {
-            background: #353535;
-            border: 1px solid #0a0a0a;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-            color: #e0e0e0;
-            padding: 8px;
-            cursor: pointer;
-            width: 32px;
-            height: 32px;
-            font-family: "chevyray", monospace;
-            font-size: 12px;
-            box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.3), 0 1px 0 rgba(255, 255, 255, 0.1);
-            border-radius: 2px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .item-controls button i {
-            color: inherit;
-        }
-        .item-controls button:hover { background: #404040; border-color: #555; }
-        .item-controls button:active { background: #1a1a1a; border-color: #0a0a0a; box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5); }
-        .sounds-list {
-            list-style: none;
-            padding: 0;
-        }
-        .sounds-list li {
-            padding: 8px;
-            background: #353535;
-            border: 1px solid #0a0a0a;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-            margin-bottom: 4px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .sounds-list li input {
-            flex: 1;
-            background: #1a1a1a;
-            border: 1px solid #0a0a0a;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-            color: #e0e0e0;
-            padding: 8px;
-            font-family: "chevyray", monospace;
-            font-size: 12px;
-        }
-        .sprite-preview {
-            width: 100%;
-            height: 200px;
-            background: #353535;
-            border: 1px solid #0a0a0a;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-        }
-        #spritePreviewCanvas {
-            display: block;
-            width: 100%;
-            height: 100%;
-        }
-        @media (pointer: coarse) {
-            .timeline-container {
-                padding: 4px 0 0 0 !important;
-                height: 250px !important;
-                min-height: 250px !important;
-                max-height: 250px !important;
-                flex: 0 0 250px !important;
-                overflow: hidden !important;
-                display: flex !important;
-                flex-direction: column !important;
-                box-sizing: border-box !important;
-                background: #2b2b2b !important;
-                justify-content: flex-start !important;
-            }
-            .timeline-header {
-                flex: 0 0 24px !important;
-                height: 24px !important;
-                min-height: 24px !important;
-                max-height: 24px !important;
-                flex-shrink: 0 !important;
-                padding: 0 4px !important;
-                width: 100% !important;
-                box-sizing: border-box !important;
-                display: flex !important;
-                align-items: center !important;
-                gap: 8px !important;
-            }
-            .timeline-header label {
-                flex-shrink: 0 !important;
-            }
-            .timeline-header .frame-count {
-                flex-shrink: 0 !important;
-                min-width: 40px !important;
-            }
-            .timeline-header #totalDuration {
-                flex-shrink: 0 !important;
-                user-select: none !important;
-                -webkit-user-select: none !important;
-                -moz-user-select: none !important;
-                -ms-user-select: none !important;
-            }
-            .timeline-slider {
-                flex: 1 1 auto !important;
-                height: 20px !important;
-                margin-bottom: 4px !important;
-                padding: 0 !important;
-                width: auto !important;
-                min-width: 0 !important;
-                box-sizing: border-box !important;
-            }
-            #timelineSlider {
-                width: 100% !important;
-                min-width: 0 !important;
-                box-sizing: border-box !important;
-                flex: 1 1 auto !important;
-            }
-            .timeline-view {
-                flex: 0 1 auto !important;
-                min-height: 50px !important;
-                overflow: hidden !important;
-                padding: 0 4px !important;
-            }
-            .playback-controls {
-                flex: 0 0 32px !important;
-                height: 32px !important;
-                min-height: 32px !important;
-                max-height: 32px !important;
-                display: flex !important;
-                visibility: visible !important;
-                opacity: 1 !important;
-                position: relative !important;
-                margin: 4px 0 0 0 !important;
-                padding: 0 !important;
-                flex-shrink: 0 !important;
-                flex-grow: 0 !important;
-                width: 100% !important;
-                box-sizing: border-box !important;
-                background: #353535 !important;
-                border-top: 1px solid #1a1a1a !important;
-                border-bottom: none !important;
-                z-index: 10 !important;
-                align-items: center !important;
-                justify-content: flex-start !important;
-            }
-            #mainSplitter {
-                height: calc(100% - 254px) !important;
-                max-height: calc(100% - 254px) !important;
-            }
-            .toolbar button {
-                min-width: 44px;
-                min-height: 44px;
-                padding: 8px 12px;
-            }
-            .sprite-toolbar button {
-                min-width: 44px;
-                min-height: 44px;
-                width: 44px;
-                height: 44px;
-                padding: 8px;
-            }
-            .playback-controls button {
-                min-width: 32px !important;
-                min-height: 32px !important;
-                width: 32px !important;
-                height: 32px !important;
-                padding: 0 !important;
-                margin: 0 !important;
-                box-sizing: border-box !important;
-                border: none !important;
-                outline: none !important;
-            }
-            .splitter-handle {
-                width: 12px;
-            }
-            .splitter.vertical .splitter-handle {
-                height: 12px;
-            }
-            .item-controls button {
-                min-width: 44px;
-                min-height: 44px;
-            }
-            .canvas-controls button {
-                min-width: 44px;
-                min-height: 44px;
-                padding: 8px 12px;
-            }
-        }
-        button:active {
-            background: #1a1a1a !important;
-            border-color: #0a0a0a !important;
-            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5) !important;
-            box-sizing: border-box !important;
-            outline: none !important;
-        }
-        .canvas-controls button:hover { background: #404040; border-color: #555; }
-        .canvas-controls button:active:not(.active) {
-            background: #1a1a1a !important;
-            border-color: #0a0a0a !important;
-            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5) !important;
-        }
-        .canvas-controls button.active {
-            background: #888888 !important;
-        }
-        .canvas-controls button.active:hover,
-        .canvas-controls button.active:active,
-        .canvas-controls button.active:focus {
-            background: #888888 !important;
-        }
-        #mainCanvas {
-            touch-action: none;
-        }
-        #timelineCanvas {
-            touch-action: none;
-        }
-        .sprites-list {
-            touch-action: pan-y;
-        }
-        .sprite-edit-panel {
-            touch-action: pan-y;
-        }
-        .right-panel {
-            touch-action: pan-y;
-        }
-        button, input, select {
-            touch-action: manipulation;
-            font-family: "chevyray", monospace;
-        }
-        button {
-            font-size: 12px;
-        }
-        input[type="text"], input[type="number"], select {
-            font-size: 12px;
-        }
-        input[type="number"] {
-            -moz-appearance: textfield;
-            appearance: textfield;
-            padding-right: 72px;
-        }
-        input[type="number"]::-webkit-inner-spin-button,
-        input[type="number"]::-webkit-outer-spin-button {
-            -webkit-appearance: none;
-            appearance: none;
-            display: none;
-        }
-        .number-input-wrapper {
-            position: relative;
-            display: block;
-            width: 100%;
-        }
-        .number-spinner {
-            position: absolute;
-            right: 2px;
-            top: -3px;
-            width: 32px;
-            height: calc(50% - 1px);
-            background: none;
-            border: none;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 14px;
-            color: #e0e0e0;
-            user-select: none;
-            -webkit-user-select: none;
-        }
-        .number-spinner {
-            letter-spacing: 2px;
-        }
-        .context-menu {
-            position: fixed;
-            background: #2b2b2b;
-            border: 1px solid #0a0a0a;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-            box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.5);
-            padding: 4px 0;
-            z-index: 10000;
-            min-width: 180px;
-            font-family: "chevyray", monospace;
-            font-size: 12px;
-            display: none;
-        }
-        .context-menu-item {
-            padding: 8px 16px;
-            color: #e0e0e0;
-            cursor: pointer;
-            user-select: none;
-            -webkit-user-select: none;
-            display: flex;
-            align-items: center;
-        }
-        .context-menu-item:hover {
-            background: #404040;
-        }
-        .context-menu-item.disabled {
-            color: #666;
-            cursor: default;
-        }
-        .context-menu-item.disabled:hover {
-            background: transparent;
-        }
-        .number-spinner:hover {
-            color: #ffffff;
-        }
-        .number-spinner:active {
-            color: #cccccc;
-        }
-        .number-spinner-up {
-            border-bottom: none;
-        }
-        .number-spinner-down {
-            top: auto;
-            bottom: 1px;
-            border-top: none;
-        }
-        .number-spinner-container {
-            position: absolute;
-            right: 2px;
-            top: -3px;
-            bottom: 1px;
-            width: 68px;
-            display: flex;
-            flex-direction: row;
-            gap: 2px;
-        }
-        .add-sprite-dialog-content .number-spinner-container {
-            top: 2px;
-        }
-        .add-sprite-dialog-content .number-input-wrapper {
-            display: flex;
-        }
-        .add-sprite-dialog-content .number-input-wrapper[style*="flex: 1"],
-        .add-sprite-dialog-content .number-input-wrapper[style*="flex:1"] {
-            flex: 1 !important;
-            min-width: 0 !important;
-        }
-        .number-spinner-container .number-spinner {
-            position: relative;
-            right: auto;
-            top: auto;
-            bottom: auto;
-            width: 32px;
-            height: 100%;
-            flex: none;
-            background: none;
-            border: none;
-            font-size: 14px;
-        }
-        .number-spinner-container .number-spinner-up {
-            border: none;
-        }
-        .number-spinner-container .number-spinner-down {
-            border: none;
-        }
-        input[type="number"]::-webkit-inner-spin-button,
-        input[type="number"]::-webkit-outer-spin-button {
-            -webkit-appearance: none;
-            appearance: none;
-            margin: 0;
-            width: 20px;
-            height: 15px;
-            background: #353535;
-            border: 1px solid #0a0a0a;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-            cursor: pointer;
-            box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.3), 0 1px 0 rgba(255, 255, 255, 0.1);
-            position: relative;
-            opacity: 1;
-            display: block;
-        }
-        input[type="number"]::-webkit-inner-spin-button {
-            background: #353535;
-        }
-        input[type="number"]::-webkit-inner-spin-button::after {
-            content: "▲";
-            position: absolute;
-            top: 0;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 10px;
-            color: #e0e0e0;
-            line-height: 15px;
-            pointer-events: none;
-        }
-        input[type="number"]::-webkit-outer-spin-button {
-            background: #353535;
-        }
-        input[type="number"]::-webkit-outer-spin-button::after {
-            content: "▼";
-            position: absolute;
-            bottom: 0;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 10px;
-            color: #e0e0e0;
-            line-height: 15px;
-            pointer-events: none;
-        }
-        input[type="number"]::-webkit-inner-spin-button:hover {
-            background: #404040;
-        }
-        input[type="number"]::-webkit-outer-spin-button:hover {
-            background: #404040;
-        }
-        input[type="number"]::-webkit-inner-spin-button:active {
-            background: #2b2b2b;
-            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
-        }
-        input[type="number"]::-webkit-outer-spin-button:active {
-            background: #2b2b2b;
-            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
-        }
-        span, label {
-            font-family: "chevyray", monospace;
-        }
-        canvas {
-            image-rendering: pixelated;
-            image-rendering: -moz-crisp-edges;
-            image-rendering: crisp-edges;
-        }
-        #settingsUIScale {
-            background: transparent;
-            border: none;
-            height: 8px;
-            -webkit-appearance: none;
-            appearance: none;
-            cursor: pointer;
-        }
-        #settingsUIScale::-webkit-slider-runnable-track {
-            background: transparent;
-            height: 8px;
-            box-shadow: var(--slider-box-shadow);
-        }
-        #settingsUIScale::-moz-range-track {
-            background: transparent;
-            height: 8px;
-            box-shadow: var(--slider-box-shadow);
-        }
-        #settingsUIScale::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 16px;
-            height: 24px;
-            background: #2b2d31;
-            border: none;
-            cursor: pointer;
-            margin-top: -8px;
-            box-shadow: var(--slider-box-shadow);
-        }
-        #settingsUIScale::-moz-range-thumb {
-            width: 16px;
-            height: 24px;
-            background: #2b2d31;
-            border: 3px solid #404248;
-            cursor: pointer;
-            box-shadow: var(--slider-box-shadow);
-        }
-        #settingsSelectionBorderThickness {
-            background: transparent;
-            border: none;
-            height: 8px;
-            -webkit-appearance: none;
-            appearance: none;
-            cursor: pointer;
-        }
-        #settingsSelectionBorderThickness::-webkit-slider-runnable-track {
-            background: transparent;
-            height: 8px;
-            box-shadow: var(--slider-box-shadow);
-        }
-        #settingsSelectionBorderThickness::-moz-range-track {
-            background: transparent;
-            height: 8px;
-            box-shadow: var(--slider-box-shadow);
-        }
-        #settingsSelectionBorderThickness::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 16px;
-            height: 24px;
-            background: #2b2d31;
-            border: none;
-            cursor: pointer;
-            margin-top: -8px;
-            box-shadow: var(--slider-box-shadow);
-        }
-        #settingsSelectionBorderThickness::-moz-range-thumb {
-            width: 16px;
-            height: 24px;
-            background: #2b2d31;
-            border: 3px solid #404248;
-            cursor: pointer;
-            box-shadow: var(--slider-box-shadow);
-        }
-        #settingsSelectionBorderThicknessNumber {
-            width: 100%;
-            background: #1a1a1a;
-            border: 1px solid #0a0a0a;
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-            color: #e0e0e0;
-            padding: 8px;
-            font-family: "chevyray", monospace;
-            font-size: 12px;
-        }
-        #settingsSelectionBorderThicknessNumber {
-            margin-bottom: 0;
-            margin-top: 10px;
-            padding: 6px;
-        }
-        #settingsSelectionBorderOpacity { box-shadow: var(--slider-box-shadow); }
-        #settingsSelectionBorderOpacity::-webkit-slider-runnable-track { background: transparent; height: 8px; box-shadow: var(--slider-box-shadow); }
-        #settingsSelectionBorderOpacity::-moz-range-track { background: transparent; height: 8px; box-shadow: var(--slider-box-shadow); }
-        #settingsSelectionBorderOpacity::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 24px; background: #2b2d31; border: 3px solid #404248; cursor: pointer; margin-top: -8px; box-shadow: var(--slider-box-shadow); }
-        #settingsSelectionBorderOpacity::-moz-range-thumb { width: 16px; height: 24px; background: #2b2d31; border: 3px solid #404248; cursor: pointer; box-shadow: var(--slider-box-shadow); }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Graal Suite</title>
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<script src="vendor/monaco-loader.js"></script>
+<script>
+(function() {
+    const _isTauri = !!window.__TAURI__;
+    if (_isTauri) {
+        require.config({ paths: { vs: 'monaco-editor/min/vs' } });
+        window.addEventListener('contextmenu', e => e.preventDefault());
+        document.addEventListener('DOMContentLoaded', () => { document.querySelectorAll('#btnGmapGen,#switchBtn,#btnSetshape2').forEach(el => el.style.display = 'none'); });
+    } else {
+        require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs' } });
+    }
+})();
+</script>
+<script src="vendor/peerjs.min.js"></script>
+<script src="js/tileobjects-default.js"></script>
+<script src="js/tiletypes.js"></script>
+<script src="js/mnglib.js"></script>
+<link rel="stylesheet" href="css/global.css">
 </head>
 <body>
+<div id="tauriBar">
+  <div class="tb-leading" data-tauri-drag-region></div>
+  <div class="tb-title"><img src="favicon.ico"><span id="tbTitle">GraalSuite</span></div>
+  <div class="tb-trailing" data-tauri-drag-region>
+    <button id="tbShapesBtn" title="Setshape2 Editor" onclick="typeof SetshapeEditor!=='undefined'&&SetshapeEditor.open()"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAACbUlEQVQ4y52P20uTcRzGn9972MEdHBvOw1JZZk4dTjyXhGEGUgkWFJH1P3QTQXgVne6UThCEFxVBYWVgWCCBQ6IM0cBkouLxTbc5NJzv67b39/66SG2pQfXcfPnC83y/n4fgP1RZd8JAeJ4nIDH+X8OFpQdyKE2063T6S5QmwgIAVNUdE0yWVCMhAGMbTgYQAjAAK5FwS2Zm5sGhgf6LvCC0rq4s3fBV13Z+HRwAceXuE1PtzisAvAD5/R0BwBisNkfxKbfsGdHcseHRQF35oYbHfW9ePZweH2kTIqEFc15Rme/chTOKOz+/eiMFgDCAEQBsKbzk6H/WQWrNU3pDZUW3v7fnqiJH72mUMmHzGdVojijq8vCrAQAgHoth/EMv0uk3+OfNpMwxnDbrSi9YNJrIwuwk45KJ2bYZi63jXVcXrMHPWLSWYH/jWfi/u+LrTGyKhCQOAITtlTcnpRSTYxNw5XkgGS1objyCGSmMZUXt9fe8OOnM2KPuOJAsjufg8RZCmplDia8IgigCAHhB0ADEQ4vzP327hdkGB8fxyHbnQhBFKLKMdUUBRzh9fVOLbtO7KwHZtklzEtpv3eyU12QZYLA50i+X1tRfH/74XtuVIJkkGo3iwe07jxi0+0Vl5a8bmk+vBr586jNZbW1bBIQQHiA81bQdB1SVQlW1YNXho63dTzuOuwuK07wVNXaAtwOAoFFKOY7kTEwHfRPTwR0UaiIBg8nsefv8ybW9Hm+9McWUPTo0GLLY7IGtunpDSkaK2VL4pyrOrNzzdmeWh+O4OGOANDX2UllbvRtamGUEfyczCDEk7ctgjALAD3gS6nZ20OQgAAAAAElFTkSuQmCC" width="14" height="14" style="vertical-align:middle;"> Setshape2</button>
+    <button id="tbGmapBtn" title="Gmap Generator" onclick="typeof GmapGenerator!=='undefined'&&GmapGenerator.open()" style="border-left:none;display:inline-flex;align-items:center;gap:4px;"><img src="icons/gmapgen.ico" width="14" height="14" style="image-rendering:pixelated;vertical-align:middle;"> Gmap</button>
+    <button id="tbSwitchBtn" title="Switch Editor"><svg width="12" height="10" viewBox="0 0 12 10" fill="none" stroke="currentColor" stroke-width="1.2"><polyline points="8,1 11,4 8,7"/><line x1="1" y1="4" x2="11" y2="4"/><polyline points="4,3 1,6 4,9"/><line x1="11" y1="6" x2="1" y2="6"/></svg> Switch</button>
+    <button class="tb-winbtn" id="tbMin" title="Minimize"><svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor"/></svg></button>
+    <button class="tb-winbtn" id="tbMax" title="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x=".5" y=".5" width="9" height="9" stroke="currentColor"/></svg></button>
+    <button class="tb-winbtn tb-close" id="tbClose" title="Close"><svg width="10" height="10" viewBox="0 0 10 10"><line x1="1" y1="1" x2="9" y2="9" stroke="currentColor" stroke-width="1.2"/><line x1="9" y1="1" x2="1" y2="9" stroke="currentColor" stroke-width="1.2"/></svg></button>
+  </div>
+</div>
+<div id="editorContainer"></div>
+<script>
+(function() {
+    const _isTauri = !!window.__TAURI__;
+    const params = new URLSearchParams(location.search);
+    const host = location.hostname;
+    let _currentApp = null;
+
+    if (_isTauri) {
+        document.body.classList.add('tauri-app');
+        const _w = window.__TAURI__.window.getCurrentWindow();
+        document.getElementById('tbMin').onclick = () => _w.minimize();
+        document.getElementById('tbMax').onclick = () => _w.toggleMaximize();
+        document.getElementById('tbClose').onclick = () => _w.close();
+    }
+
+    function detectApp() {
+        if (host === 'gani.gscript.dev') return 'gani';
+        if (host === 'level.gscript.dev') return 'level';
+        if (params.get('app') === 'gani') return 'gani';
+        if (params.get('app') === 'level') return 'level';
+        return 'level';
+    }
+
+    function setURLParam(app) {
+        if (host === 'gani.gscript.dev' || host === 'level.gscript.dev') return;
+        const u = new URL(location.href);
+        u.searchParams.set('app', app);
+        history.replaceState(null, '', u.toString());
+    }
+
+    function destroyCurrent() {
+        const c = document.getElementById('editorContainer');
+        c.innerHTML = '';
+        if (window._editor && typeof window._editor.destroy === 'function') window._editor.destroy();
+        window._editor = null;
+        window.levelEditor = null;
+        window._aniEditorInstance = null;
+    }
+
+    function injectGani() {
+        const c = document.getElementById('editorContainer');
+        c.innerHTML = ganiHTML;
+        _currentApp = 'gani';
+        document.title = 'Gani Editor';
+        if (_isTauri) { window.__TAURI__.window.getCurrentWindow().setTitle('Gani Editor'); const t = document.getElementById('tbTitle'); if (t) t.textContent = 'Gani Editor'; }
+        setURLParam('gani');
+        const old = document.getElementById('_aniScript');
+        if (old) old.remove();
+        const s = document.createElement('script');
+        s.id = '_aniScript';
+        s.src = 'js/anieditor.js';
+        s.onload = () => {
+            window.dispatchEvent(new Event('load'));
+            if (!document.querySelector('script[src="js/setshape2editor.js"]')) { const ss2s = document.createElement('script'); ss2s.src = 'js/setshape2editor.js'; document.head.appendChild(ss2s); }
+            if (!document.querySelector('script[src="js/gmapgenerator.js"]')) { const gmgs = document.createElement('script'); gmgs.src = 'js/gmapgenerator.js'; document.head.appendChild(gmgs); }
+            if (window._pendingOpenFile && typeof _tauri !== 'undefined') {
+                const fp = window._pendingOpenFile; window._pendingOpenFile = null;
+                setTimeout(async () => {
+                    const text = await _tauri.fs.readTextFile(fp).catch(() => null);
+                    if (text && typeof parseGani === 'function' && typeof addTab === 'function') { const ani = parseGani(text); if (ani) { ani.fileName = fp.replace(/\\/g,'/').split('/').pop(); addTab(ani, ani.fileName); } }
+                }, 500);
+            }
+        };
+        document.head.appendChild(s);
+    }
+
+    function injectLevel() {
+        const c = document.getElementById('editorContainer');
+        c.innerHTML = levelHTML;
+        _currentApp = 'level';
+        document.title = 'Level Editor';
+        if (_isTauri) { window.__TAURI__.window.getCurrentWindow().setTitle('Level Editor'); const t = document.getElementById('tbTitle'); if (t) t.textContent = 'Level Editor'; }
+        setURLParam('level');
+        const tip = document.getElementById('floatingTooltip');
+        if (tip) {
+            const t2 = document.getElementById('floatingTooltip');
+            if (t2 && t2 !== tip) t2.remove();
+        }
+        (function() {
+            const tip2 = document.getElementById('floatingTooltip');
+            if (!tip2) return;
+            let target = null;
+            function pos(mx, my) {
+                tip2.style.left = '0'; tip2.style.top = '0';
+                const tw = tip2.offsetWidth, th = tip2.offsetHeight, vw = window.innerWidth, vh = window.innerHeight;
+                let x = mx - tw / 2, y = my - th - 14;
+                if (y < 4) y = my + 22;
+                x = Math.max(4, Math.min(x, vw - tw - 4));
+                y = Math.max(4, Math.min(y, vh - th - 4));
+                tip2.style.left = x + 'px'; tip2.style.top = y + 'px';
+            }
+            document.addEventListener('mouseover', e => {
+                const btn = e.target.closest('button[title]');
+                if (btn) { btn.dataset.title = btn.title; btn.removeAttribute('title'); }
+                const t = e.target.closest('button[data-title]');
+                if (t) { target = t; tip2.textContent = t.dataset.title; tip2.style.display = 'block'; }
+            }, true);
+            document.addEventListener('mousemove', e => { if (target) { const txt = target.dataset.title; if (txt && tip2.textContent !== txt) tip2.textContent = txt; pos(e.clientX, e.clientY); } });
+            document.addEventListener('mouseout', e => {
+                const btn = e.target.closest('button[data-title]');
+                if (btn && !btn.hasAttribute('title')) { btn.setAttribute('title', btn.dataset.title); delete btn.dataset.title; }
+                if (target && !target.contains(e.relatedTarget)) { target = null; tip2.style.display = 'none'; }
+            }, true);
+            const dropdowns = [['selectionFilterMenu','btnSelectionFilter'],['visibilityMenu','btnView'],['functionsMenu','btnFunctions']];
+            document.addEventListener('click', e => {
+                dropdowns.forEach(([menuId, btnId]) => {
+                    const menu = document.getElementById(menuId), btn = document.getElementById(btnId);
+                    if (menu && btn) {
+                        if (btn.contains(e.target)) menu.classList.toggle('open');
+                        else if (!menu.contains(e.target)) menu.classList.remove('open');
+                    }
+                });
+            });
+        })();
+        const old = document.getElementById('_lvlScript');
+        if (old) old.remove();
+        const s = document.createElement('script');
+        s.id = '_lvlScript';
+        s.src = 'js/leveleditor.js';
+        s.onload = () => requestAnimationFrame(async () => {
+            window._editor = window.levelEditor = new LevelEditor();
+            if (!document.querySelector('script[src="js/setshape2editor.js"]')) { const ss2s = document.createElement('script'); ss2s.src = 'js/setshape2editor.js'; document.head.appendChild(ss2s); }
+            if (!document.querySelector('script[src="js/gmapgenerator.js"]')) { const gmgs = document.createElement('script'); gmgs.src = 'js/gmapgenerator.js'; document.head.appendChild(gmgs); }
+            if (_isTauri) { const ra = document.getElementById('btnRegisterAssoc'); if (ra) ra.style.display = ''; }
+            if (window._pendingOpenFile && _isTauri) {
+                const fp = window._pendingOpenFile; window._pendingOpenFile = null;
+                setTimeout(async () => {
+                    const text = await window.__TAURI__.fs.readTextFile(fp).catch(() => null);
+                    if (text) { const name = fp.replace(/\\/g,'/').split('/').pop(); window.levelEditor.openFromText(text, name); }
+                }, 800);
+            }
+        });
+        document.head.appendChild(s);
+    }
+
+    document.addEventListener('click', function(e) {
+        if (e.target.closest('#switchBtn') || e.target.closest('#tbSwitchBtn')) {
+            const next = _currentApp === 'gani' ? 'level' : 'gani';
+            if (host === 'gani.gscript.dev' || host === 'level.gscript.dev')
+                window.location.href = 'https://' + next + '.gscript.dev';
+            else
+                window.location.href = '?app=' + next;
+        }
+    });
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const app = detectApp();
+        if (_isTauri) {
+            window.__TAURI__?.core?.invoke('get_open_file_arg').then(fa => {
+                if (fa) { window._pendingOpenFile = fa; }
+            }).catch(() => {});
+        }
+        if (app === 'gani') injectGani(); else injectLevel();
+    });
+
+    const ganiHTML = `
     <div class="main-container">
         <div class="toolbar">
             <button title="New — create a blank .gani animation" id="btnNew"><i class="fas fa-file"></i></button>
@@ -1514,43 +202,73 @@
             <button title="Save (Ctrl+S)" id="btnSave"><i class="fas fa-save"></i></button>
             <button title="Save As — save to a new file" id="btnSaveAs"><i class="fas fa-save"></i></button>
             <button title="Save All — save every open tab" id="btnSaveAll"><i class="fas fa-save-all"></i></button>
-            <div style="width: 1px; background: #1a1a1a; margin: 0 4px;"></div>
+            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
             <button title="Set Working Directory — loads images from a local folder into the editor cache for use in .gani files. Does not upload anything to a server." id="btnWorkingDir"><i class="fas fa-folder"></i></button>
-            <div style="width: 1px; background: #1a1a1a; margin: 0 4px;"></div>
-            <div style="position: relative;">
+            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
+            <div style="position:relative;">
                 <button title="Color Scheme — pick a built-in theme or load custom CSS" id="btnColorScheme"><i class="fas fa-palette"></i></button>
-                <div id="colorSchemeDropdown" style="display: none; position: absolute; top: 100%; left: 0; background: #2b2b2b; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; z-index: 1000; min-width: 150px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); margin-top: 2px; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;">
-                <div class="color-scheme-item" data-scheme="default" style="padding: 8px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0; border-bottom: 1px solid #0a0a0a; background: #404040; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;">Default</div>
-                <div class="color-scheme-item" data-scheme="fusion-light" style="padding: 8px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0; border-bottom: 1px solid #0a0a0a; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;">Fusion Light</div>
-                <div class="color-scheme-item" data-scheme="fusion-dark" style="padding: 8px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0; border-bottom: 1px solid #0a0a0a; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;">Fusion Dark</div>
-                <div class="color-scheme-item" data-scheme="dark-style" style="padding: 8px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0; border-bottom: 1px solid #0a0a0a; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;">Dark Style</div>
-                <div class="color-scheme-item" data-scheme="dark-orange" style="padding: 8px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0; border-bottom: 1px solid #0a0a0a; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;">Dark Orange</div>
-                <div class="color-scheme-item" data-scheme="aqua" style="padding: 8px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0; border-bottom: 1px solid #0a0a0a; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;">Aqua</div>
-                <div class="color-scheme-item" data-scheme="elegant-dark" style="padding: 8px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0; border-bottom: 1px solid #0a0a0a; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;">Elegant Dark</div>
-                <div class="color-scheme-item" data-scheme="material-dark" style="padding: 8px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0; border-bottom: 1px solid #0a0a0a; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;">Material Dark</div>
-                <div class="color-scheme-item" data-scheme="light-style" style="padding: 8px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0; border-bottom: 1px solid #0a0a0a; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;">Light Style</div>
-                <div class="color-scheme-item" data-scheme="ayu-mirage" style="padding: 8px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0; border-bottom: 1px solid #0a0a0a; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;">Ayu Mirage</div>
-                <div class="color-scheme-item" data-scheme="dracula" style="padding: 8px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0; border-bottom: 1px solid #0a0a0a; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;">Dracula</div>
-                <div style="height: 1px; background: #404040; margin: 4px 0;"></div>
-                <div id="btnCustomCSS" style="padding: 8px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; color: #4a9eff; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;">Custom CSS...</div>
+                <div id="colorSchemeDropdown" style="display:none;position:absolute;top:100%;left:0;background:#2b2b2b;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;z-index:1000;min-width:150px;box-shadow:0 2px 8px rgba(0,0,0,0.5);margin-top:2px;user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;">
+                    <div class="color-scheme-item" data-scheme="default" style="background:#404040;">Default</div>
+                    <div class="color-scheme-item" data-scheme="fusion-light">Fusion Light</div>
+                    <div class="color-scheme-item" data-scheme="fusion-dark">Fusion Dark</div>
+                    <div class="color-scheme-item" data-scheme="dark-style">Dark Style</div>
+                    <div class="color-scheme-item" data-scheme="dark-orange">Dark Orange</div>
+                    <div class="color-scheme-item" data-scheme="aqua">Aqua</div>
+                    <div class="color-scheme-item" data-scheme="elegant-dark">Elegant Dark</div>
+                    <div class="color-scheme-item" data-scheme="material-dark">Material Dark</div>
+                    <div class="color-scheme-item" data-scheme="light-style">Light Style</div>
+                    <div class="color-scheme-item" data-scheme="ayu-mirage">Ayu Mirage</div>
+                    <div class="color-scheme-item" data-scheme="dracula">Dracula</div>
+                    <div style="height:1px;background:#404040;margin:4px 0;"></div>
+                    <div id="btnCustomCSS" style="padding:8px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;color:#4a9eff;user-select:none;">Custom CSS...</div>
                 </div>
             </div>
-            <div style="width: 1px; background: #1a1a1a; margin: 0 4px;"></div>
-            <button title="Settings — configure grid, playback, selection, and editor options" id="btnSettings"><i class="fas fa-cog"></i></button>
+            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
             <button title="WASD=Direction, Arrows=Move — click to swap" id="btnSwapKeys"><i class="fas fa-exchange-alt"></i></button>
-            <div style="width: 1px; background: #1a1a1a; margin: 0 4px;"></div>
+            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
             <button title="Close All — close every open tab" id="btnCloseAll"><i class="fas fa-times"></i></button>
-            <div style="width: 1px; background: #1a1a1a; margin: 0 4px;"></div>
+            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
             <button title="Undo (Ctrl+Z)" id="btnUndo"><i class="fas fa-undo"></i></button>
             <button title="Redo (Ctrl+Y)" id="btnRedo"><i class="fas fa-redo"></i></button>
-            <div style="width: 1px; background: #1a1a1a; margin: 0 4px;"></div>
+            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
             <button title="Reset Editor — clears all tabs and returns to a blank state" id="btnReset"><i class="fas fa-recycle"></i></button>
-            <div style="width: 1px; background: #1a1a1a; margin: 0 4px;"></div>
+            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
             <button title="Zoom Out" id="btnZoomOut"><i class="fas fa-minus"></i></button>
-            <span id="mainCanvasZoomLevel" style="font-size: 12px; min-width: 40px; text-align: center; color: #e0e0e0; user-select: none; padding: 0 4px; display: inline-flex; align-items: center; justify-content: center;">1.0x</span>
+            <span id="mainCanvasZoomLevel" style="font-size:12px;min-width:40px;text-align:center;color:#e0e0e0;user-select:none;padding:0 4px;display:inline-flex;align-items:center;justify-content:center;">1.0x</span>
             <button title="Zoom In" id="btnZoomIn"><i class="fas fa-plus"></i></button>
-            <div style="width: 1px; background: #1a1a1a; margin: 0 4px;"></div>
+            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
+            <button title="Settings — configure grid, playback, selection, and editor options" id="btnSettings"><i class="fas fa-cog"></i></button>
             <button title="About / Changelog (F1)" id="btnAbout"><i class="fas fa-info-circle"></i></button>
+            <button id="switchBtn" title="Switch Editor">⇄ Switch</button>
+            <button id="btnSetshape2" title="Setshape2 Editor" onclick="typeof SetshapeEditor!=='undefined'&&SetshapeEditor.open()"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAACbUlEQVQ4y52P20uTcRzGn9972MEdHBvOw1JZZk4dTjyXhGEGUgkWFJH1P3QTQXgVne6UThCEFxVBYWVgWCCBQ6IM0cBkouLxTbc5NJzv67b39/66SG2pQfXcfPnC83y/n4fgP1RZd8JAeJ4nIDH+X8OFpQdyKE2063T6S5QmwgIAVNUdE0yWVCMhAGMbTgYQAjAAK5FwS2Zm5sGhgf6LvCC0rq4s3fBV13Z+HRwAceXuE1PtzisAvAD5/R0BwBisNkfxKbfsGdHcseHRQF35oYbHfW9ePZweH2kTIqEFc15Rme/chTOKOz+/eiMFgDCAEQBsKbzk6H/WQWrNU3pDZUW3v7fnqiJH72mUMmHzGdVojijq8vCrAQAgHoth/EMv0uk3+OfNpMwxnDbrSi9YNJrIwuwk45KJ2bYZi63jXVcXrMHPWLSWYH/jWfi/u+LrTGyKhCQOAITtlTcnpRSTYxNw5XkgGS1objyCGSmMZUXt9fe8OOnM2KPuOJAsjufg8RZCmplDia8IgigCAHhB0ADEQ4vzP327hdkGB8fxyHbnQhBFKLKMdUUBRzh9fVOLbtO7KwHZtklzEtpv3eyU12QZYLA50i+X1tRfH/74XtuVIJkkGo3iwe07jxi0+0Vl5a8bmk+vBr586jNZbW1bBIQQHiA81bQdB1SVQlW1YNXho63dTzuOuwuK07wVNXaAtwOAoFFKOY7kTEwHfRPTwR0UaiIBg8nsefv8ybW9Hm+9McWUPTo0GLLY7IGtunpDSkaK2VL4pyrOrNzzdmeWh+O4OGOANDX2UllbvRtamGUEfyczCDEk7ctgjALAD3gS6nZ20OQgAAAAAElFTkSuQmCC" width="14" height="14" style="vertical-align:middle;image-rendering:pixelated;"> Setshape2</button>
+            <button id="btnGmapGen" title="Gmap Generator" onclick="typeof GmapGenerator!=='undefined'&&GmapGenerator.open()"><img src="icons/gmapgen.ico" width="14" height="14" style="image-rendering:pixelated;"> Gmap</button>
+            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
+            <div style="position:relative;">
+                <button title="Collab — edit together in real time via P2P" id="btnCollab"><i class="fas fa-layer-group"></i></button>
+                <div id="collabDropdown" style="display:none;position:absolute;top:100%;right:0;background:#2b2b2b;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;z-index:1000;width:260px;padding:12px;box-shadow:0 2px 8px rgba(0,0,0,0.5);margin-top:2px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                        <div style="font-size:11px;color:#888;">P2P Collab (experimental)</div>
+                        <div id="collabToggleTrack" style="width:36px;height:16px;background:#1a1a1a;border:1px solid #4a4;position:relative;cursor:pointer;flex-shrink:0;">
+                            <div id="collabToggleThumb" style="width:14px;height:12px;background:#4a4;position:absolute;top:1px;left:19px;transition:left 0.15s,background 0.15s;"></div>
+                        </div>
+                    </div>
+                    <div id="collabStatus" style="margin-bottom:8px;font-size:11px;color:#4a4;"></div>
+                    <button id="collabDisconnect" style="display:none;width:100%;background:#5a2222;border:1px solid #804040;color:#e0e0e0;padding:4px 10px;cursor:pointer;font-size:11px;margin-bottom:8px;">Disconnect</button>
+                    <div id="collabPeers" style="margin-bottom:8px;display:none;border:1px solid #404040;padding:6px;background:#1a1a1a;max-height:80px;overflow-y:auto;"></div>
+                    <div id="collabCodeSection">
+                        <div style="margin-bottom:6px;">Your code:</div>
+                        <div style="display:flex;gap:4px;margin-bottom:10px;">
+                            <input id="collabMyCode" readonly style="flex:1;background:#1a1a1a;border:1px solid #404040;color:#4a9eff;padding:4px 8px;font-family:'chevyray',monospace;font-size:12px;outline:none;">
+                            <button id="collabCopy" style="background:#353535;border:1px solid #404040;color:#e0e0e0;padding:4px 10px;cursor:pointer;font-size:11px;">Copy</button>
+                        </div>
+                        <div style="margin-bottom:6px;">Join session:</div>
+                        <div style="display:flex;gap:4px;">
+                            <input id="collabJoinCode" placeholder="paste code here" style="flex:1;background:#1a1a1a;border:1px solid #404040;color:#e0e0e0;padding:4px 8px;font-family:'chevyray',monospace;font-size:12px;outline:none;">
+                            <button id="collabJoin" style="background:#353535;border:1px solid #404040;color:#e0e0e0;padding:4px 10px;cursor:pointer;font-size:11px;">Join</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
         <div id="tabsNav" style="display:flex;align-items:center;overflow:hidden;flex-shrink:0;background:#2b2b2b;border-bottom:1px solid #0a0a0a;">
             <button id="tabScrollLeft" style="background:none;border:none;color:#ccc;padding:4px 10px;cursor:pointer;font-size:16px;flex-shrink:0;line-height:1;">◀</button>
@@ -1558,8 +276,8 @@
             <button id="tabScrollRight" style="background:none;border:none;color:#ccc;padding:4px 10px;cursor:pointer;font-size:16px;flex-shrink:0;line-height:1;">▶</button>
         </div>
         <div class="content-area">
-            <div class="splitter horizontal" id="mainSplitter" style="flex: 1 1 0; overflow: visible; min-height: 0; flex-shrink: 1; height: calc(100% - 222px); max-height: calc(100% - 222px); position: relative;">
-                <div class="splitter horizontal" style="flex: 1; overflow: visible; min-height: 0;">
+            <div class="splitter horizontal" id="mainSplitter" style="flex:1 1 0;overflow:visible;min-height:0;flex-shrink:1;height:calc(100% - 222px);max-height:calc(100% - 222px);position:relative;">
+                <div class="splitter horizontal" style="flex:1;overflow:visible;min-height:0;">
                     <div class="left-panel">
                         <div class="sprite-toolbar">
                             <button title="Add New Sprite — select a region from an image" id="btnAddSprite"><i class="fas fa-plus"></i></button>
@@ -1571,8 +289,8 @@
                             <button title="Browse Workspace — browse images and ganis from the loaded workspace" id="btnBrowseWorkspace"><i class="fas fa-folder-open"></i></button>
                         </div>
                         <div class="sprites-list" id="spritesList"></div>
-                        <div class="splitter-handle" id="spriteSplitterHandle" style="width: 100%; height: 4px; cursor: row-resize; background: #1a1a1a; flex-shrink: 0; position: relative;">
-                            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 2px; background: #555; border-radius: 1px;"></div>
+                        <div class="splitter-handle" id="spriteSplitterHandle" style="width:100%;height:4px;cursor:row-resize;background:#1a1a1a;flex-shrink:0;position:relative;">
+                            <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:40px;height:2px;background:#555;border-radius:1px;"></div>
                         </div>
                         <div class="sprite-edit-panel" id="spriteEditPanel">
                             <div class="sprite-settings">
@@ -1580,36 +298,9 @@
                                 <input type="text" id="spriteID" readonly>
                                 <label>Source:</label>
                                 <select id="spriteSource">
-                                    <option>CUSTOM</option>
-                                    <option>SPRITES</option>
-                                    <option>BODY</option>
-                                    <option>HEAD</option>
-                                    <option>SWORD</option>
-                                    <option>SHIELD</option>
-                                    <option>HORSE</option>
-                                    <option>PICS</option>
-                                    <option>ATTR1</option>
-                                    <option>ATTR2</option>
-                                    <option>ATTR3</option>
-                                    <option>ATTR4</option>
-                                    <option>ATTR5</option>
-                                    <option>ATTR6</option>
-                                    <option>ATTR7</option>
-                                    <option>ATTR8</option>
-                                    <option>ATTR9</option>
-                                    <option>ATTR10</option>
-                                    <option>PARAM1</option>
-                                    <option>PARAM2</option>
-                                    <option>PARAM3</option>
-                                    <option>PARAM4</option>
-                                    <option>PARAM5</option>
-                                    <option>PARAM6</option>
-                                    <option>PARAM7</option>
-                                    <option>PARAM8</option>
-                                    <option>PARAM9</option>
-                                    <option>PARAM10</option>
+                                    <option>CUSTOM</option><option>SPRITES</option><option>BODY</option><option>HEAD</option><option>SWORD</option><option>SHIELD</option><option>HORSE</option><option>PICS</option><option>ATTR1</option><option>ATTR2</option><option>ATTR3</option><option>ATTR4</option><option>ATTR5</option><option>ATTR6</option><option>ATTR7</option><option>ATTR8</option><option>ATTR9</option><option>ATTR10</option><option>PARAM1</option><option>PARAM2</option><option>PARAM3</option><option>PARAM4</option><option>PARAM5</option><option>PARAM6</option><option>PARAM7</option><option>PARAM8</option><option>PARAM9</option><option>PARAM10</option>
                                 </select>
-                                <label style="margin-top: 10px;">Image:</label>
+                                <label style="margin-top:10px;">Image:</label>
                                 <input type="text" id="spriteImage">
                                 <label>Comment:</label>
                                 <input type="text" id="spriteComment">
@@ -1625,8 +316,8 @@
                                 </div>
                                 <label>Rotation:</label>
                                 <div class="slider-group">
-                                <input type="range" id="rotationSlider" min="-360" max="360" step="1" value="0">
-                                <input type="number" id="rotation" min="-360" max="360" step="1" value="0">
+                                    <input type="range" id="rotationSlider" min="-360" max="360" step="1" value="0">
+                                    <input type="number" id="rotation" min="-360" max="360" step="1" value="0">
                                 </div>
                                 <label>Zoom:</label>
                                 <div class="slider-group">
@@ -1634,44 +325,36 @@
                                     <input type="number" id="zoom" step="0.01" value="1">
                                 </div>
                                 <label>Mode:</label>
-                                <select id="spriteMode" style="width: 100%; background: #1a1a1a; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; color: #ffffff; padding: 8px; font-family: 'chevyray', monospace; font-size: 12px;">
+                                <select id="spriteMode" style="width:100%;background:#1a1a1a;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#ffffff;padding:8px;font-family:'chevyray',monospace;font-size:12px;">
                                     <option value="" selected>Simple (Off)</option>
                                     <option value="0">Lights (0)</option>
                                     <option value="1">Transparency (1)</option>
                                     <option value="2">Blacklight (2)</option>
                                 </select>
                                 <label>Rect:</label>
-                                <div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;">
-                                    <label>X:</label>
-                                    <input type="number" id="spriteLeft">
-                                    <label>Y:</label>
-                                    <input type="number" id="spriteTop">
-                                    <label>W:</label>
-                                    <input type="number" id="spriteWidth">
-                                    <label>H:</label>
-                                    <input type="number" id="spriteHeight">
+                                <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 8px;align-items:center;">
+                                    <label>X:</label><input type="number" id="spriteLeft">
+                                    <label>Y:</label><input type="number" id="spriteTop">
+                                    <label>W:</label><input type="number" id="spriteWidth">
+                                    <label>H:</label><input type="number" id="spriteHeight">
                                 </div>
-                                <label style="display: flex; align-items: center; gap: 8px;">
+                                <label style="display:flex;align-items:center;gap:8px;">
                                     Color Enabled:
-                                    <span id="colorEffectCheckbox" style="display: inline-block; width: 16px; height: 16px; text-align: center; border: 1px solid #555; background: #1a1a1a; vertical-align: middle; line-height: 14px; font-size: 12px; cursor: pointer; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;"> </span>
+                                    <span id="colorEffectCheckbox" style="display:inline-block;width:16px;height:16px;text-align:center;border:1px solid #555;background:#1a1a1a;vertical-align:middle;line-height:14px;font-size:12px;cursor:pointer;user-select:none;"> </span>
                                 </label>
-                                <label style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+                                <label style="display:flex;align-items:center;gap:8px;margin-top:4px;">
                                     Color:
-                                    <input type="color" id="colorSwatch" style="flex: 1; min-width: 0; height: 32px; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; cursor: pointer; padding: 0; box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.3);">
+                                    <input type="color" id="colorSwatch" style="flex:1;min-width:0;height:32px;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;cursor:pointer;padding:0;box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);">
                                 </label>
-                                <div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; margin-top: 4px;">
-                                    <label style="font-size: 12px;">R:</label>
-                                    <input type="number" id="colorR" min="0" max="255" value="255" style="width: 100%; background: #1a1a1a; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; color: #e0e0e0; padding: 4px; font-family: 'chevyray', monospace; font-size: 12px; box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.3);">
-                                    <label style="font-size: 12px;">G:</label>
-                                    <input type="number" id="colorG" min="0" max="255" value="255" style="width: 100%; background: #1a1a1a; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; color: #e0e0e0; padding: 4px; font-family: 'chevyray', monospace; font-size: 12px; box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.3);">
-                                    <label style="font-size: 12px;">B:</label>
-                                    <input type="number" id="colorB" min="0" max="255" value="255" style="width: 100%; background: #1a1a1a; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; color: #e0e0e0; padding: 4px; font-family: 'chevyray', monospace; font-size: 12px; box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.3);">
-                                    <label style="font-size: 12px;">A:</label>
-                                    <input type="number" id="colorA" min="0" max="255" value="255" style="width: 100%; background: #1a1a1a; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; color: #e0e0e0; padding: 4px; font-family: 'chevyray', monospace; font-size: 12px; box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.3);">
+                                <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 8px;align-items:center;margin-top:4px;">
+                                    <label style="font-size:12px;">R:</label><input type="number" id="colorR" min="0" max="255" value="255" style="width:100%;background:#1a1a1a;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#e0e0e0;padding:4px;font-family:'chevyray',monospace;font-size:12px;">
+                                    <label style="font-size:12px;">G:</label><input type="number" id="colorG" min="0" max="255" value="255" style="width:100%;background:#1a1a1a;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#e0e0e0;padding:4px;font-family:'chevyray',monospace;font-size:12px;">
+                                    <label style="font-size:12px;">B:</label><input type="number" id="colorB" min="0" max="255" value="255" style="width:100%;background:#1a1a1a;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#e0e0e0;padding:4px;font-family:'chevyray',monospace;font-size:12px;">
+                                    <label style="font-size:12px;">A:</label><input type="number" id="colorA" min="0" max="255" value="255" style="width:100%;background:#1a1a1a;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#e0e0e0;padding:4px;font-family:'chevyray',monospace;font-size:12px;">
                                 </div>
                                 <div class="item-controls">
-                                    <button id="btnAttachmentBack" title="Previous sprite — cycles through attached sprites in the preview"><i class="fas fa-arrow-left"></i></button>
-                                    <button id="btnAttachmentForward" title="Next sprite — cycles through attached sprites in the preview"><i class="fas fa-arrow-right"></i></button>
+                                    <button id="btnAttachmentBack" title="Previous sprite"><i class="fas fa-arrow-left"></i></button>
+                                    <button id="btnAttachmentForward" title="Next sprite"><i class="fas fa-arrow-right"></i></button>
                                 </div>
                             </div>
                             <div class="sprite-preview">
@@ -1679,8 +362,8 @@
                             </div>
                         </div>
                     </div>
-                    <div class="splitter-handle" id="leftCenterSplitter" style="width: 4px; cursor: col-resize; background: #1a1a1a; flex-shrink: 0; position: relative;">
-                        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 2px; height: 40px; background: #555; border-radius: 1px;"></div>
+                    <div class="splitter-handle" id="leftCenterSplitter" style="width:4px;cursor:col-resize;background:#1a1a1a;flex-shrink:0;position:relative;">
+                        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:2px;height:40px;background:#555;border-radius:1px;"></div>
                     </div>
                     <div class="center-panel">
                         <div class="canvas-container">
@@ -1695,48 +378,42 @@
                         </div>
                     </div>
                 </div>
-                <div class="splitter-handle" id="centerRightSplitter" style="width: 4px; cursor: col-resize; background: #1a1a1a; flex-shrink: 0; position: relative;">
-                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 2px; height: 40px; background: #555; border-radius: 1px;"></div>
+                <div class="splitter-handle" id="centerRightSplitter" style="width:4px;cursor:col-resize;background:#1a1a1a;flex-shrink:0;position:relative;">
+                    <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:2px;height:40px;background:#555;border-radius:1px;"></div>
                 </div>
                 <div class="right-panel">
                     <div class="direction-selector">
                         <label>Direction:</label>
                         <select id="directionCombo">
-                            <option>UP</option>
-                            <option>LEFT</option>
-                            <option selected>DOWN</option>
-                            <option>RIGHT</option>
+                            <option>UP</option><option>LEFT</option><option selected>DOWN</option><option>RIGHT</option>
                         </select>
                     </div>
                     <div class="settings-group">
                         <h3>Ani Settings</h3>
-                        <label style="display: flex; align-items: center; gap: 8px;"><span id="singleDirCheckbox" style="display: inline-block; width: 16px; height: 16px; text-align: center; border: 1px solid #555; background: #1a1a1a; vertical-align: middle; line-height: 14px; font-size: 12px; cursor: pointer; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;"> </span> Single Dir</label>
-                        <label style="display: flex; align-items: center; gap: 8px;"><span id="loopedCheckbox" style="display: inline-block; width: 16px; height: 16px; text-align: center; border: 1px solid #555; background: #1a1a1a; vertical-align: middle; line-height: 14px; font-size: 12px; cursor: pointer; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;">✓</span> Looped</label>
-                        <label style="display: flex; align-items: center; gap: 8px;"><span id="continousCheckbox" style="display: inline-block; width: 16px; height: 16px; text-align: center; border: 1px solid #555; background: #1a1a1a; vertical-align: middle; line-height: 14px; font-size: 12px; cursor: pointer; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;">✓</span> Continuous</label>
+                        <label style="display:flex;align-items:center;gap:8px;"><span id="singleDirCheckbox" style="display:inline-block;width:16px;height:16px;text-align:center;border:1px solid #555;background:#1a1a1a;vertical-align:middle;line-height:14px;font-size:12px;cursor:pointer;user-select:none;"> </span> Single Dir</label>
+                        <label style="display:flex;align-items:center;gap:8px;"><span id="loopedCheckbox" style="display:inline-block;width:16px;height:16px;text-align:center;border:1px solid #555;background:#1a1a1a;vertical-align:middle;line-height:14px;font-size:12px;cursor:pointer;user-select:none;">✓</span> Looped</label>
+                        <label style="display:flex;align-items:center;gap:8px;"><span id="continousCheckbox" style="display:inline-block;width:16px;height:16px;text-align:center;border:1px solid #555;background:#1a1a1a;vertical-align:middle;line-height:14px;font-size:12px;cursor:pointer;user-select:none;">✓</span> Continuous</label>
                         <label>Next Ani:</label>
                         <input type="text" id="nextAni">
-                        <button id="btnDefaults" title="Defaults — show or hide the default attribute values table for this animation" style="width: 100%; margin-bottom: 8px; background: #1a1a1a; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; color: #ffffff; padding: 8px; font-family: 'chevyray', monospace; font-size: 12px;">Defaults ▶</button>
-                        <table class="defaults-table" id="defaultsTable" style="display: none; visibility: hidden;">
-                            <thead>
-                                <tr><th>Head</th><th>Value</th></tr>
-                            </thead>
+                        <button id="btnDefaults" title="Defaults" style="width:100%;margin-bottom:8px;background:#1a1a1a;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#ffffff;padding:8px;font-family:'chevyray',monospace;font-size:12px;">Defaults ▶</button>
+                        <table class="defaults-table" id="defaultsTable" style="display:none;visibility:hidden;">
+                            <thead><tr><th>Head</th><th>Value</th></tr></thead>
                             <tbody id="defaultsTableBody"></tbody>
                         </table>
-                        <button id="btnEditScript" title="Edit Script — open the GScript editor for this animation's per-frame logic" style="width: 100%; background: #1a1a1a; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; color: #ffffff; padding: 8px; font-family: 'chevyray', monospace; font-size: 12px;">Edit Script</button>
+                        <button id="btnEditScript" title="Edit Script" style="width:100%;background:#1a1a1a;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#ffffff;padding:8px;font-family:'chevyray',monospace;font-size:12px;">Edit Script</button>
                     </div>
-                    <div class="settings-group" id="historyGroup" style="display: none;">
-                        <h3 style="display: flex; align-items: center; gap: 8px;">History <span id="historyLoggingToggleCheckbox" style="display: inline-block; width: 16px; height: 16px; text-align: center; border: 1px solid #555; background: #1a1a1a; vertical-align: middle; line-height: 14px; font-size: 12px; cursor: pointer; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;"> </span></h3>
-                        <div id="historyList" style="max-height: 300px; overflow-y: auto; background: #1a1a1a; padding: 4px; border: 1px solid #555; font-size: 12px; font-family: 'chevyray', monospace; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;">
-                        </div>
-                        <div style="display: flex; gap: 4px; margin-top: 4px;">
-                            <button id="btnHistoryUndo" style="flex: 1; background: #1a1a1a; color: #ffffff; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; padding: 8px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px;" disabled>Undo</button>
-                            <button id="btnHistoryRedo" style="flex: 1; background: #1a1a1a; color: #ffffff; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; padding: 8px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px;" disabled>Redo</button>
-                            <button id="btnHistoryClear" style="flex: 1; background: #1a1a1a; color: #ffffff; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; padding: 8px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px;">Clear</button>
+                    <div class="settings-group" id="historyGroup" style="display:none;">
+                        <h3 style="display:flex;align-items:center;gap:8px;">History <span id="historyLoggingToggleCheckbox" style="display:inline-block;width:16px;height:16px;text-align:center;border:1px solid #555;background:#1a1a1a;vertical-align:middle;line-height:14px;font-size:12px;cursor:pointer;user-select:none;"> </span></h3>
+                        <div id="historyList" style="max-height:300px;overflow-y:auto;background:#1a1a1a;padding:4px;border:1px solid #555;font-size:12px;font-family:'chevyray',monospace;user-select:none;"></div>
+                        <div style="display:flex;gap:4px;margin-top:4px;">
+                            <button id="btnHistoryUndo" style="flex:1;background:#1a1a1a;color:#ffffff;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;padding:8px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;" disabled>Undo</button>
+                            <button id="btnHistoryRedo" style="flex:1;background:#1a1a1a;color:#ffffff;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;padding:8px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;" disabled>Redo</button>
+                            <button id="btnHistoryClear" style="flex:1;background:#1a1a1a;color:#ffffff;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;padding:8px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;">Clear</button>
                         </div>
                     </div>
                     <div class="settings-group">
                         <h3>Item</h3>
-                        <select id="itemsCombo" style="width: 100%; margin-bottom: 8px; background: #1a1a1a; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; color: #ffffff; padding: 8px; font-family: 'chevyray', monospace; font-size: 12px;">
+                        <select id="itemsCombo" style="width:100%;margin-bottom:8px;background:#1a1a1a;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#ffffff;padding:8px;font-family:'chevyray',monospace;font-size:12px;">
                             <option value="">(none)</option>
                         </select>
                         <div class="item-settings">
@@ -1771,174 +448,453 @@
                         <label>Duration (MS):</label>
                         <input type="number" id="duration" value="50" min="1" step="50">
                         <label>Sounds:</label>
-                        <div style="display: flex; gap: 2px; margin-bottom: 4px;">
-                            <button id="btnAddSound" style="flex: 1;"><i class="fas fa-plus"></i></button>
-                            <button id="btnDeleteSound" style="flex: 1;"><i class="fas fa-minus"></i></button>
-                            <button id="btnLoadSounds" style="flex: 1;" title="Import sound files"><i class="fas fa-folder-open"></i></button>
+                        <div style="display:flex;gap:2px;margin-bottom:4px;">
+                            <button id="btnAddSound" style="flex:1;"><i class="fas fa-plus"></i></button>
+                            <button id="btnDeleteSound" style="flex:1;"><i class="fas fa-minus"></i></button>
+                            <button id="btnLoadSounds" style="flex:1;" title="Import sound files"><i class="fas fa-folder-open"></i></button>
                         </div>
                         <ul class="sounds-list" id="soundsList"></ul>
                     </div>
                 </div>
             </div>
-            <div class="splitter-handle" id="canvasTimelineSplitter" style="width: 100%; height: 4px; cursor: row-resize; background: #1a1a1a; flex: 0 0 4px; position: relative;">
-                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 2px; background: #555; border-radius: 1px;"></div>
+            <div class="splitter-handle" id="canvasTimelineSplitter" style="width:100%;height:4px;cursor:row-resize;background:#1a1a1a;flex:0 0 4px;position:relative;">
+                <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:40px;height:2px;background:#555;border-radius:1px;"></div>
             </div>
             <div class="timeline-wrapper">
-            <div class="timeline-container">
-                <div class="timeline-header">
-                    <label>Frames:</label>
-                    <span class="frame-count" id="frameCount">1/1</span>
-                    <input type="range" class="timeline-slider" id="timelineSlider" min="0" max="0" value="0">
-                    <span id="totalDuration">0.00s</span>
+                <div class="timeline-container">
+                    <div class="timeline-header">
+                        <label>Frames:</label>
+                        <span class="frame-count" id="frameCount">1/1</span>
+                        <input type="range" class="timeline-slider" id="timelineSlider" min="0" max="0" value="0">
+                        <span id="totalDuration">0.00s</span>
+                    </div>
+                    <div class="timeline-view">
+                        <canvas id="timelineCanvas"></canvas>
+                    </div>
+                    <div class="playback-controls">
+                        <button id="btnPlay" title="Play"><i class="fas fa-play"></i></button>
+                        <button id="btnStop" title="Stop"><i class="fas fa-stop"></i></button>
+                        <button id="btnNewFrame" title="New Frame"><i class="fas fa-plus"></i></button>
+                        <button id="btnDeleteFrame" title="Delete Frame"><i class="fas fa-minus"></i></button>
+                        <button id="btnCopyFrame" title="Copy Frame"><i class="fas fa-copy"></i></button>
+                        <button id="btnPasteBefore" title="Paste Before"><i class="fas fa-paste"></i></button>
+                        <button id="btnPasteAfter" title="Paste After"><i class="fas fa-paste"></i></button>
+                        <button id="btnReverseFrame" title="Reverse Frame"><i class="fas fa-exchange-alt"></i></button>
+                    </div>
                 </div>
-                <div class="timeline-view">
-                    <canvas id="timelineCanvas"></canvas>
-                </div>
-                <div class="playback-controls">
-                    <button id="btnPlay" title="Play"><i class="fas fa-play"></i></button>
-                    <button id="btnStop" title="Stop"><i class="fas fa-stop"></i></button>
-                    <button id="btnNewFrame" title="New Frame"><i class="fas fa-plus"></i></button>
-                    <button id="btnDeleteFrame" title="Delete Frame"><i class="fas fa-minus"></i></button>
-                    <button id="btnCopyFrame" title="Copy Frame — copies current frame, or all selected frames if multiple are selected"><i class="fas fa-copy"></i></button>
-                    <button id="btnPasteBefore" title="Paste Before — insert copied frame(s) before current frame"><i class="fas fa-paste"></i></button>
-                    <button id="btnPasteAfter" title="Paste After — insert copied frame(s) after current frame"><i class="fas fa-paste"></i></button>
-                    <button id="btnReverseFrame" title="Reverse Frame"><i class="fas fa-exchange-alt"></i></button>
-                </div>
-            </div>
             </div>
         </div>
-    <input type="file" id="fileInput" accept=".gani" style="display: none;">
-    <input type="file" id="imageInput" multiple accept="image/*" style="display: none;">
-    <input type="file" id="folderInput" webkitdirectory style="display: none;">
-    <div id="settingsDialog" class="dialog-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0); z-index: 10000; justify-content: center; align-items: center;">
-        <div class="dialog-content" style="background: #2b2b2b; border: 2px solid #1a1a1a; padding: 0 20px 20px; width: 400px; max-width: 90vw; max-height: 80vh; min-height: 300px; display: flex; flex-direction: column; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8); overflow: hidden;">
-            <div class="dialog-titlebar" style="margin: 0 -20px 0; display: flex; align-items: stretch; flex-shrink: 0;">
-                <div style="display: flex; align-items: center; padding: 10px 14px; gap: 8px; flex: 1;"><i class="fas fa-cog" style="flex-shrink:0;display:block;"></i><span style="font-family: 'chevyray', monospace; font-size: 13px; color: #c0c0c0; user-select: none; line-height: 16px;">Settings</span></div>
-                <div style="display: flex; align-items: stretch;">
-                    <button class="settings-tab-btn" data-tab="general" style="background: #252525; border: none; border-left: 1px solid #0a0a0a; padding: 10px 16px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; color: #4a9eff; user-select: none; -webkit-user-select: none;">General</button>
-                    <button class="settings-tab-btn" data-tab="canvas" style="background: transparent; border: none; border-left: 1px solid #0a0a0a; padding: 10px 16px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; color: #888; user-select: none; -webkit-user-select: none;">Canvas</button>
-                    <button class="settings-tab-btn" data-tab="keybinds" style="background: transparent; border: none; border-left: 1px solid #0a0a0a; padding: 10px 16px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; color: #888; user-select: none; -webkit-user-select: none;">Keybinds</button>
-                </div>
-            </div>
-            <div id="settingsGeneralPanel" style="flex: 1; overflow-y: auto; padding-right: 8px; min-height: 0; padding-top: 16px;">
-                <div style="margin-bottom: 16px;">
-                    <label style="display: block; margin-bottom: 8px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0;">Font:</label>
-                    <select id="settingsFont" style="width: 100%; background: #1a1a1a; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; color: #ffffff; padding: 8px; font-family: 'chevyray', monospace; font-size: 12px;">
-                    </select>
-                </div>
-                <div style="margin-bottom: 16px;">
-                    <label style="display: block; margin-bottom: 8px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0;">Font Size:</label>
-                    <select id="settingsFontSize" style="width: 100%; background: #1a1a1a; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; color: #ffffff; padding: 8px; font-family: 'chevyray', monospace; font-size: 12px;">
-                        <option value="8">8px</option>
-                        <option value="10">10px</option>
-                        <option value="12" selected>12px</option>
-                        <option value="14">14px</option>
-                        <option value="16">16px</option>
-                        <option value="18">18px</option>
-                        <option value="20">20px</option>
-                    </select>
-                </div>
-                <div style="margin-bottom: 16px;">
-                    <label style="display: block; margin-bottom: 8px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0;">Font Style:</label>
-                    <select id="settingsFontStyle" style="width: 100%; background: #1a1a1a; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; color: #ffffff; padding: 8px; font-family: 'chevyray', monospace; font-size: 12px;">
-                        <option value="normal">Normal</option>
-                        <option value="italic">Italic</option>
-                        <option value="bold">Bold</option>
-                        <option value="bold italic">Bold Italic</option>
-                    </select>
-                </div>
-                <div style="margin-bottom: 16px;">
-                    <label style="display: block; margin-bottom: 8px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0;">UI Scale: <span id="settingsUIScaleValue">100%</span></label>
-                    <div style="display: flex; flex-direction: column; gap: 4px;">
-                        <input type="range" id="settingsUIScale" min="0.5" max="2" step="0.05" value="1" style="flex: 1; background: transparent; height: 8px; cursor: pointer; -webkit-appearance: none; appearance: none; border: none;">
-                        <input type="number" id="settingsUIScaleNumber" min="0.5" max="2" step="0.05" value="1">
+        <input type="file" id="fileInput" accept=".gani" style="display:none;">
+        <input type="file" id="imageInput" multiple accept="image/*" style="display:none;">
+        <input type="file" id="folderInput" webkitdirectory style="display:none;">
+        <div id="settingsDialog" class="dialog-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0);z-index:10000;justify-content:center;align-items:center;">
+            <div class="dialog-content" style="background:#2b2b2b;border:2px solid #1a1a1a;padding:0 20px 20px;width:400px;max-width:90vw;max-height:80vh;min-height:300px;display:flex;flex-direction:column;box-shadow:0 4px 12px rgba(0,0,0,0.8);overflow:hidden;">
+                <div class="dialog-titlebar" style="margin:0 -20px 0;display:flex;align-items:stretch;flex-shrink:0;">
+                    <div style="display:flex;align-items:center;padding:10px 14px;gap:8px;flex:1;"><i class="fas fa-cog" style="flex-shrink:0;display:block;"></i><span style="font-family:'chevyray',monospace;font-size:13px;color:#c0c0c0;user-select:none;line-height:16px;">Settings</span></div>
+                    <div style="display:flex;align-items:stretch;">
+                        <button class="settings-tab-btn" data-tab="general" style="background:#252525;border:none;border-left:1px solid #0a0a0a;padding:10px 16px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;color:#4a9eff;user-select:none;">General</button>
+                        <button class="settings-tab-btn" data-tab="canvas" style="background:transparent;border:none;border-left:1px solid #0a0a0a;padding:10px 16px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;color:#888;user-select:none;">Canvas</button>
+                        <button class="settings-tab-btn" data-tab="keybinds" style="background:transparent;border:none;border-left:1px solid #0a0a0a;padding:10px 16px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;color:#888;user-select:none;">Keybinds</button>
                     </div>
                 </div>
-                <div style="margin-bottom: 16px; border-top: 1px solid #0a0a0a; padding-top: 16px;">
-                    <div style="margin-bottom: 12px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0;">Options:</div>
-                    <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0; cursor: pointer;">
-                        <span id="settingsPixelRenderingCheckbox" style="display: inline-block; width: 16px; height: 16px; text-align: center; border: 1px solid #555; background: #1a1a1a; vertical-align: middle; line-height: 14px; font-size: 12px; cursor: pointer; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;">✓</span>
-                        <span>Pixel Perfect Rendering</span>
-                    </label>
-                    <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0; cursor: pointer;">
-                        <span id="settingsAutoSaveCheckbox" style="display: inline-block; width: 16px; height: 16px; text-align: center; border: 1px solid #555; background: #1a1a1a; vertical-align: middle; line-height: 14px; font-size: 12px; cursor: pointer; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;">✓</span>
-                        <span>Auto Save</span>
-                    </label>
-                    <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0; cursor: pointer;">
-                        <span id="settingsShowGridCheckbox" style="display: inline-block; width: 16px; height: 16px; text-align: center; border: 1px solid #555; background: #1a1a1a; vertical-align: middle; line-height: 14px; font-size: 12px; cursor: pointer; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;">✓</span>
-                        <span>Show Grid</span>
-                    </label>
-                    <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0; cursor: pointer;">
-                        <span id="settingsGifAnimationsCheckbox" style="display: inline-block; width: 16px; height: 16px; text-align: center; border: 1px solid #555; background: #1a1a1a; vertical-align: middle; line-height: 14px; font-size: 12px; cursor: pointer; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;">✓</span>
-                        <span>GIF Animations</span>
-                    </label>
-                    <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0; cursor: pointer;">
-                        <span id="settingsLightEffectsCheckbox" style="display: inline-block; width: 16px; height: 16px; text-align: center; border: 1px solid #555; background: #1a1a1a; vertical-align: middle; line-height: 14px; font-size: 12px; cursor: pointer; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;">✓</span>
-                        <span>Light Effects</span>
-                    </label>
-                </div>
-            </div>
-            <div id="settingsCanvasPanel" style="display: none; flex: 1; overflow-y: auto; padding-right: 8px; min-height: 0; padding-top: 16px;">
-                <div style="margin-bottom: 16px;">
-                    <div style="margin-bottom: 12px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0;">Selection Border:</div>
-                    <div style="margin-bottom: 12px;">
-                        <label style="display: block; margin-bottom: 8px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0;">Color:</label>
-                        <input type="color" id="settingsSelectionBorderColor" value="#00ff00" style="width: 100%; height: 32px; background: #1a1a1a; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; cursor: pointer;">
+                <div id="settingsGeneralPanel" style="flex:1;overflow-y:auto;padding-right:8px;min-height:0;padding-top:16px;">
+                    <div style="margin-bottom:16px;">
+                        <label style="display:block;margin-bottom:8px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;">Font:</label>
+                        <select id="settingsFont" style="width:100%;background:#1a1a1a;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#ffffff;padding:8px;font-family:'chevyray',monospace;font-size:12px;"></select>
                     </div>
-                    <div style="margin-bottom: 12px;">
-                        <label style="display: block; margin-bottom: 8px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0;">Thickness:</label>
-                        <div style="display: flex; flex-direction: column; gap: 4px;">
-                            <input type="range" id="settingsSelectionBorderThickness" min="1" max="10" step="1" value="2" style="flex: 1; background: transparent; height: 8px; cursor: pointer; -webkit-appearance: none; appearance: none; border: none;">
-                            <input type="number" id="settingsSelectionBorderThicknessNumber" min="1" max="10" step="1" value="2">
+                    <div style="margin-bottom:16px;">
+                        <label style="display:block;margin-bottom:8px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;">Font Size:</label>
+                        <select id="settingsFontSize" style="width:100%;background:#1a1a1a;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#ffffff;padding:8px;font-family:'chevyray',monospace;font-size:12px;">
+                            <option value="8">8px</option><option value="10">10px</option><option value="12" selected>12px</option><option value="14">14px</option><option value="16">16px</option><option value="18">18px</option><option value="20">20px</option>
+                        </select>
+                    </div>
+                    <div style="margin-bottom:16px;">
+                        <label style="display:block;margin-bottom:8px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;">Font Style:</label>
+                        <select id="settingsFontStyle" style="width:100%;background:#1a1a1a;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#ffffff;padding:8px;font-family:'chevyray',monospace;font-size:12px;">
+                            <option value="normal">Normal</option><option value="italic">Italic</option><option value="bold">Bold</option><option value="bold italic">Bold Italic</option>
+                        </select>
+                    </div>
+                    <div style="margin-bottom:16px;">
+                        <label style="display:block;margin-bottom:8px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;">UI Scale: <span id="settingsUIScaleValue">100%</span></label>
+                        <div style="display:flex;flex-direction:column;gap:4px;">
+                            <input type="range" id="settingsUIScale" min="0.5" max="2" step="0.05" value="1" style="flex:1;background:transparent;height:8px;cursor:pointer;-webkit-appearance:none;appearance:none;border:none;">
+                            <input type="number" id="settingsUIScaleNumber" min="0.5" max="2" step="0.05" value="1">
                         </div>
                     </div>
-                    <div style="margin-bottom: 12px;">
-                        <label style="display: block; margin-bottom: 8px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0;">Opacity: <span id="settingsSelectionBorderOpacityLabel">100%</span></label>
-                        <input type="range" id="settingsSelectionBorderOpacity" min="0" max="100" step="1" value="100" style="width: 100%; background: transparent; height: 8px; cursor: pointer; -webkit-appearance: none; appearance: none; border: none;">
+                    <div style="margin-bottom:16px;border-top:1px solid #0a0a0a;padding-top:16px;">
+                        <div style="margin-bottom:12px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;">Options:</div>
+                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;cursor:pointer;"><span id="settingsPixelRenderingCheckbox" style="display:inline-block;width:16px;height:16px;text-align:center;border:1px solid #555;background:#1a1a1a;vertical-align:middle;line-height:14px;font-size:12px;cursor:pointer;user-select:none;">✓</span><span>Pixel Perfect Rendering</span></label>
+                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;cursor:pointer;"><span id="settingsAutoSaveCheckbox" style="display:inline-block;width:16px;height:16px;text-align:center;border:1px solid #555;background:#1a1a1a;vertical-align:middle;line-height:14px;font-size:12px;cursor:pointer;user-select:none;">✓</span><span>Auto Save</span></label>
+                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;cursor:pointer;"><span id="settingsShowGridCheckbox" style="display:inline-block;width:16px;height:16px;text-align:center;border:1px solid #555;background:#1a1a1a;vertical-align:middle;line-height:14px;font-size:12px;cursor:pointer;user-select:none;">✓</span><span>Show Grid</span></label>
+                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;cursor:pointer;"><span id="settingsGifAnimationsCheckbox" style="display:inline-block;width:16px;height:16px;text-align:center;border:1px solid #555;background:#1a1a1a;vertical-align:middle;line-height:14px;font-size:12px;cursor:pointer;user-select:none;">✓</span><span>GIF Animations</span></label>
+                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;cursor:pointer;"><span id="settingsLightEffectsCheckbox" style="display:inline-block;width:16px;height:16px;text-align:center;border:1px solid #555;background:#1a1a1a;vertical-align:middle;line-height:14px;font-size:12px;cursor:pointer;user-select:none;">✓</span><span>Light Effects</span></label>
+                    </div>
+                </div>
+                <div id="settingsCanvasPanel" style="display:none;flex:1;overflow-y:auto;padding-right:8px;min-height:0;padding-top:16px;">
+                    <div style="margin-bottom:16px;">
+                        <div style="margin-bottom:12px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;">Selection Border:</div>
+                        <div style="margin-bottom:12px;"><label style="display:block;margin-bottom:8px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;">Color:</label><input type="color" id="settingsSelectionBorderColor" value="#00ff00" style="width:100%;height:32px;background:#1a1a1a;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;cursor:pointer;"></div>
+                        <div style="margin-bottom:12px;"><label style="display:block;margin-bottom:8px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;">Thickness:</label><div style="display:flex;flex-direction:column;gap:4px;"><input type="range" id="settingsSelectionBorderThickness" min="1" max="10" step="1" value="2" style="flex:1;background:transparent;height:8px;cursor:pointer;-webkit-appearance:none;appearance:none;border:none;"><input type="number" id="settingsSelectionBorderThicknessNumber" min="1" max="10" step="1" value="2"></div></div>
+                        <div style="margin-bottom:12px;"><label style="display:block;margin-bottom:8px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;">Opacity: <span id="settingsSelectionBorderOpacityLabel">100%</span></label><input type="range" id="settingsSelectionBorderOpacity" min="0" max="100" step="1" value="100" style="width:100%;background:transparent;height:8px;cursor:pointer;-webkit-appearance:none;appearance:none;border:none;"></div>
+                    </div>
+                </div>
+                <div id="settingsKeybindsPanel" style="display:none;flex:1;overflow-y:auto;padding:16px 8px 0 0;min-height:0;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;"></div>
+                <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;margin-top:16px;border-top:1px solid #0a0a0a;padding-top:16px;flex-shrink:0;min-width:0;align-items:flex-start;">
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;flex:1;min-width:0;align-items:flex-start;">
+                        <button id="settingsDefaults" style="background:#1a1a1a;color:#ffffff;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;padding:8px 16px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;white-space:nowrap;flex:1;min-width:fit-content;align-self:flex-start;">Defaults</button>
+                        <button id="settingsReset" title="Reset Editor" style="background:#1a1a1a;color:#ffffff;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;padding:8px 16px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;white-space:nowrap;flex:1;min-width:fit-content;align-self:flex-start;display:flex;align-items:center;justify-content:center;"><i class="fas fa-recycle"></i></button>
+                    </div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;flex:1;min-width:0;align-items:flex-start;">
+                        <button id="settingsCancel" style="background:#1a1a1a;color:#ffffff;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;padding:8px 16px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;white-space:nowrap;flex:1;min-width:fit-content;align-self:flex-start;">Cancel</button>
+                        <button id="settingsOK" style="background:#1a1a1a;color:#ffffff;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;padding:8px 16px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;white-space:nowrap;flex:1;min-width:fit-content;align-self:flex-start;">OK</button>
                     </div>
                 </div>
             </div>
-            <div id="settingsKeybindsPanel" style="display: none; flex: 1; overflow-y: auto; padding: 16px 8px 0 0; min-height: 0; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0;"></div>
-            <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 16px; border-top: 1px solid #0a0a0a; padding-top: 16px; flex-shrink: 0; min-width: 0; align-items: flex-start;">
-                <div style="display: flex; gap: 8px; flex-wrap: wrap; flex: 1; min-width: 0; align-items: flex-start;">
-                    <button id="settingsDefaults" style="background: #1a1a1a; color: #ffffff; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; padding: 8px 16px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; white-space: nowrap; flex: 1; min-width: fit-content; align-self: flex-start;">Defaults</button>
-                    <button id="settingsReset" title="Reset Editor" style="background: #1a1a1a; color: #ffffff; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; padding: 8px 16px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; white-space: nowrap; flex: 1; min-width: fit-content; align-self: flex-start; display: flex; align-items: center; justify-content: center;"><i class="fas fa-recycle"></i></button>
+        </div>
+        <div id="infoDialog" class="dialog-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;justify-content:center;align-items:center;">
+            <div class="dialog-content" style="background:#2b2b2b;border:2px solid #1a1a1a;width:720px;max-width:92vw;height:420px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 4px 16px rgba(0,0,0,0.9);">
+                <div class="dialog-titlebar" style="background:#1e1e1e;border-bottom:2px solid #0a0a0a;display:flex;align-items:stretch;">
+                    <div style="display:flex;align-items:center;padding:10px 14px;gap:8px;flex:1;"><img src="favicon.ico" class="titlebar-logo" style="width:18px;height:18px;image-rendering:pixelated;"><span style="font-family:'chevyray',monospace;font-size:13px;color:#c0c0c0;user-select:none;">Gani Editor</span></div>
+                    <div style="display:flex;align-items:stretch;">
+                        <button class="info-tab-btn" data-tab="about" style="background:transparent;border:none;border-left:1px solid #0a0a0a;padding:10px 16px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;color:#888;user-select:none;">About</button>
+                        <button class="info-tab-btn" data-tab="changelog" style="background:transparent;border:none;border-left:1px solid #0a0a0a;padding:10px 16px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;color:#888;user-select:none;">Changelog</button>
+                    </div>
                 </div>
-                <div style="display: flex; gap: 8px; flex-wrap: wrap; flex: 1; min-width: 0; align-items: flex-start;">
-                    <button id="settingsCancel" style="background: #1a1a1a; color: #ffffff; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; padding: 8px 16px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; white-space: nowrap; flex: 1; min-width: fit-content; align-self: flex-start;">Cancel</button>
-                    <button id="settingsOK" style="background: #1a1a1a; color: #ffffff; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; padding: 8px 16px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; white-space: nowrap; flex: 1; min-width: fit-content; align-self: flex-start;">OK</button>
+                <div id="infoContent" style="flex:1;overflow-y:auto;padding:20px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;line-height:1.6;user-select:none;"></div>
+                <div style="border-top:1px solid #0a0a0a;padding:12px 16px;display:flex;justify-content:flex-end;">
+                    <button id="infoClose" style="background:#1a1a1a;color:#ffffff;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;padding:8px 16px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;">Close</button>
                 </div>
             </div>
         </div>
-    </div>
-    <div id="infoDialog" class="dialog-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); z-index: 10000; justify-content: center; align-items: center;">
-        <div class="dialog-content" style="background: #2b2b2b; border: 2px solid #1a1a1a; width: 720px; max-width: 92vw; height: 420px; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.9);">
-            <div class="dialog-titlebar" style="background: #1e1e1e; border-bottom: 2px solid #0a0a0a; display: flex; align-items: stretch;">
-                <div style="display: flex; align-items: center; padding: 10px 14px; gap: 8px; flex: 1;">
-                    <img src="favicon.ico" class="titlebar-logo" style="width: 18px; height: 18px; image-rendering: pixelated;">
-                    <span style="font-family: 'chevyray', monospace; font-size: 13px; color: #c0c0c0; user-select: none; -webkit-user-select: none;">Gani Editor</span>
-                </div>
-                <div style="display: flex; align-items: stretch;">
-                    <button class="info-tab-btn" data-tab="about" style="background: transparent; border: none; border-left: 1px solid #0a0a0a; padding: 10px 16px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; color: #888; user-select: none; -webkit-user-select: none;">About</button>
-                    <button class="info-tab-btn" data-tab="changelog" style="background: transparent; border: none; border-left: 1px solid #0a0a0a; padding: 10px 16px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px; color: #888; user-select: none; -webkit-user-select: none;">Changelog</button>
+        <div id="defaultGaniDialog" class="dialog-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;justify-content:center;align-items:center;">
+            <div style="background:#2b2b2b;border:2px solid #1a1a1a;padding:20px;width:400px;max-width:90vw;max-height:80vh;display:flex;flex-direction:column;">
+                <div style="margin-bottom:16px;color:#e0e0e0;font-size:12px;font-family:'chevyray',monospace;">Select Default GANI</div>
+                <div class="dialog-content" style="flex:1;overflow-y:auto;border:1px solid #1a1a1a;background:#353535;min-height:300px;max-height:400px;"></div>
+                <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+                    <button id="defaultGaniCancel" style="background:#353535;color:#fff;border:1px solid #1a1a1a;padding:8px 16px;cursor:pointer;font-size:12px;font-family:'chevyray',monospace;">Cancel</button>
                 </div>
             </div>
-            <div id="infoContent" style="flex: 1; overflow-y: auto; padding: 20px; font-family: 'chevyray', monospace; font-size: 12px; color: #e0e0e0; line-height: 1.6; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;"></div>
-            <div style="border-top: 1px solid #0a0a0a; padding: 12px 16px; display: flex; justify-content: flex-end;">
-                <button id="infoClose" style="background: #1a1a1a; color: #ffffff; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; padding: 8px 16px; cursor: pointer; font-family: 'chevyray', monospace; font-size: 12px;">Close</button>
+        </div>
+    </div>`;
+
+    const levelHTML = `
+    <div class="main-container">
+        <div class="toolbar">
+            <button title="New Level — create a blank .nw level" id="btnNew"><i class="fas fa-file"></i></button>
+            <button title="Open Level — load a .nw or .gmap file" id="btnOpen"><i class="fas fa-folder-open"></i></button>
+            <button title="Save Level (Ctrl+S)" id="btnSave"><i class="fas fa-save"></i></button>
+            <button title="Save Level As — save to a new filename" id="btnSaveAs"><i class="fas fa-npc-export"></i></button>
+            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
+            <button title="Close All — close every open tab" id="btnCloseAll"><i class="fas fa-times"></i></button>
+            <button title="Reset Editor — reset layout, zoom, pan, and settings to defaults" id="btnResetEditor"><i class="fas fa-undo"></i></button>
+            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
+            <button title="Add workspace" id="btnWorkingDir"><i class="fas fa-folder-plus"></i></button>
+            <div style="position:relative;">
+                <button title="Color Scheme — pick a built-in theme" id="btnColorScheme"><i class="fas fa-palette"></i></button>
+                <div id="colorSchemeDropdown" style="display:none;position:absolute;top:100%;left:0;background:#2b2b2b;border:1px solid #0a0a0a;border-top:1px solid #404040;z-index:1000;min-width:150px;box-shadow:0 2px 8px rgba(0,0,0,0.5);margin-top:2px;user-select:none;">
+                    <div class="color-scheme-item" data-scheme="default" style="background:#404040;">Default</div>
+                    <div class="color-scheme-item" data-scheme="fusion-light">Fusion Light</div>
+                    <div class="color-scheme-item" data-scheme="fusion-dark">Fusion Dark</div>
+                    <div class="color-scheme-item" data-scheme="dark-style">Dark Style</div>
+                    <div class="color-scheme-item" data-scheme="dark-orange">Dark Orange</div>
+                    <div class="color-scheme-item" data-scheme="aqua">Aqua</div>
+                    <div class="color-scheme-item" data-scheme="elegant-dark">Elegant Dark</div>
+                    <div class="color-scheme-item" data-scheme="material-dark">Material Dark</div>
+                    <div class="color-scheme-item" data-scheme="light-style">Light Style</div>
+                    <div class="color-scheme-item" data-scheme="ayu-mirage">Ayu Mirage</div>
+                    <div class="color-scheme-item" data-scheme="dracula">Dracula</div>
+                </div>
+            </div>
+            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
+            <button title="Settings (F2)" id="btnSettings" style="display:flex;align-items:center;gap:5px;"><i class="fas fa-cog"></i></button>
+            <button title="About / Changelog (F1)" id="btnAbout"><i class="fas fa-info-circle"></i></button>
+            <button id="switchBtn" title="Switch Editor">⇄ Switch</button>
+            <button id="btnSetshape2" title="Setshape2 Editor" onclick="typeof SetshapeEditor!=='undefined'&&SetshapeEditor.open()"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAACbUlEQVQ4y52P20uTcRzGn9972MEdHBvOw1JZZk4dTjyXhGEGUgkWFJH1P3QTQXgVne6UThCEFxVBYWVgWCCBQ6IM0cBkouLxTbc5NJzv67b39/66SG2pQfXcfPnC83y/n4fgP1RZd8JAeJ4nIDH+X8OFpQdyKE2063T6S5QmwgIAVNUdE0yWVCMhAGMbTgYQAjAAK5FwS2Zm5sGhgf6LvCC0rq4s3fBV13Z+HRwAceXuE1PtzisAvAD5/R0BwBisNkfxKbfsGdHcseHRQF35oYbHfW9ePZweH2kTIqEFc15Rme/chTOKOz+/eiMFgDCAEQBsKbzk6H/WQWrNU3pDZUW3v7fnqiJH72mUMmHzGdVojijq8vCrAQAgHoth/EMv0uk3+OfNpMwxnDbrSi9YNJrIwuwk45KJ2bYZi63jXVcXrMHPWLSWYH/jWfi/u+LrTGyKhCQOAITtlTcnpRSTYxNw5XkgGS1objyCGSmMZUXt9fe8OOnM2KPuOJAsjufg8RZCmplDia8IgigCAHhB0ADEQ4vzP327hdkGB8fxyHbnQhBFKLKMdUUBRzh9fVOLbtO7KwHZtklzEtpv3eyU12QZYLA50i+X1tRfH/74XtuVIJkkGo3iwe07jxi0+0Vl5a8bmk+vBr586jNZbW1bBIQQHiA81bQdB1SVQlW1YNXho63dTzuOuwuK07wVNXaAtwOAoFFKOY7kTEwHfRPTwR0UaiIBg8nsefv8ybW9Hm+9McWUPTo0GLLY7IGtunpDSkaK2VL4pyrOrNzzdmeWh+O4OGOANDX2UllbvRtamGUEfyczCDEk7ctgjALAD3gS6nZ20OQgAAAAAElFTkSuQmCC" width="14" height="14" style="vertical-align:middle;image-rendering:pixelated;"> Setshape2</button>
+            <button id="btnGmapGen" title="Gmap Generator" onclick="typeof GmapGenerator!=='undefined'&&GmapGenerator.open()"><img src="icons/gmapgen.ico" width="14" height="14" style="image-rendering:pixelated;"> Gmap</button>
+            <button id="btnPlayerSetup" title="Player Settings" style="margin-left:auto;display:flex;align-items:center;gap:5px;background:#353535;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#fff;padding:4px 10px;cursor:pointer;font-family:chevyray,monospace;font-size:12px;white-space:nowrap;"><i class="fas fa-user"></i> Player</button>
+            <button id="btnPlay" title="Play Mode (F4)" style="display:flex;align-items:center;gap:5px;background:#353535;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#e0e0e0;padding:4px 12px;cursor:pointer;font-family:chevyray,monospace;font-size:12px;white-space:nowrap;">&#9654; Play</button>
+        </div>
+        <div class="tabs" id="levelTabs"></div>
+        <div class="level-toolbar" id="levelToolbar">
+            <button id="btnSelect" title="Select" class="tool-button active"><i class="fas fa-mouse-pointer"></i></button>
+            <button id="btnDraw" title="Draw" class="tool-button"><i class="fas fa-pencil"></i></button>
+            <button id="btnEraserTool" title="Eraser" class="tool-button"><i class="fas fa-eraser"></i></button>
+            <button id="btnFillTool" title="Flood Fill" class="tool-button"><i class="fas fa-fill"></i></button>
+            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
+            <button id="btnEditLinks" title="Edit Links" class="tool-button"><i class="fas fa-link"></i></button>
+            <button id="btnNewLink" title="Add Link at Selection" class="tool-button" disabled><i class="fas fa-link-plus"></i></button>
+            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
+            <button id="btnEditSigns" title="Edit Signs" class="tool-button"><i class="fas fa-sign"></i></button>
+            <button id="btnNewSign" title="Add Sign at Selection" class="tool-button" disabled><i class="fas fa-sign-plus"></i></button>
+            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
+            <button title="Undo (Ctrl+Z)" id="btnUndo" class="tool-button"><i class="fas fa-undo"></i></button>
+            <button title="Redo (Ctrl+Y)" id="btnRedo" class="tool-button"><i class="fas fa-redo"></i></button>
+            <button title="Cut (Ctrl+X)" id="btnCut" class="tool-button"><i class="fas fa-cut"></i></button>
+            <button title="Copy (Ctrl+C)" id="btnCopy" class="tool-button"><i class="fas fa-copy"></i></button>
+            <button title="Paste (Ctrl+V)" id="btnPaste" class="tool-button"><i class="fas fa-paste"></i></button>
+            <button title="Delete (Del)" id="btnDelete" class="tool-button"><i class="fas fa-trash"></i></button>
+            <button title="Export selected NPC as .npc file" id="btnExportNPC" class="tool-button" disabled><i class="fas fa-npc-export"></i></button>
+            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
+            <div class="tool-dropdown">
+                <button id="btnFunctions" title="Miscellaneous Functions" class="tool-button"><i class="fas fa-wrench"></i></button>
+                <div class="tool-dropdown-menu" id="functionsMenu">
+                    <label onclick="window._editor&&window._editor.deleteEdgeLinks()" style="cursor:pointer">Delete Edge Links</label>
+                    <label onclick="window._editor&&window._editor.trimScriptEndings()" style="cursor:pointer">Trim Script Endings</label>
+                    <label onclick="window._editor&&window._editor.trimSignEndings()" style="cursor:pointer">Trim Sign Endings</label>
+                    <label id="btnRegisterAssoc" style="cursor:pointer;display:none;" onclick="if(typeof _tauri!=='undefined')_tauri.core.invoke('register_file_associations').then(m=>alert(m)).catch(e=>alert('Error: '+e))">Register File Associations</label>
+                </div>
+            </div>
+            <button id="btnScreenshot" title="Screenshot" class="tool-button"><i class="fas fa-camera"></i></button>
+            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
+            <div class="tool-dropdown">
+                <button id="btnSelectionFilter" title="Selection Filter" class="tool-button"><i class="fas fa-hand-pointer"></i></button>
+                <div class="tool-dropdown-menu" id="selectionFilterMenu">
+                    <label><input type="checkbox" id="filterNPCs" checked> NPCs</label>
+                    <label><input type="checkbox" id="filterLinks" checked> Links</label>
+                    <label><input type="checkbox" id="filterSigns" checked> Signs</label>
+                </div>
+            </div>
+            <div class="tool-dropdown">
+                <button id="btnView" title="Visibility" class="tool-button"><i class="fas fa-eye"></i></button>
+                <div class="tool-dropdown-menu" id="visibilityMenu">
+                    <label><input type="checkbox" id="visNPCs" checked> NPCs</label>
+                    <label><input type="checkbox" id="visCharacters" checked> Characters</label>
+                    <label><input type="checkbox" id="visLinks" checked> Links</label>
+                    <label><input type="checkbox" id="visSigns" checked> Signs</label>
+                    <hr style="border-color:#444;margin:3px 6px;">
+                    <label><input type="checkbox" id="visLayer0" checked> Layer 0</label>
+                    <label><input type="checkbox" id="visLayer1" checked> Layer 1</label>
+                    <label><input type="checkbox" id="visLayer2" checked> Layer 2</label>
+                </div>
+            </div>
+            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
+            <i class="fas fa-layer-group" title="Layer" style="margin-right:4px;"></i>
+            <input type="number" id="layerSpinbox" value="0" min="0" max="2" title="Current Layer" style="width:44px;height:30px;background:#2b2b2b;border:1px solid #1a1a1a;color:#e0e0e0;padding:2px 4px;font-family:chevyray,monospace;font-size:12px;text-align:center;">
+            <button id="btnLayerUp" class="tool-button"><i class="fas fa-chevron-up"></i></button>
+            <button id="btnLayerDown" class="tool-button"><i class="fas fa-chevron-down"></i></button>
+            <button id="btnFadeLayers" title="Fade Inactive Layers" class="tool-button active"><i class="fas fa-eye-low-vision"></i></button>
+        </div>
+        <div class="level-area" id="levelArea">
+            <div class="splitter horizontal" id="mainSplitter" style="flex:1;overflow:hidden;position:relative;">
+                <div class="object-library-panel">
+                    <div class="left-panel-tabs">
+                        <button class="left-tab active" data-panel="workdir">Workdir</button>
+                        <button class="left-tab" data-panel="objects">Objects</button>
+                    </div>
+                    <div class="left-panel-content" id="leftPanelWorkdir">
+                        <div class="object-library-header">
+                            <input type="text" id="objectsDir" readonly placeholder="No workspaces">
+                            <button id="btnBrowseObjectsDir" title="Add workspace"><i class="fas fa-folder-plus"></i></button>
+                        </div>
+                        <div class="object-library-content">
+                            <div id="objectTree" style="border:1px solid #555;min-height:200px;background:#1a1a1a;padding:8px;color:#888;"></div>
+                        </div>
+                    </div>
+                    <div class="left-panel-content" id="leftPanelObjects" style="display:none;">
+                        <div class="object-library-header">
+                            <input type="text" id="objectsLibDir" readonly placeholder="No folder loaded" style="min-width:0;flex:1;">
+                            <button id="btnBrowseObjectsLib" title="Load objects folder"><i class="fas fa-folder-plus"></i></button>
+                            <button id="btnExportNPC2" title="Export selected NPC as .npc file" disabled><i class="fas fa-npc-export"></i></button>
+                        </div>
+                        <div class="object-library-content">
+                            <div id="objectsList" style="color:#666;font-size:12px;">No objects loaded.</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="splitter-handle" style="width:4px;cursor:col-resize;background:#1a1a1a;flex-shrink:0;"></div>
+                <div class="center-panel">
+                    <div class="canvas-container">
+                        <div class="canvas-wrapper">
+                            <canvas id="mainCanvas"></canvas>
+                            <div class="canvas-controls">
+                                <button id="btnGrid" title="Toggle Grid"><i class="fas fa-th"></i></button>
+                                <button id="btnCenterView" title="Center View"><i class="fas fa-crosshairs"></i></button>
+                                <button id="btnSnapGrid" title="Snap to Grid" class="active"><i class="fas fa-magnet"></i></button>
+                            </div>
+                        </div>
+                        <div class="canvas-controls-bar">
+                            <label>Width:</label>
+                            <input type="number" id="brushWidth" value="1" min="1" max="64">
+                            <button id="btnWidthUp"><i class="fas fa-chevron-up"></i></button>
+                            <button id="btnWidthDown"><i class="fas fa-chevron-down"></i></button>
+                            <label style="margin-left:8px;">Height:</label>
+                            <input type="number" id="brushHeight" value="1" min="1" max="64">
+                            <button id="btnHeightUp"><i class="fas fa-chevron-up"></i></button>
+                            <button id="btnHeightDown"><i class="fas fa-chevron-down"></i></button>
+                            <i class="fas fa-search" style="margin-left:16px;margin-right:4px;"></i>
+                            <input type="range" id="zoomSlider" min="0" max="9" value="5" style="width:150px;">
+                            <label>Zoom:</label>
+                            <span id="zoomDisplay">1x</span>
+                            <div style="margin-left:auto;display:flex;align-items:center;gap:4px;">
+                                <span id="tileTranslucencyControls" style="display:none;"><label>Tile Translucency:</label>
+                                <input type="number" id="tileTranslucencyValue" value="0" min="0" max="15" style="width:50px;">
+                                <button id="btnTileTranslucencyUp"><i class="fas fa-chevron-up"></i></button>
+                                <button id="btnTileTranslucencyDown"><i class="fas fa-chevron-down"></i></button></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="splitter-handle" style="width:4px;cursor:col-resize;background:#1a1a1a;flex-shrink:0;"></div>
+                <div class="right-tabs">
+                    <div class="tab-bar">
+                        <div class="tab active" data-tab="tileset">Tileset</div>
+                        <div class="tab" data-tab="tileobjects">Tile Objects</div>
+                        <div class="tab" data-tab="objects">Objects</div>
+                        <div class="tab" data-tab="layers">Layers</div>
+                    </div>
+                    <div class="tab-content">
+                        <div class="tab-panel active" id="tileset-tab">
+                            <div class="tileset-toolbar">
+                                <button title="Edit Tileset Order" id="btnTilesetOrder"><i class="fas fa-list"></i></button>
+                                <select id="tilesetsCombo">
+                                    <option value="pics1.png">pics1.png</option>
+                                    <option value="zlttp_tiles_lightworld_day.png">zlttp_tiles_lightworld_day.png</option>
+                                </select>
+                                <button title="Refresh Tileset" id="btnRefreshTileset"><i class="fas fa-sync"></i></button>
+                                <button title="New Tileset" id="btnNewTileset"><i class="fas fa-file"></i></button>
+                                <button title="Load Tileset" id="btnLoadTileset"><i class="fas fa-folder-open"></i></button>
+                                <button title="Delete Tileset" id="btnDeleteTileset"><i class="fas fa-trash"></i></button>
+                            </div>
+                            <div class="tileset-display">
+                                <canvas id="tilesetCanvas"></canvas>
+                            </div>
+                            <div class="tile-selection-toolbar">
+                                <button title="Tile Definitions" id="btnEditTileset"><i class="fas fa-th"></i></button>
+                                <input type="range" id="tilesetZoomSlider" min="1" max="4" step="0.5" value="2" title="Tileset Zoom" style="width:70px;accent-color:#4a9eff;cursor:pointer;margin-left:8px;">
+                                <span id="tilesetZoomLabel" style="font-size:11px;color:#9a9a9e;font-family:chevyray,monospace;min-width:28px;">2x</span>
+                                <div class="selected-tile-display" style="margin-left:auto;">
+                                    <canvas id="selectedTileCanvas" width="16" height="16"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-panel" id="tileobjects-tab">
+                            <div style="padding:8px;display:flex;flex-direction:column;height:100%;gap:6px;box-sizing:border-box;">
+                                <div>
+                                    <label style="display:block;margin-bottom:4px;font-size:12px;">Group:</label>
+                                    <div style="display:flex;gap:4px;">
+                                        <select id="tileObjectGroup" style="flex:1;background:#2b2b2b;border:1px solid #1a1a1a;color:#e0e0e0;padding:2px 4px;"></select>
+                                        <button id="btnNewTileObjectGroup" title="New Group" style="background:#353535;border:1px solid #1a1a1a;color:#e0e0e0;padding:4px 8px;"><i class="fas fa-plus"></i></button>
+                                        <button id="btnDeleteTileObjectGroup" title="Delete Group" style="background:#353535;border:1px solid #1a1a1a;color:#e0e0e0;padding:4px 8px;"><i class="fas fa-trash"></i></button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label style="display:block;margin-bottom:4px;font-size:12px;">Object:</label>
+                                    <div style="display:flex;gap:4px;">
+                                        <select id="tileObjectName" style="flex:1;background:#2b2b2b;border:1px solid #1a1a1a;color:#e0e0e0;padding:2px 4px;"></select>
+                                        <button id="btnNewTileObject" title="Save Selection as Object" style="background:#353535;border:1px solid #1a1a1a;color:#e0e0e0;padding:4px 8px;"><i class="fas fa-plus"></i></button>
+                                        <button id="btnDeleteTileObject" title="Delete Object" style="background:#353535;border:1px solid #1a1a1a;color:#e0e0e0;padding:4px 8px;"><i class="fas fa-trash"></i></button>
+                                    </div>
+                                </div>
+                                <canvas id="tileObjectPreview" style="border:1px solid #1a1a1a;image-rendering:pixelated;max-width:100%;background:#1a1a1a;min-height:48px;"></canvas>
+                                <button id="btnUseTileObject" style="background:#4472C4;border:1px solid #3060a0;color:#fff;padding:4px 8px;cursor:pointer;font-size:12px;">Use as Stamp</button>
+                            </div>
+                        </div>
+                        <div class="tab-panel" id="layers-tab">
+                            <div style="display:flex;align-items:center;gap:4px;padding:5px 6px;background:#353535;border-bottom:1px solid #0a0a0a;flex-shrink:0;">
+                                <button id="btnAddLayer" style="background:#2b2b2b;border:1px solid #0a0a0a;border-top-color:#555;border-left-color:#555;color:#e0e0e0;padding:5px 10px;cursor:pointer;font-size:12px;font-family:chevyray,monospace;">Add</button>
+                                <button id="btnDeleteLayer" style="background:#2b2b2b;border:1px solid #0a0a0a;border-top-color:#555;border-left-color:#555;color:#e0e0e0;padding:5px 10px;cursor:pointer;font-size:12px;font-family:chevyray,monospace;">Delete</button>
+                            </div>
+                            <div id="layersList" style="flex:1;overflow-y:auto;padding:4px;display:flex;flex-direction:column;gap:3px;"></div>
+                        </div>
+                        <div class="tab-panel" id="objects-tab">
+                            <div style="padding:8px;overflow-y:auto;">
+                                <div class="settings-group">
+                                    <h3>Built-In Objects</h3>
+                                    <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:4px;margin-bottom:8px;">
+                                        <button id="btnPlaceBaddy" title="Graal Baddy" class="object-button"><img src="images/baddy.png" style="width:22px;height:auto;image-rendering:pixelated;display:block;margin:0 auto 2px;"><br>Baddy</button>
+                                        <button id="btnPlaceNPC" title="NPC" class="object-button"><img src="images/npc.png" style="width:22px;height:22px;image-rendering:pixelated;display:block;margin:0 auto 2px;"><br>NPC</button>
+                                        <button id="btnPlaceChest" title="Chest" class="object-button"><img src="images/chest.png" style="width:22px;height:22px;image-rendering:pixelated;display:block;margin:0 auto 2px;"><br>Chest</button>
+                                        <button id="btnPlaceSign" title="Sign" class="object-button"><img src="images/sign.png" style="width:22px;height:22px;image-rendering:pixelated;display:block;margin:0 auto 2px;"><br>Sign</button>
+                                        <button id="btnPlaceLink" title="Link" class="object-button"><i class="fas fa-arrow-right"></i><br>Link</button>
+                                    </div>
+                                </div>
+                                <div class="settings-group">
+                                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                                        <h3 style="margin:0;">NPCs in Level</h3>
+                                        <button id="btnRefreshNPCList" title="Refresh" style="padding:2px 8px;font-size:11px;"><i class="fas fa-sync"></i></button>
+                                    </div>
+                                    <div style="background:#1e1e1e;border:1px solid #444;overflow:auto;max-height:200px;">
+                                        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+                                            <thead><tr style="background:#2a2a2a;color:#aaa;position:sticky;top:0;">
+                                                <th style="padding:3px 6px;text-align:left;">X</th>
+                                                <th style="padding:3px 6px;text-align:left;">Y</th>
+                                                <th style="padding:3px 6px;text-align:left;">Image</th>
+                                            </tr></thead>
+                                            <tbody id="npcListBody"></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
-    </div>
-    <div id="defaultGaniDialog" class="dialog-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); z-index: 10000; justify-content: center; align-items: center;">
-        <div style="background: #2b2b2b; border: 2px solid #1a1a1a; padding: 20px; width: 400px; max-width: 90vw; max-height: 80vh; display: flex; flex-direction: column;">
-            <div style="margin-bottom: 16px; color: #e0e0e0; font-size: 12px; font-family: 'chevyray', monospace;">Select Default GANI</div>
-            <div class="dialog-content" style="flex: 1; overflow-y: auto; border: 1px solid #1a1a1a; background: #353535; min-height: 300px; max-height: 400px;">
-            </div>
-            <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px;">
-                <button id="defaultGaniCancel" style="background: #353535; color: #fff; border: 1px solid #1a1a1a; padding: 8px 16px; cursor: pointer; font-size: 12px; font-family: 'chevyray', monospace;">Cancel</button>
+        <div class="status-bar">
+            <div class="status-info">
+                <span id="mouseCoords">Mouse: 0, 0</span>
+                <span id="selectedTile">Tile: 0</span>
+                <span id="selectionInfo">Selection: (0, 0) -> (0, 0) = (0, 0)</span>
+                <span id="zoomLevel">Zoom: 100%</span>
             </div>
         </div>
-    </div>
+        <input type="file" id="fileInput" accept=".nw,.gmap,.graal,.zelda" multiple style="display:none;">
+        <input type="file" id="imageInput" multiple accept="image/*" style="display:none;">
+        <input type="file" id="folderInput" webkitdirectory style="display:none;">
+        <div id="aboutDialog" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:transparent;z-index:10000;justify-content:center;align-items:center;">
+            <div style="background:#2b2b2b;border:2px solid #1a1a1a;width:540px;max-width:92vw;height:380px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 4px 16px rgba(0,0,0,0.9);">
+                <div class="ed-dlg-title" style="border-bottom:2px solid #0a0a0a;display:flex;align-items:stretch;">
+                    <div style="display:flex;align-items:center;padding:10px 14px;gap:8px;flex:1;"><img src="favicon.ico" style="width:18px;height:18px;image-rendering:pixelated;"><span style="font-size:13px;">Level Editor</span></div>
+                    <div style="display:flex;align-items:stretch;">
+                        <button class="about-tab" data-tab="about" style="background:transparent;border:none;border-left:1px solid #0a0a0a;padding:10px 16px;cursor:pointer;font-size:12px;color:#4a9eff;">About</button>
+                        <button class="about-tab" data-tab="changelog" style="background:transparent;border:none;border-left:1px solid #0a0a0a;padding:10px 16px;cursor:pointer;font-size:12px;color:#888;">Changelog</button>
+                    </div>
+                </div>
+                <div id="aboutTabAbout" style="flex:1;overflow-y:auto;padding:20px;font-size:12px;color:#e0e0e0;line-height:1.6;">
+                    <p style="margin:0 0 12px 0;"><strong>Level Editor Web</strong> <span style="color:#888;font-size:11px;">(alpha)</span></p>
+                    <p style="margin:0 0 12px 0;">A javascript-based level editor for Graal NW files, based around Stefan/39sters editors. Work in progress.</p>
+                    <p style="margin:0 0 12px 0;">Part of Preagonal/OpenGraal &mdash; preserving Graal for future generations.</p>
+                    <p style="margin:0 0 12px 0;border-top:1px solid #0a0a0a;padding-top:12px;font-size:11px;color:#888;"><strong>Credits:</strong><br>Original C++ TilesEditor by <a href="https://www.xing.com/profile/Stefan_Knorr9" target="_blank" style="color:#4a9eff;text-decoration:none;">Stefan Knorr</a><br>Modern C++ version by <a href="https://github.com/lukegrahamSydney/TilesEditor" target="_blank" style="color:#4a9eff;text-decoration:none;">39ster/luke graham</a><br>Javascript Web version by <a href="https://github.com/denveous" target="_blank" style="color:#4a9eff;text-decoration:none;">denveous</a></p>
+                </div>
+                <div id="aboutTabChangelog" style="flex:1;overflow-y:auto;padding:20px;font-size:12px;color:#e0e0e0;line-height:1.6;display:none;">
+                    <div id="changelogContent" style="color:#888;">Loading...</div>
+                </div>
+                <div style="border-top:1px solid #0a0a0a;padding:12px 16px;display:flex;justify-content:flex-end;">
+                    <button id="aboutClose" style="background:#1a1a1a;color:#fff;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;padding:8px 16px;cursor:pointer;font-size:12px;">Close</button>
+                </div>
+            </div>
+        </div>
+        <div id="defaultGaniDialog" class="dialog-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:transparent;z-index:10000;justify-content:center;align-items:center;">
+            <div style="background:#2b2b2b;border:2px solid #555;border-radius:4px;padding:20px;width:400px;max-width:90vw;max-height:80vh;display:flex;flex-direction:column;">
+                <div style="margin-bottom:16px;color:#e0e0e0;font-size:16px;font-weight:bold;">Select Default Level</div>
+                <div class="dialog-content" style="flex:1;overflow-y:auto;border:1px solid #555;background:#353535;min-height:300px;max-height:400px;"></div>
+                <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+                    <button id="defaultGaniCancel" style="background:#555;color:#fff;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;font-size:14px;">Cancel</button>
+                </div>
+            </div>
+        </div>
+        <div id="floatingTooltip"></div>
+        <div id="tilesetOrderDialog" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;justify-content:center;align-items:center;">
+            <div style="background:#2b2b2b;border:1px solid #555;width:300px;display:flex;flex-direction:column;font-size:13px;color:#ccc;">
+                <div id="tilesetOrderTitlebar" style="padding:8px 12px;background:#353535;display:flex;align-items:center;gap:8px;user-select:none;cursor:move;">
+                    <i class="fas fa-list" style="flex-shrink:0;"></i>
+                    <span style="flex:1;">Order Tilesets</span>
+                    <button onclick="document.getElementById('tilesetOrderDialog').style.display='none'" style="background:none;border:none;color:#ccc;cursor:pointer;font-size:14px;padding:0 2px;">&#x2715;</button>
+                </div>
+                <div style="display:flex;gap:0;">
+                    <div id="tilesetOrderListBox" style="flex:1;background:#1e1e1e;overflow-y:auto;height:220px;border-right:1px solid #444;"></div>
+                    <div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:8px 6px;gap:6px;">
+                        <button onclick="window._editor&&window._editor.tilesetMoveUp()" style="background:#3a3a3a;border:1px solid #555;color:#4fc3f7;width:28px;height:28px;cursor:pointer;font-size:14px;" title="Move Up">&#9650;</button>
+                        <button onclick="window._editor&&window._editor.tilesetMoveDown()" style="background:#3a3a3a;border:1px solid #555;color:#4fc3f7;width:28px;height:28px;cursor:pointer;font-size:14px;" title="Move Down">&#9660;</button>
+                    </div>
+                </div>
+                <div style="padding:8px;display:flex;justify-content:flex-end;border-top:1px solid #444;">
+                    <button onclick="document.getElementById('tilesetOrderDialog').style.display='none'" style="background:#3a3a3a;border:1px solid #555;color:#ccc;padding:4px 16px;cursor:pointer;">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>`;
+})();
+</script>
 </body>
 </html>
-

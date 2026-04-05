@@ -1,5 +1,15 @@
 [
   {
+    "version": "2.1.3",
+    "date": "2026-04-01",
+    "changes": [
+      "Tauri: native file dialogs, workspace indexing, lazy image loading from disk (no RAM preload), 13MB exe",
+      "Tauri: FILENAMECACHE.txt — workspace file index persisted to disk (classic Graal format: relative/path,crc32), no rescan on restart",
+      "Tauri: workspace scan streams results progressively via event-based chunks, UI stays responsive during indexing",
+      "PeerJS P2P collaboration — real-time multi-user editing with cursor sync, sprite changes, and frame updates"
+    ]
+  },
+  {
     "version": "2.1.2b",
     "date": "2026-03-29",
     "changes": [

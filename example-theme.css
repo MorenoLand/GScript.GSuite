@@ -15,6 +15,9 @@
     --timeline-frame-selected-bg: #003320;
     --timeline-frame-multi-bg: #001a3a;
     --quadrant-divider: #9900ff;
+    --timeline-ruler-bg: #1a0033;
+    --timeline-ruler-tick: #9900ff;
+    --timeline-ruler-text: #cc88ff;
     --selection-border-color: #ff00ff;
     --selection-border-thickness: 2;
     --selection-border-opacity: 1;
@@ -111,7 +114,7 @@ input[type=range]::-moz-range-thumb { background: #cc00ff !important; border: 3p
 .canvas-controls button.active { background: #cc00ff !important; color: #fff !important; box-shadow: 0 0 12px #cc00ffaa !important; }
 
 /* ── Timeline ───────────────────────────────────────────────── */
-.timeline-wrapper { min-height: 160px !important; }
+.timeline-container { min-height: 160px !important; }
 .timeline-container { background: linear-gradient(180deg, #0d001a, #0a0015) !important; border-top: 2px solid #ff00ff44 !important; }
 .timeline-header { background: #080018 !important; border-bottom: 1px solid #220044 !important; padding: 5px 8px !important; }
 .timeline-header label, .timeline-header .frame-count, .timeline-header span { color: #cc88ff !important; }
