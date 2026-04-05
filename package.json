@@ -1,7 +1,7 @@
 {
-  "name": "ganieditorweb",
+  "name": "graalsuite",
   "version": "1.0.0",
-  "description": "A web-based editor for Graal animation files (.gani). Lets you create and edit animations directly in your browser.",
+  "description": "GraalSuite - A web-based suite of tools for Graal Online development.",
   "main": "anieditor.js",
   "scripts": {
     "dev": "npx tauri dev",
@@ -11,16 +11,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/MorenoLand/GaniEditorWeb.git"
+    "url": "git+https://github.com/MorenoLand/GScript.GraalSuite.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/MorenoLand/GaniEditorWeb/issues"
+    "url": "https://github.com/MorenoLand/GScript.GraalSuite/issues"
   },
-  "homepage": "https://github.com/MorenoLand/GaniEditorWeb#readme",
+  "homepage": "https://github.com/MorenoLand/GScript.GraalSuite#readme",
   "devDependencies": {
     "@tauri-apps/cli": "^2.10.1"
   },

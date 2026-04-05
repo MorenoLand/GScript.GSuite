@@ -914,6 +914,12 @@ class LevelEditor {
                 this.selectionTiles = null; this.resizeOrigTiles = null; this._floatingStamp = false; this._floatingStampCanvas = false; this._stampTilesLifted = false;
                 this.requestRender();
             }
+            this.isPanning = true;
+            this.panStartX = e.clientX;
+            this.panStartY = e.clientY;
+            this.panStartPanX = this.panX;
+            this.panStartPanY = this.panY;
+            e.preventDefault();
         }
         if (e.button === 1) {
             this.isPanning = true;
@@ -1277,7 +1283,7 @@ class LevelEditor {
             this._showLinkPickConfirm({ nextLevel: levelName, nextX: String(x1), nextY: String(y1), x1, y1, x2, y2 });
             this.requestRender(); return;
         }
-        if (e.button === 1 && this.isPanning) {
+        if ((e.button === 1 || e.button === 2) && this.isPanning) {
             this.isPanning = false;
             return;
         }
