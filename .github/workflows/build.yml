@@ -17,7 +17,7 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             upx: false
-          - os: macos-13
+          - os: macos-12
             target: x86_64-apple-darwin
             upx: false
           - os: ubuntu-22.04
@@ -78,8 +78,19 @@ jobs:
         if: matrix.upx && matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Recurse "src-tauri/target/${{ matrix.target }}/release/*.exe" | Where-Object { $_.Name -notlike "*setup*" } | Select-Object -First 1
+          $exe = Get-ChildItem "src-tauri/target/${{ matrix.target }}/release/" -Filter "*.exe" | Where-Object { $_.Name -notlike "*setup*" } | Select-Object -First 1
           if ($exe) { upx --best --lzma $exe.FullName }
+
+      - name: Upload portable exe (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem "src-tauri/target/${{ matrix.target }}/release/" -Filter "*.exe" | Where-Object { $_.Name -notlike "*setup*" } | Select-Object -First 1
+          if ($exe) {
+            gh release upload "${{ github.ref_name }}" $exe.FullName --clobber
+          }
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: UPX compress (Linux)
         if: matrix.upx && matrix.os == 'ubuntu-22.04'

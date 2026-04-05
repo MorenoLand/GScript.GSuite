@@ -51,6 +51,8 @@ function parseNPCScript(script) {
     const ss2M = script.match(/setshape2\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*\{([^}]*)\}/is); if (ss2M) { const tiles = ss2M[3].split(',').map(v => parseInt(v.trim())).filter(v => !isNaN(v)); r.setshape2 = { w: +ss2M[1], h: +ss2M[2], tiles }; }
     const ceM = script.match(/setcoloreffect\s*[(]?\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)/i);
     if (ceM) r.coloreffect = [parseFloat(ceM[1]), parseFloat(ceM[2]), parseFloat(ceM[3]), parseFloat(ceM[4])];
+    for (const m of script.matchAll(/this\.(x|y)\s*(\+|-)=\s*(-?[\d.]+)/gi)) { const ax=m[1]==='x',sg=m[2]==='-'?-1:1,v=parseFloat(m[3]); if(ax)r.xOff=(r.xOff||0)+sg*v; else r.yOff=(r.yOff||0)+sg*v; }
+    for (const m of script.matchAll(/this\.(x|y)\s*=\s*\(\s*this\.\1\s*(\+|-)\s*([\d.]+)\s*\)/gi)) { const ax=m[1]==='x',sg=m[2]==='-'?-1:1,v=parseFloat(m[3]); if(ax)r.xOff=(r.xOff||0)+sg*v; else r.yOff=(r.yOff||0)+sg*v; }
     for (const m of script.matchAll(/setcharprop\s+([^,;]+)\s*,\s*([^;]+)\s*;/gi)) {
         const prop = m[1].trim(), val = m[2].trim().replace(/^["']|["']$/g, '');
         if (prop === '#3') r.HEAD = val;
@@ -639,6 +641,7 @@ class LevelEditor {
 
         document.getElementById('btnNew').addEventListener('click', () => this.newLevel());
         document.getElementById('btnOpen').addEventListener('click', () => this.openLevel());
+        document.getElementById('btnOpenDefault')?.addEventListener('click', () => this.openDefaultLevelDialog());
         document.getElementById('btnSave').addEventListener('click', () => this.saveLevel());
         document.getElementById('btnSaveAs').addEventListener('click', () => this.saveLevelAs());
         document.getElementById('btnTilesetOrder').addEventListener('click', () => { this.tilesetOrder(); });
@@ -1893,20 +1896,18 @@ class LevelEditor {
         tx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
         const imageData = tx.getImageData(0, 0, sw, sh);
         const data = imageData.data;
-        if (!/light/i.test(imgName)) {
-            let dark = 0, opaque = 0, brightGray = 0; const totalPx = data.length / 4;
-            for (let i = 0; i < data.length; i += 4) {
-                if (data[i+3] < 10) continue;
-                opaque++;
-                const sat = Math.max(data[i], data[i+1], data[i+2]) - Math.min(data[i], data[i+1], data[i+2]);
-                const br = (data[i]+data[i+1]+data[i+2])/3;
-                if (sat < 20 && br < 60) dark++;
-                if (sat < 40 && br > 100) brightGray++;
-            }
-            const solidDark = opaque > 50 && dark / opaque > 0.45;
-            const transLight = opaque > 10 && opaque / totalPx < 0.6 && brightGray / opaque > 0.5;
-            if (!solidDark && !transLight) { this._lightMapCache.set(cacheKey, null); return null; }
+        let dark = 0, opaque = 0, brightGray = 0; const totalPx = data.length / 4;
+        for (let i = 0; i < data.length; i += 4) {
+            if (data[i+3] < 10) continue;
+            opaque++;
+            const sat = Math.max(data[i], data[i+1], data[i+2]) - Math.min(data[i], data[i+1], data[i+2]);
+            const br = (data[i]+data[i+1]+data[i+2])/3;
+            if (sat < 20 && br < 60) dark++;
+            if (sat < 40 && br > 100) brightGray++;
         }
+        const solidDark = opaque > 50 && dark / opaque > 0.45;
+        const transLight = opaque > 10 && opaque / totalPx < 0.6 && brightGray / opaque > 0.5;
+        if (!solidDark && !transLight) { this._lightMapCache.set(cacheKey, null); return null; }
         for (let i = 0; i < data.length; i += 4) {
             const brightness = (data[i] + data[i+1] + data[i+2]) / 3;
             data[i+3] = brightness < 30 ? 0 : Math.floor(Math.min(255, brightness * 1.2) * (data[i+3] / 255) * 0.7);
@@ -3460,7 +3461,7 @@ class LevelEditor {
     }
 
     _defaultPlayerSettings() {
-        return { HEAD: 'head0.png', BODY: 'body.png', SHIELD: 'no-shield.png', SWORD: 'sword1.png', ATTR1: '', nick: '', colors: [12, null, null, null, null], ganis: { idle: 'idle.gani', walk: 'walk.gani', sit: 'sit.gani', push: 'push.gani', pull: 'pull.gani', grab: 'grab.gani', sword: 'sword.gani', sleep: 'sleep.gani' } };
+        return { HEAD: 'head0.png', BODY: 'body.png', SHIELD: 'no-shield.png', SWORD: 'sword1.png', ATTR1: '', nick: 'unknown', colors: [12, null, null, null, null], ganis: { idle: 'idle.gani', walk: 'walk.gani', sit: 'sit.gani', push: 'push.gani', pull: 'pull.gani', grab: 'grab.gani', sword: 'sword.gani', sleep: 'sleep.gani' } };
     }
 
     openPlayerCustomizeDialog() {
@@ -4217,7 +4218,7 @@ class LevelEditor {
         this.saveSessionDebounced();
     }
 
-    openFromText(text, name) {
+    openFromText(text, name, filePath = null) {
         const ext = name.split('.').pop().toLowerCase();
         if (ext === 'gmap') { this.openGmapText(text, name); return; }
         let level;
@@ -4226,11 +4227,69 @@ class LevelEditor {
         if (!level) return;
         level.tilesetImage = this.level?.tilesetImage || null;
         level.tilesetName = level.tilesetName || 'pics1.png';
-        this.levels.push({ level, name, modified: false });
+        this.levels.push({ level, name, modified: false, filePath });
         this.currentLevelIndex = this.levels.length - 1;
         this.level = level;
         this.undoStack = []; this.redoStack = [];
         this.loadDefaultTileset(); this.addLevelTab(this.currentLevelIndex); this.updateLevelTabs(); this.updateUI(); this.render(); this.saveSessionDebounced();
+    }
+
+    openFromBuffer(buffer, name, filePath = null) {
+        const level = Level.loadFromGraal(buffer);
+        if (!level) return;
+        level.tilesetImage = this.level?.tilesetImage || null;
+        level.tilesetName = 'pics1.png';
+        this.levels.push({ level, name, modified: false, filePath });
+        this.currentLevelIndex = this.levels.length - 1;
+        this.level = level;
+        this.undoStack = []; this.redoStack = [];
+        this.loadDefaultTileset(); this.addLevelTab(this.currentLevelIndex); this.updateLevelTabs(); this.updateUI(); this.render(); this.saveSessionDebounced();
+    }
+
+    async openDefaultLevelDialog() {
+        const dlg = document.getElementById('defaultGaniDialog');
+        const container = dlg?.querySelector('.dialog-content');
+        if (!dlg || !container) return;
+        container.innerHTML = `<div style="color:#888;padding:20px;text-align:center;font-family:chevyray,monospace;font-size:12px;">Loading...</div>`;
+        dlg.style.display = 'flex';
+        const fallback = ['cave1.zelda','house1.graal','house1.zelda','onlinestartlocal.nw'];
+        let files = fallback;
+        try {
+            if (_isTauri) {
+                const entries = await _tauri.fs.readDir('levels').catch(() => null);
+                if (entries) files = entries.map(e => e.name).filter(n => n && /\.(nw|zelda|graal|gmap)$/i.test(n));
+            } else {
+                let r = await fetch('levels/index.json').catch(() => null);
+                if (!r?.ok) r = await fetch('levels/').catch(() => null);
+                if (r?.ok) { const d = await r.json().catch(() => null); if (Array.isArray(d)) files = d; }
+            }
+        } catch(e) {}
+        container.innerHTML = '';
+        files.forEach(fileName => {
+            const item = document.createElement('div');
+            item.style.cssText = 'padding:12px 16px;cursor:pointer;color:#e0e0e0;font-size:12px;font-family:chevyray,monospace;border-bottom:1px solid #1a1a1a;';
+            item.textContent = fileName;
+            item.onmouseenter = () => item.style.background = '#353535';
+            item.onmouseleave = () => item.style.background = '';
+            item.onclick = async () => {
+                dlg.style.display = 'none';
+                const ext = fileName.split('.').pop().toLowerCase();
+                try {
+                    if (ext === 'graal' || ext === 'zelda') {
+                        const buf = await fetch(`levels/${fileName}`).then(r => r.arrayBuffer());
+                        const lvl = Level.loadFromGraal(buf);
+                        if (lvl) { lvl.tilesetImage = this.level?.tilesetImage||null; lvl.tilesetName='pics1.png'; this.levels.push({level:lvl,name:fileName,modified:false}); this.currentLevelIndex=this.levels.length-1; this.level=lvl; this.undoStack=[]; this.redoStack=[]; this.loadDefaultTileset(); this.addLevelTab(this.currentLevelIndex); this.updateLevelTabs(); this.updateUI(); this.render(); this.saveSessionDebounced(); }
+                    } else {
+                        const text = await fetch(`levels/${fileName}`).then(r => r.text());
+                        this.openFromText(text, fileName);
+                    }
+                } catch(e) {}
+            };
+            container.appendChild(item);
+        });
+        if (!files.length) container.innerHTML = `<div style="color:#666;padding:20px;text-align:center;font-family:chevyray,monospace;font-size:12px;">No levels found</div>`;
+        document.getElementById('defaultGaniCancel').onclick = () => { dlg.style.display = 'none'; };
+        dlg.onclick = e => { if (e.target === dlg) dlg.style.display = 'none'; };
     }
 
     openLevel() {
@@ -4268,33 +4327,58 @@ class LevelEditor {
     async _downloadFile(filename, content, mime = 'text/plain') {
         if (_isTauri) {
             const path = await _tauri.dialog.save({ defaultPath: filename, title: 'Save File' }).catch(() => null);
-            if (!path) return;
-            if (content instanceof Blob) { const buf = await content.arrayBuffer(); await _tauri.fs.writeBinaryFile(path, new Uint8Array(buf)).catch(() => {}); }
-            else { await _tauri.fs.writeTextFile(path, content).catch(() => {}); }
-            return;
+            if (!path) return null;
+            await this._writeTauriFile(path, content);
+            return path;
         }
         const url = URL.createObjectURL(new Blob([content], { type: mime }));
         const a = Object.assign(document.createElement('a'), { href: url, download: filename });
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
         URL.revokeObjectURL(url);
+        return null;
     }
 
-    saveLevel() {
+    async _writeTauriFile(path, content) {
+        if (content instanceof Blob) { const buf = await content.arrayBuffer(); await _tauri.fs.writeBinaryFile(path, new Uint8Array(buf)).catch(() => {}); }
+        else if (content instanceof ArrayBuffer) { await _tauri.fs.writeBinaryFile(path, new Uint8Array(content)).catch(() => {}); }
+        else { await _tauri.fs.writeTextFile(path, content).catch(() => {}); }
+    }
+
+    async saveLevel() {
         const entry = this.levels[this.currentLevelIndex];
         if (entry?.gmapGrid) { this._saveGmap(entry); return; }
         const name = entry?.name || 'level';
         const ext = name.split('.').pop().toLowerCase();
-        if (ext === 'graal' || ext === 'zelda') { this._downloadFile(name, this.level.saveToGraal(ext === 'zelda'), 'application/octet-stream'); this.saveSessionDebounced(); return; }
+        const isBin = ext === 'graal' || ext === 'zelda';
+        if (_isTauri && entry?.filePath) {
+            await this._writeTauriFile(entry.filePath, isBin ? this.level.saveToGraal(ext === 'zelda') : this.level.saveToNW());
+            if (entry) { entry.modified = false; this.updateLevelTabs(); }
+            this.saveSessionDebounced();
+            return;
+        }
+        if (isBin) { const p = await this._downloadFile(name, this.level.saveToGraal(ext === 'zelda'), 'application/octet-stream'); if (p && entry) entry.filePath = p; this.saveSessionDebounced(); return; }
         const filename = name.endsWith('.nw') ? name : name.startsWith('new ') ? null : name + '.nw';
         if (!filename) { this.saveLevelAs(); return; }
-        this._downloadFile(filename, this.level.saveToNW());
+        const p = await this._downloadFile(filename, this.level.saveToNW());
+        if (p && entry) entry.filePath = p;
         this.saveSessionDebounced();
     }
 
-    saveLevelAs() {
+    async saveLevelAs() {
         const entry = this.levels[this.currentLevelIndex];
         if (entry?.gmapGrid) { this._saveGmap(entry); return; }
         const current = entry?.name || '';
+        if (_isTauri) {
+            const ext = current.split('.').pop().toLowerCase();
+            const isBin = ext === 'graal' || ext === 'zelda';
+            const suggested = current || 'level.nw';
+            const path = await _tauri.dialog.save({ defaultPath: suggested, title: 'Save As' }).catch(() => null);
+            if (!path) return;
+            await this._writeTauriFile(path, isBin ? this.level.saveToGraal(ext === 'zelda') : this.level.saveToNW());
+            if (entry) { entry.filePath = path; entry.name = path.replace(/\\/g,'/').split('/').pop(); entry.modified = false; this.updateLevelTabs(); }
+            this.saveSessionDebounced();
+            return;
+        }
         const suggested = current.endsWith('.nw') ? current : current.startsWith('new ') ? 'level.nw' : current + '.nw';
         this._promptRename(this.currentLevelIndex, suggested, true);
     }
@@ -4833,7 +4917,15 @@ class LevelEditor {
     }
 
     deleteTileset() {
-        console.log('Delete tileset clicked');
+        const combo = document.getElementById('tilesetsCombo');
+        if (!combo || !combo.value) return;
+        const name = combo.value;
+        if (/^(pics1|zlttp)\.(png|gif)$/i.test(name)) return;
+        if (this._tilesetDataCache) { delete this._tilesetDataCache[name]; try { localStorage.setItem('levelEditor_tilesetCache', JSON.stringify(this._tilesetDataCache)); } catch(e) {} }
+        const opt = [...combo.options].find(o => o.value === name);
+        if (opt) opt.remove();
+        if (combo.options.length > 0) { combo.value = combo.options[0].value; this.selectTileset(combo.options[0].value); }
+        this._refreshTilesetOrderList?.();
     }
 
     editTileset() {
@@ -5355,7 +5447,8 @@ class LevelEditor {
     }
 
     drawNPC(x, y, tw, th, obj, showChars = true) {
-        if (!obj._shapeCache) { const sp = parseNPCScript(obj.properties?.code || ''); obj._shapeCache = sp.setshape2 ? { type: 2, w: sp.setshape2.w, h: sp.setshape2.h, tiles: sp.setshape2.tiles } : sp.setshape ? { type: 1, w: sp.setshape.w, h: sp.setshape.h } : { type: 0 }; if (sp.imgpart) obj._imgpart = sp.imgpart; if (sp.stretchx !== undefined) obj._stretchx = sp.stretchx; if (sp.stretchy !== undefined) obj._stretchy = sp.stretchy; if (sp.coloreffect) obj._coloreffect = sp.coloreffect; else obj._coloreffect = null; if (sp.zoom !== undefined) obj._npcZoom = sp.zoom; }
+        if (!obj._shapeCache) { const sp = parseNPCScript(obj.properties?.code || ''); obj._shapeCache = sp.setshape2 ? { type: 2, w: sp.setshape2.w, h: sp.setshape2.h, tiles: sp.setshape2.tiles } : sp.setshape ? { type: 1, w: sp.setshape.w, h: sp.setshape.h } : { type: 0 }; if (sp.imgpart) obj._imgpart = sp.imgpart; if (sp.stretchx !== undefined) obj._stretchx = sp.stretchx; if (sp.stretchy !== undefined) obj._stretchy = sp.stretchy; if (sp.coloreffect) obj._coloreffect = sp.coloreffect; else obj._coloreffect = null; if (sp.zoom !== undefined) obj._npcZoom = sp.zoom; obj._xOff = sp.xOff || 0; obj._yOff = sp.yOff || 0; }
+        const _ox = x + (obj._xOff||0) * tw, _oy = y + (obj._yOff||0) * th;
         const imgName = obj?._imgpart?.img || obj?.properties?.image;
         if (imgName) {
             if (!this._fcLower && this.fileCache?.images?.size) this._fcLower = new Map([...this.fileCache.images.keys()].map(k => [k.toLowerCase(), k]));
@@ -5430,14 +5523,14 @@ class LevelEditor {
                 } else { this.ctx.drawImage(_lc || img, _lc ? 0 : sx, _lc ? 0 : sy, sw, sh, dx, dy, _dw, _dh); }
                 this.ctx.restore();
             };
-            if (cached?._mngDone && cached.complete && cached.naturalWidth > 0) { obj._imgW = _ip ? _ip.w : cached.naturalWidth; obj._imgH = _ip ? _ip.h : cached.naturalHeight; _drawImg(cached, _ip ? _ip.x : 0, _ip ? _ip.y : 0, obj._imgW, obj._imgH, x, y); return; }
+            if (cached?._mngDone && cached.complete && cached.naturalWidth > 0) { obj._imgW = _ip ? _ip.w : cached.naturalWidth; obj._imgH = _ip ? _ip.h : cached.naturalHeight; _drawImg(cached, _ip ? _ip.x : 0, _ip ? _ip.y : 0, obj._imgW, obj._imgH, _ox, _oy); return; }
             if (!cached || cached._src !== src) { cached = new Image(); cached._src = src; cached.src = src; cached.onload = () => this.requestRender(); this._objImgCache.set(imgName, cached); }
-            if (cached.complete && cached.naturalWidth > 0) { obj._imgW = _ip ? _ip.w : cached.naturalWidth; obj._imgH = _ip ? _ip.h : cached.naturalHeight; _drawImg(cached, _ip ? _ip.x : 0, _ip ? _ip.y : 0, obj._imgW, obj._imgH, x, y); return; }
+            if (cached.complete && cached.naturalWidth > 0) { obj._imgW = _ip ? _ip.w : cached.naturalWidth; obj._imgH = _ip ? _ip.h : cached.naturalHeight; _drawImg(cached, _ip ? _ip.x : 0, _ip ? _ip.y : 0, obj._imgW, obj._imgH, _ox, _oy); return; }
         }
         const script = obj?.properties?.code || '';
         if (showChars && /showcharacter\s*\(\s*\)|showcharacter\s*;/i.test(script)) {
             const sp = parseNPCScript(script);
-            this._drawGaniNPC(x, y, sp.gani || 'idle.gani', sp.dir ?? 2, 0, obj, sp);
+            this._drawGaniNPC(_ox, _oy, sp.gani || 'idle.gani', sp.dir ?? 2, 0, obj, sp);
             if (sp.nick || sp.chat) {
                 const _gs2 = this._getSettings();
                 const _nSz = Math.max(_gs2.nickFontSize * this.zoom, 8), _cSz = Math.max(_gs2.chatFontSize * this.zoom, 8);
@@ -5881,7 +5974,7 @@ class LevelEditor {
         box.querySelector('#npcSave').onclick = () => {
             p.code = ed ? ed.getValue() : '';
             p.image = box.querySelector('#npcImageInput').value;
-            delete obj._ganiOX; delete obj._ganiOY; delete obj._imgW; delete obj._imgH; delete obj._shapeCache; delete obj._imgpart; delete obj._stretchx; delete obj._stretchy; delete obj._tightBounds;
+            delete obj._ganiOX; delete obj._ganiOY; delete obj._imgW; delete obj._imgH; delete obj._shapeCache; delete obj._imgpart; delete obj._stretchx; delete obj._stretchy; delete obj._tightBounds; delete obj._xOff; delete obj._yOff;
             close();
             this.applyTiledefFromNPCs();
             this.render();

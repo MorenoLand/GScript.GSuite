@@ -76,14 +76,14 @@
 .dialog-titlebar i.fas { display:block !important; filter:var(--dialog-icon-filter, var(--icon-filter, brightness(0) invert(1))) !important; opacity:1 !important; flex-shrink:0; transform:translateY(-2px); }
 .dialog-titlebar img { transform:translateY(-3px); }
 .dialog-titlebar img.titlebar-logo { filter:none !important; }
-@font-face { font-family:"Silkscreen"; src:url("../fonts//Silkscreen-Regular.ttf") format("truetype"); font-weight:normal; }
-@font-face { font-family:"Silkscreen"; src:url("../fonts//Silkscreen-Bold.ttf") format("truetype"); font-weight:bold; }
-@font-face { font-family:"PressStart2P"; src:url("../fonts//PressStart2P-Regular.ttf") format("truetype"); font-weight:normal; }
-@font-face { font-family:"Tempus Sans ITC"; src:url("../fonts//tempus-sans-itc.ttf") format("truetype"); font-weight:normal; }
-@font-face { font-family:"TempusSansITC"; src:url("../fonts//tempus-sans-itc.ttf") format("truetype"); font-weight:normal; }
-@font-face { font-family:"MesloLGS NF"; src:url("../fonts//MesloLGS NF Regular.ttf") format("truetype"); font-weight:normal; }
-@font-face { font-family:"chevyray"; src:url("../fonts//chevyray.ttf") format("truetype"); font-weight:normal; }
-@font-face { font-family:"chevyrayOeuf"; src:url("../fonts//chevyrayOeuf.ttf") format("truetype"); font-weight:normal; }
+@font-face { font-family:"Silkscreen"; src:url("../fonts/Silkscreen-Regular.ttf") format("truetype"); font-weight:normal; }
+@font-face { font-family:"Silkscreen"; src:url("../fonts/Silkscreen-Bold.ttf") format("truetype"); font-weight:bold; }
+@font-face { font-family:"PressStart2P"; src:url("../fonts/PressStart2P-Regular.ttf") format("truetype"); font-weight:normal; }
+@font-face { font-family:"Tempus Sans ITC"; src:url("../fonts/tempus-sans-itc.ttf") format("truetype"); font-weight:normal; }
+@font-face { font-family:"TempusSansITC"; src:url("../fonts/tempus-sans-itc.ttf") format("truetype"); font-weight:normal; }
+@font-face { font-family:"MesloLGS NF"; src:url("../fonts/MesloLGS NF Regular.ttf") format("truetype"); font-weight:normal; }
+@font-face { font-family:"chevyray"; src:url("../fonts/chevyray.ttf") format("truetype"); font-weight:normal; }
+@font-face { font-family:"chevyrayOeuf"; src:url("../fonts/chevyrayOeuf.ttf") format("truetype"); font-weight:normal; }
 * { margin:0; padding:0; box-sizing:border-box; image-rendering:pixelated; image-rendering:-moz-crisp-edges; image-rendering:crisp-edges; }
 @keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
 .loading-favicon { width:32px; height:32px; animation:spin 1s linear infinite; image-rendering:pixelated; flex-shrink:0; }

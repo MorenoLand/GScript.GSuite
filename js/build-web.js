@@ -23,7 +23,16 @@ function cp(from, to) {
 rm(dist);
 
 ['index.html', 'favicon.ico', 'example-theme.css', 'changelog.json'].forEach(f => cp(f));
-['ganis', 'fonts', 'icons', 'images', 'sounds', 'vendor', 'js', 'css'].forEach(d => cp(d));
+['ganis', 'fonts', 'icons', 'images', 'sounds', 'vendor', 'js', 'css', 'levels'].forEach(d => cp(d));
 cp('node_modules/monaco-editor/min/vs', 'monaco-editor/min/vs');
+
+
+const levelsDir = path.join(root, 'levels');
+const levelFiles = fs.readdirSync(levelsDir).filter(f => /\.(nw|zelda|graal|gmap)$/i.test(f));
+fs.writeFileSync(path.join(dist, 'levels', 'index.json'), JSON.stringify(levelFiles));
+
+const ganisDir = path.join(root, 'ganis');
+const ganiFiles = fs.readdirSync(ganisDir).filter(f => f.endsWith('.gani'));
+fs.writeFileSync(path.join(dist, 'ganis', 'index.json'), JSON.stringify(ganiFiles));
 
 console.log('Build complete: dist/');
