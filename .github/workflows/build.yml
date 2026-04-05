@@ -93,7 +93,7 @@ jobs:
         run: |
           $exe = Get-ChildItem "src-tauri/target/${{ matrix.target }}/release/" -Filter "*.exe" | Where-Object { $_.Name -notlike "*setup*" } | Select-Object -First 1
           if ($exe) {
-            gh release upload "${{ github.ref_name }}" $exe.FullName --clobber
+            gh release upload "${{ github.event.inputs.version || github.ref_name }}" $exe.FullName --clobber
           }
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
