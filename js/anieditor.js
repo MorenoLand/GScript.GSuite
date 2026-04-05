@@ -2411,8 +2411,8 @@ function loadImage(file) {
     });
 }
 
-const _isTauri = window.__TAURI__ != null;
-const _tauri = _isTauri ? window.__TAURI__ : null;
+var _isTauri = window.__TAURI__ != null;
+var _tauri = _isTauri ? window.__TAURI__ : null;
 let workspacePathIndex = new Map();
 async function loadImageFromPath(filePath, name) {
     const data = await _tauri.fs.readFile(filePath);

@@ -1,6 +1,6 @@
 
-const _isTauri = window.__TAURI__ != null;
-const _tauri = _isTauri ? window.__TAURI__ : null;
+var _isTauri = window.__TAURI__ != null;
+var _tauri = _isTauri ? window.__TAURI__ : null;
 
 const _DEFAULT_KB = {
     undo:'ctrl+z', redo:'ctrl+y', save:'ctrl+s', copy:'ctrl+c', cut:'ctrl+x', paste:'ctrl+v',
@@ -42,7 +42,7 @@ function parseNPCScript(script) {
     const td2Ms = [...script.matchAll(/addtiledef2\s*\(\s*["']([^"']+)["']\s*,\s*["']([^"']+)["']\s*,\s*(\d+)\s*,\s*(\d+)/gi)];
     if (td2Ms.length) r.tiledefs2 = td2Ms.map(m => ({ img: m[1].trim(), levelstart: m[2].trim(), x: +m[3], y: +m[4] }));
     const nM = script.match(/this\.nick(?:name)?\s*=\s*["']([^"']*)["']/i); if (nM) r.nick = nM[1];
-    const sipM = script.match(/setimgpart\s*\(\s*["']([^"']+)["']\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+    const sipM = script.match(/set(?:img|gif)part\s*\(\s*["']([^"']+)["']\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
     if (sipM) r.imgpart = { img: sipM[1], x: +sipM[2], y: +sipM[3], w: +sipM[4], h: +sipM[5] };
     const szM = script.match(/setzoomeffect\s*[(]?\s*(-?[\d.]+)/i); if (szM) r.zoom = parseFloat(szM[1]);
     const sxM = script.match(/this\.stretchx\s*=\s*(-?[\d.]+)/i); if (sxM) r.stretchx = parseFloat(sxM[1]);

@@ -1,6 +1,6 @@
 [package]
 name = "GraalSuite"
-version = "0.1.1"
+version = "0.1.2"
 description = "GraalSuite — Graal level, animation, and map editor"
 authors = ["Denveous"]
 license = ""
@@ -24,6 +24,8 @@ tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 [profile.release]
 opt-level = "z"

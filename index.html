@@ -93,10 +93,10 @@
             window.dispatchEvent(new Event('load'));
             if (!document.querySelector('script[src="js/setshape2editor.js"]')) { const ss2s = document.createElement('script'); ss2s.src = 'js/setshape2editor.js'; document.head.appendChild(ss2s); }
             if (!document.querySelector('script[src="js/gmapgenerator.js"]')) { const gmgs = document.createElement('script'); gmgs.src = 'js/gmapgenerator.js'; document.head.appendChild(gmgs); }
-            if (window._pendingOpenFile && typeof _tauri !== 'undefined') {
+            if (window._pendingOpenFile && _isTauri) {
                 const fp = window._pendingOpenFile; window._pendingOpenFile = null;
                 setTimeout(async () => {
-                    const text = await _tauri.fs.readTextFile(fp).catch(() => null);
+                    const text = await window.__TAURI__.fs.readTextFile(fp).catch(() => null);
                     if (text && typeof parseGani === 'function' && typeof addTab === 'function') { const ani = parseGani(text); if (ani) { ani.fileName = fp.replace(/\\/g,'/').split('/').pop(); addTab(ani, ani.fileName); } }
                 }, 500);
             }
@@ -167,11 +167,40 @@
                 setTimeout(() => _tauriOpenFile(fp), 800);
             }
             if (_isTauri) {
+                setTimeout(async () => {
+                    try {
+                        const { check } = window.__TAURI__.updater;
+                        const update = await check();
+                        if (update?.available) {
+                            const ok = confirm(`Update ${update.version} available. Install now?`);
+                            if (ok) { await update.downloadAndInstall(); window.__TAURI__.process.relaunch(); }
+                        }
+                    } catch(e) {}
+                }, 3000);
+            }
+            if (_isTauri) {
                 window.__TAURI__.event.listen('open-file', e => {
                     const fp = e.payload;
                     if (!fp) return;
                     if (window.levelEditor) _tauriOpenFile(fp);
                     else setTimeout(() => _tauriOpenFile(fp), 1000);
+                });
+                window.__TAURI__.event.listen('tauri://drag-drop', async e => {
+                    const paths = e.payload?.paths || [];
+                    for (const fp of paths) {
+                        const name = fp.replace(/\\/g,'/').split('/').pop();
+                        const ext = name.split('.').pop().toLowerCase();
+                        if (ext === 'gani') {
+                            if (_currentApp !== 'gani') { window._pendingOpenFile = fp; injectGani(); }
+                            else {
+                                const text = await window.__TAURI__.fs.readTextFile(fp).catch(() => null);
+                                if (text && typeof parseGani === 'function' && typeof addTab === 'function') { const ani = parseGani(text); if (ani) { ani.fileName = name; addTab(ani, name); } }
+                            }
+                        } else if (/^(nw|zelda|graal|gmap)$/.test(ext)) {
+                            if (_currentApp !== 'level') { window._pendingOpenFile = fp; injectLevel(); }
+                            else await _tauriOpenFile(fp);
+                        }
+                    }
                 });
             }
         });
@@ -199,6 +228,29 @@
             if (text && window.levelEditor) window.levelEditor.openFromText(text, name, fp);
         }
     }
+
+    document.addEventListener('dragenter', e => e.preventDefault(), true);
+    document.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }, true);
+    document.addEventListener('drop', async e => {
+        e.preventDefault();
+        e.stopPropagation();
+        const editor = window.levelEditor || window._aniEditorInstance;
+        if (!editor) return;
+        const files = [...(e.dataTransfer.files||[])].filter(f => /\.(nw|zelda|graal|gmap|gani)$/i.test(f.name));
+        for (const file of files) {
+            const ext = file.name.split('.').pop().toLowerCase();
+            if (ext === 'graal' || ext === 'zelda') {
+                const buf = await file.arrayBuffer();
+                (window.levelEditor||editor).openFromBuffer?.(buf, file.name);
+            } else if (ext === 'gani') {
+                const text = await file.text();
+                editor.openFromText?.(text, file.name);
+            } else {
+                const text = await file.text();
+                (window.levelEditor||editor).openFromText?.(text, file.name);
+            }
+        }
+    }, true);
 
     document.addEventListener('DOMContentLoaded', function() {
         const app = detectApp();
