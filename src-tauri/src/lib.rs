@@ -228,6 +228,16 @@ pub fn run() {
         .setup(|app| {
             if cfg!(debug_assertions) { app.handle().plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())?; }
             if let Some(win) = app.get_webview_window("main") { let _ = win.show(); let _ = win.set_focus(); }
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Ok(updater) = handle.updater() {
+                    if let Ok(Some(update)) = updater.check().await {
+                        if let Ok(()) = update.download_and_install(|_, _| {}, || {}).await {
+                            handle.restart();
+                        }
+                    }
+                }
+            });
             Ok(())
         })
         .run(tauri::generate_context!())
