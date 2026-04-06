@@ -21,8 +21,8 @@ function _fmtKB(b) {
     return b.split('+').map(p => p===' '?'Space':p.toLowerCase()==='escape'?'Esc':p.toLowerCase()==='delete'?'Del':p==='ctrl'?'Ctrl':p==='shift'?'Shift':p==='alt'?'Alt':p.length===1?p:p[0].toUpperCase()+p.slice(1)).join('+');
 }
 const _CNAMES = ['white','yellow','orange','pink','red','darkred','lightgreen','green','darkgreen','lightblue','blue','darkblue','brown','cynober','purple','darkpurple','lightgray','gray','black','transparent'];
-const _CRGB = [[255,255,255],[255,255,0],[255,165,0],[255,192,203],[255,0,0],[139,0,0],[144,238,144],[0,128,0],[0,100,0],[173,216,230],[0,0,255],[0,0,139],[139,69,19],[255,215,0],[128,0,128],[64,0,64],[211,211,211],[128,128,128],[0,0,0],[0,0,0]];
-const _BODY_PALETTE = [{r:255,g:255,b:255,slot:1},{r:255,g:165,b:0,slot:0},{r:255,g:0,b:0,slot:2},{r:206,g:24,b:41,slot:3},{r:0,g:0,b:255,slot:4},{r:0,g:132,b:0,slot:-1},{r:0,g:0,b:0,slot:-1}];
+const _CRGB = [[255,255,255],[255,255,0],[255,173,107],[255,192,203],[255,0,0],[139,0,0],[144,238,144],[0,128,0],[0,100,0],[173,216,230],[0,0,255],[0,0,139],[139,69,19],[255,215,0],[128,0,128],[64,0,64],[211,211,211],[128,128,128],[0,0,0],[0,0,0]];
+const _BODY_PALETTE = [{r:255,g:255,b:255,slot:1},{r:255,g:173,b:107,slot:0},{r:255,g:0,b:0,slot:2},{r:206,g:24,b:41,slot:3},{r:0,g:0,b:255,slot:4},{r:0,g:132,b:0,slot:-1},{r:0,g:0,b:0,slot:-1}];
 function parseNPCScript(script) {
     const r = {};
     script = script.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
@@ -767,18 +767,29 @@ class LevelEditor {
             document.getElementById('leftPanelWorkdir').style.display = panel === 'workdir' ? 'flex' : 'none';
             document.getElementById('leftPanelObjects').style.display = panel === 'objects' ? 'flex' : 'none';
         }));
+        const _resizeSel = (axis, delta) => {
+            if (!this.hasSelection()) return;
+            const sx = Math.min(this.selectionStartX, this.selectionEndX);
+            const sy = Math.min(this.selectionStartY, this.selectionEndY);
+            const ex = Math.max(this.selectionStartX, this.selectionEndX);
+            const ey = Math.max(this.selectionStartY, this.selectionEndY);
+            if (axis === 'w') { const nw = (ex - sx + 1) + delta; if (nw < 1) return; this.selectionEndX = this.selectionStartX >= this.selectionEndX ? sx : sx + nw - 1; }
+            else { const nh = (ey - sy + 1) + delta; if (nh < 1) return; this.selectionEndY = this.selectionStartY >= this.selectionEndY ? sy : sy + nh - 1; }
+            this.updateSelectionInfo();
+            this.render();
+        };
         const btnWidthUp = document.getElementById('btnWidthUp');
-        if (btnWidthUp) btnWidthUp.addEventListener('click', () => { this.brushWidth++; const el = document.getElementById('brushWidth'); if (el) el.value = this.brushWidth; });
+        if (btnWidthUp) btnWidthUp.addEventListener('click', () => _resizeSel('w', 1));
         const btnWidthDown = document.getElementById('btnWidthDown');
-        if (btnWidthDown) btnWidthDown.addEventListener('click', () => { if (this.brushWidth > 1) this.brushWidth--; const el = document.getElementById('brushWidth'); if (el) el.value = this.brushWidth; });
+        if (btnWidthDown) btnWidthDown.addEventListener('click', () => _resizeSel('w', -1));
         const btnHeightUp = document.getElementById('btnHeightUp');
-        if (btnHeightUp) btnHeightUp.addEventListener('click', () => { this.brushHeight++; const el = document.getElementById('brushHeight'); if (el) el.value = this.brushHeight; });
+        if (btnHeightUp) btnHeightUp.addEventListener('click', () => _resizeSel('h', 1));
         const btnHeightDown = document.getElementById('btnHeightDown');
-        if (btnHeightDown) btnHeightDown.addEventListener('click', () => { if (this.brushHeight > 1) this.brushHeight--; const el = document.getElementById('brushHeight'); if (el) el.value = this.brushHeight; });
+        if (btnHeightDown) btnHeightDown.addEventListener('click', () => _resizeSel('h', -1));
         const brushWidth = document.getElementById('brushWidth');
-        if (brushWidth) brushWidth.addEventListener('change', (e) => { this.brushWidth = parseInt(e.target.value) || 1; });
+        if (brushWidth) brushWidth.addEventListener('change', (e) => { const v = parseInt(e.target.value); if (v > 0 && this.hasSelection()) { const sx = Math.min(this.selectionStartX, this.selectionEndX); const cw = Math.abs(this.selectionEndX - this.selectionStartX) + 1; _resizeSel('w', v - cw); } });
         const brushHeight = document.getElementById('brushHeight');
-        if (brushHeight) brushHeight.addEventListener('change', (e) => { this.brushHeight = parseInt(e.target.value) || 1; });
+        if (brushHeight) brushHeight.addEventListener('change', (e) => { const v = parseInt(e.target.value); if (v > 0 && this.hasSelection()) { const ch = Math.abs(this.selectionEndY - this.selectionStartY) + 1; _resizeSel('h', v - ch); } });
         const zoomSlider = document.getElementById('zoomSlider');
         if (zoomSlider) {
             zoomSlider.addEventListener('input', (e) => {
@@ -934,6 +945,7 @@ class LevelEditor {
             if (this.selectedTilesetTiles) {
                 this.selectedTilesetTiles = null;
                 this.isDraggingTileSelection = false;
+                this.updateSelectedTileDisplay();
                 this.requestRender();
                 e.preventDefault();
                 return;
@@ -941,6 +953,7 @@ class LevelEditor {
             if (this.hasSelection()) {
                 if (this.isPointInSelection(coords.x, coords.y)) {
                     this.selectedTilesetTiles = this._captureSelectionAsStamp();
+                    this.updateSelectedTileDisplay();
                     e.preventDefault();
                     return;
                 }
@@ -1042,6 +1055,7 @@ class LevelEditor {
                     if (this.selectedTilesetTiles) {
                         this._createFloatingStamp(coords.x, coords.y);
                         this.selectedTilesetTiles = null;
+                        this.updateSelectedTileDisplay();
                         e.preventDefault(); e.stopPropagation(); return;
                     }
                     this.render();
@@ -1049,6 +1063,7 @@ class LevelEditor {
             } else if (this.selectedTilesetTiles && this.currentTool === 'select') {
                 this._createFloatingStamp(coords.x, coords.y);
                 this.selectedTilesetTiles = null;
+                this.updateSelectedTileDisplay();
                 e.preventDefault(); e.stopPropagation(); return;
             } else if (this.selectedTilesetTiles) {
                 this.isDraggingTileSelection = true;
@@ -1860,10 +1875,12 @@ class LevelEditor {
     _doPaste() {
         if (!this._clipboardTiles) return;
         this.selectedTilesetTiles = this._clipboardTiles.map(r => [...r]);
+        this.updateSelectedTileDisplay();
         const px = this._lastMouseTileX ?? this._clipboardOriginX ?? 0;
         const py = this._lastMouseTileY ?? this._clipboardOriginY ?? 0;
         this._createFloatingStamp(px, py);
         this.selectedTilesetTiles = null;
+        this.updateSelectedTileDisplay();
     }
     _doCut() {
         if (!this.hasSelection()) return;
@@ -2587,6 +2604,7 @@ class LevelEditor {
                             this.tilesetSelectionStartY = -1;
                             this.tilesetSelectionEndY = -1;
                             this.selectedTilesetTiles = null;
+                            this.updateSelectedTileDisplay();
                             this.isSelectingTileset = true;
                             this.tilesetSelectionStartX = x;
                             this.tilesetSelectionStartY = y;
@@ -2637,6 +2655,7 @@ class LevelEditor {
                                 this.tilesetSelectionStartY = -1;
                                 this.tilesetSelectionEndY = -1;
                                 this.selectedTilesetTiles = null;
+                                this.updateSelectedTileDisplay();
                                 this.updateTilesetDisplay();
                             }
                         }
@@ -3583,7 +3602,7 @@ class LevelEditor {
     }
 
     _defaultPlayerSettings() {
-        return { HEAD: 'head0.png', BODY: 'body.png', SHIELD: 'no-shield.png', SWORD: 'sword1.png', ATTR1: '', nick: 'unknown', colors: [12, null, null, null, null], ganis: { idle: 'idle.gani', walk: 'walk.gani', sit: 'sit.gani', push: 'push.gani', pull: 'pull.gani', grab: 'grab.gani', sword: 'sword.gani', sleep: 'sleep.gani' } };
+        return { HEAD: 'head0.png', BODY: 'body.png', SHIELD: 'no-shield.png', SWORD: 'sword1.png', ATTR1: '', nick: 'unknown', colors: [null, null, null, null, null], ganis: { idle: 'idle.gani', walk: 'walk.gani', sit: 'sit.gani', push: 'push.gani', pull: 'pull.gani', grab: 'grab.gani', sword: 'sword.gani', sleep: 'sleep.gani' } };
     }
 
     openPlayerCustomizeDialog() {
@@ -4838,12 +4857,20 @@ class LevelEditor {
         const hasSel = this.hasSelection();
         document.getElementById('btnNewLink').disabled = !hasSel;
         document.getElementById('btnNewSign').disabled = !hasSel;
-        if (this.selectionStartX < 0 || this.selectionEndX < 0) return;
+        const wEl = document.getElementById('brushWidth');
+        const hEl = document.getElementById('brushHeight');
+        if (this.selectionStartX < 0 || this.selectionEndX < 0) {
+            if (wEl) { wEl.value = ''; wEl.disabled = true; }
+            if (hEl) { hEl.value = ''; hEl.disabled = true; }
+            return;
+        }
         const startX = Math.min(this.selectionStartX, this.selectionEndX);
         const startY = Math.min(this.selectionStartY, this.selectionEndY);
         const endX = Math.max(this.selectionStartX, this.selectionEndX);
         const endY = Math.max(this.selectionStartY, this.selectionEndY);
         const width = endX - startX + 1, height = endY - startY + 1;
+        if (wEl) { wEl.value = width; wEl.disabled = false; }
+        if (hEl) { hEl.value = height; hEl.disabled = false; }
         const selectionSpan = document.getElementById('selectionInfo');
         selectionSpan.textContent = `Selection: (${startX}, ${startY}) -> (${endX}, ${endY}) = (${width}, ${height})`;
     }
@@ -4911,6 +4938,7 @@ class LevelEditor {
             }
             this.selectedTilesetTiles.push(row);
         }
+        this.updateSelectedTileDisplay();
     }
 
     tilesetOrder() {
@@ -6676,6 +6704,7 @@ class LevelEditor {
             const obj = this.tileObjects[this._toGroup()]?.[this._toName()];
             if (!obj) return;
             this.selectedTilesetTiles = obj.tiles;
+            this.updateSelectedTileDisplay();
             this.setTool('draw');
         };
 
