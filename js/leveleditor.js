@@ -252,19 +252,27 @@ class Level {
         const base64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
         const tilesPerRow = this.tilesetImage ? Math.floor(this.tilesetImage.width / this.tileWidth) : 128;
         let out = 'GLEVNW01\n';
+        const encTile = (idx) => { const ttx = idx % tilesPerRow, tty = Math.floor(idx / tilesPerRow); const g = Math.floor(ttx / 16) * 512 + (ttx % 16) + tty * 16; return base64[g >> 6] + base64[g & 0x3F]; };
         for (let li = 0; li < this.layers.length; li++) {
             const layer = this.layers[li];
             if (li > 0 && !layer.tiles.some(t => t >= 0)) continue;
             for (let ty = 0; ty < this.height; ty++) {
-                out += `BOARD 0 ${ty} ${this.width} ${li} `;
-                for (let tx = 0; tx < this.width; tx++) {
-                    const idx = layer.tiles[ty * this.width + tx];
-                    const tileIdx = idx < 0 ? 0 : idx;
-                    const ttx = tileIdx % tilesPerRow, tty = Math.floor(tileIdx / tilesPerRow);
-                    const graalTile = Math.floor(ttx / 16) * 512 + (ttx % 16) + tty * 16;
-                    out += base64[graalTile >> 6] + base64[graalTile & 0x3F];
+                if (li === 0) {
+                    out += `BOARD 0 ${ty} ${this.width} 0 `;
+                    for (let tx = 0; tx < this.width; tx++) { const idx = layer.tiles[ty * this.width + tx]; out += encTile(idx < 0 ? 0 : idx); }
+                    out += '\n';
+                } else {
+                    let tx = 0;
+                    while (tx < this.width) {
+                        if (layer.tiles[ty * this.width + tx] < 0) { tx++; continue; }
+                        let rx = tx;
+                        while (rx < this.width && layer.tiles[ty * this.width + rx] >= 0) rx++;
+                        out += `BOARD ${tx} ${ty} ${rx - tx} ${li} `;
+                        for (let x = tx; x < rx; x++) out += encTile(layer.tiles[ty * this.width + x]);
+                        out += '\n';
+                        tx = rx;
+                    }
                 }
-                out += '\n';
             }
             out += '\n';
         }
@@ -3311,7 +3319,7 @@ class LevelEditor {
             }
             return { image, code: code.trim() };
         };
-        const res = await fetch('objects/');
+        const res = await fetch('objects/index.json');
         if (!res.ok) return;
         const files = await res.json();
         const npcs = [];
