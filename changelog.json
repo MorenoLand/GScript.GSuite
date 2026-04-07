@@ -1,5 +1,27 @@
 [
   {
+    "version": "0.1.40",
+    "date": "2026-04-07",
+    "tag": "GraalSuite",
+    "changes": [
+      "Setshape2 output box no longer overflows its container",
+      "Setshape2 output switched to textarea for reliable clamping",
+      "Setshape2 GS2 output no longer wraps first argument in quotes",
+      "Gani editor About button now uses the shared GraalSuite info dialog",
+      "Fixed .nw/.gmap files bleeding into gani editor tabs when dropping while in gani mode"
+    ]
+  },
+  {
+    "version": "1.0.95",
+    "date": "2026-04-07",
+    "tag": "Level Editor",
+    "changes": [
+      "Fixed production crash: setupEventListeners now correctly declared async",
+      "Fixed missing script append in injectLevel causing green screen on load",
+      "Drop handler now correctly routes level files only to level editor, not gani editor"
+    ]
+  },
+  {
     "version": "0.1.39",
     "date": "2026-04-07",
     "tag": "GraalSuite",

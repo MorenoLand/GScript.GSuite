@@ -306,20 +306,20 @@
     document.addEventListener('drop', async e => {
         e.preventDefault();
         e.stopPropagation();
-        const editor = window.levelEditor || window._aniEditorInstance;
-        if (!editor) return;
         const files = [...(e.dataTransfer.files||[])].filter(f => /\.(nw|zelda|graal|gmap|gani)$/i.test(f.name));
         for (const file of files) {
             const ext = file.name.split('.').pop().toLowerCase();
             if (ext === 'graal' || ext === 'zelda') {
+                if (!window.levelEditor) { window._pendingOpenFile = file; injectLevel(); continue; }
                 const buf = await file.arrayBuffer();
-                (window.levelEditor||editor).openFromBuffer?.(buf, file.name);
+                window.levelEditor.openFromBuffer?.(buf, file.name);
             } else if (ext === 'gani') {
                 const text = await file.text();
-                editor.openFromText?.(text, file.name);
+                window._aniEditorInstance?.openFromText?.(text, file.name);
             } else {
+                if (!window.levelEditor) { window._pendingOpenFile = file; injectLevel(); continue; }
                 const text = await file.text();
-                (window.levelEditor||editor).openFromText?.(text, file.name);
+                window.levelEditor.openFromText?.(text, file.name);
             }
         }
     }, true);

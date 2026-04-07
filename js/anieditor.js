@@ -4302,7 +4302,10 @@ function updateTabs() {
     for (let i = 0; i < animations.length; i++) {
         const tab = document.createElement("div");
         tab.className = "tab" + (i === currentTabIndex ? " active" : "");
-        tab.textContent = animations[i].fileName || `Animation ${i + 1}`;
+        const tabLabel = document.createElement("span");
+        tabLabel.style.cssText = "flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+        tabLabel.textContent = animations[i].fileName || `Animation ${i + 1}`;
+        tab.appendChild(tabLabel);
         if (isDraggingTab && dragTab === i) {
             tab.style.opacity = "0.7";
             tab.style.transform = `translateX(${dragTabCurrentX - dragTabStartX}px)`;
@@ -6954,7 +6957,7 @@ window.addEventListener("load", async () => {
             if (btnOpen && btnOpen.onclick) btnOpen.onclick();
         } else if (matchesKeybind(e, keybinds.infoDialog)) {
             e.preventDefault();
-            openInfoDialog("about");
+            window.openInfoDialog?.("about");
         } else if (matchesKeybind(e, keybinds.settingsDialog)) {
             e.preventDefault();
             const btnSettings = document.getElementById("btnSettings");
@@ -9555,8 +9558,7 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
         _infoDialog.onclick = (e) => { if (e.target === _infoDialog) _infoDialog.style.display = "none"; };
         document.querySelectorAll(".info-tab-btn").forEach(btn => { btn.onclick = () => switchInfoTab(btn.dataset.tab); });
         const btnAbout = document.getElementById("btnAbout");
-        if (btnAbout) btnAbout.onclick = () => openInfoDialog("about");
-        window.openInfoDialog = openInfoDialog;
+        if (btnAbout) btnAbout.onclick = () => window.openInfoDialog?.("about");
     }
     document.querySelectorAll(".settings-tab-btn").forEach(btn => { btn.onclick = () => switchSettingsTab(btn.dataset.tab); });
     const updateHistoryFont = () => {
