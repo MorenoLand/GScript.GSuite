@@ -239,12 +239,15 @@ pub fn run() {
     tauri::Builder::default()
         .manage(AppState { index: Mutex::new(WorkspaceIndex::default()), last_dir: Mutex::new(None), rescan_done: Mutex::new(false), scan_running: Mutex::new(false), open_file_arg: Mutex::new(file_arg) })
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            if let Some(fp) = argv.get(1) {
-                if std::path::Path::new(fp).exists() {
-                    let _ = app.emit("open-file", fp.clone());
-                }
+            let has_file = argv.get(1).map(|fp| std::path::Path::new(fp).exists()).unwrap_or(false);
+            if has_file {
+                let _ = app.emit("open-file", argv[1].clone());
+                if let Some(win) = app.get_webview_window("main") { let _ = win.show(); let _ = win.set_focus(); }
+            } else {
+                let label = format!("w{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis());
+                let _ = tauri::WebviewWindowBuilder::new(app, label, tauri::WebviewUrl::App("index.html".into()))
+                    .title("GraalSuite").inner_size(1280.0, 800.0).decorations(false).resizable(true).center().build();
             }
-            if let Some(win) = app.get_webview_window("main") { let _ = win.show(); let _ = win.set_focus(); }
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())

@@ -1,5 +1,5 @@
 
-const APP_VERSION = '1.0.94';
+const APP_VERSION = '1.0.95';
 var _isTauri = window.__TAURI__ != null;
 var _tauri = _isTauri ? window.__TAURI__ : null;
 
