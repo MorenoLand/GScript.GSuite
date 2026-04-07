@@ -1,5 +1,32 @@
 [
   {
+    "version": "0.1.39",
+    "date": "2026-04-07",
+    "tag": "GraalSuite",
+    "changes": [
+      "Mobile play mode controls (iPad/touch): dual analog sticks for movement and sword attack, grab hold button, noclip toggle button",
+      "Pinch-to-zoom with snap-to-factor and zoom-to-point for both main canvas and tileset",
+      "Touch selection and drag on tileset canvas with proper finger tracking",
+      "Double-tap detection for touch-based actions",
+      "Safari/iPad layout fixes (flex-basis, splitter height)",
+      "Application icon updated"
+    ]
+  },
+  {
+    "version": "1.0.94",
+    "date": "2026-04-07",
+    "tag": "Level Editor",
+    "changes": [
+      "Mobile play mode controls: left stick (movement), right stick (attack in all 4 directions), GRAB hold button, NOCLIP toggle button",
+      "Pinch-to-zoom snaps to clean zoom factors to prevent sub-pixel rendering artifacts",
+      "Zoom-to-point keeps the content under your fingers stable during pinch",
+      "Tileset canvas supports touch selection, drag, and pinch zoom",
+      "Auto-centers level view when canvas resizes and level is offscreen",
+      "Safari/iPad fixes: bottom gap resolved, splitter adapts to viewport correctly",
+      "Layer thumbnails improved: better scaling, centered, subtle border"
+    ]
+  },
+  {
     "version": "0.1.38",
     "date": "2026-04-06",
     "tag": "GraalSuite",

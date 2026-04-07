@@ -1,6 +1,6 @@
 {
   "name": "graalsuite",
-  "version": "0.1.38",
+  "version": "0.1.39",
   "description": "GraalSuite - A web-based suite of tools for Graal Online development.",
   "main": "anieditor.js",
   "scripts": {

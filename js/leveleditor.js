@@ -1,5 +1,5 @@
 
-const APP_VERSION = '1.0.92';
+const APP_VERSION = '1.0.94';
 var _isTauri = window.__TAURI__ != null;
 var _tauri = _isTauri ? window.__TAURI__ : null;
 
@@ -609,15 +609,92 @@ class LevelEditor {
             this.canvas.width = rect.width;
             this.canvas.height = rect.height;
         }
-        this.render();
+        if (this.level) {
+            const lw = this.level.width * (this.level.tileWidth || 16) * this.zoom;
+            const lh = this.level.height * (this.level.tileHeight || 16) * this.zoom;
+            if (this.panX + lw < 0 || this.panY + lh < 0 || this.panX > this.canvas.width || this.panY > this.canvas.height) this.centerView();
+            else this.render();
+        } else {
+            this.render();
+        }
     }
 
-    setupEventListeners() {
+    async setupEventListeners() {
         this.canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
         this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
         this.canvas.addEventListener('mouseup', (e) => this.handleMouseUp(e));
         this.canvas.addEventListener('wheel', (e) => this.handleWheel(e));
         this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+        this._touches = new Map();
+        this._pinchDist = null; this._pinchMidX = null; this._pinchMidY = null;
+        let _lastTapTime = 0, _lastTapX = 0, _lastTapY = 0;
+        const _synth = (type, t) => Object.assign(new MouseEvent(type, { bubbles:true, cancelable:true, clientX:t.clientX, clientY:t.clientY, button:0, buttons:type==='mouseup'?0:1 }));
+        let _tsLastSnap = null;
+        this.canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const now = Date.now();
+            const [t0] = e.changedTouches;
+            if (now - _lastTapTime < 350 && Math.abs(t0.clientX - _lastTapX) < 30 && Math.abs(t0.clientY - _lastTapY) < 30) {
+                const dbEvt = new MouseEvent('dblclick', { bubbles:true, cancelable:true, clientX:t0.clientX, clientY:t0.clientY, button:0 });
+                this.canvas.dispatchEvent(dbEvt);
+                _lastTapTime = 0;
+                return;
+            }
+            _lastTapTime = now; _lastTapX = t0.clientX; _lastTapY = t0.clientY;
+            for (const t of e.changedTouches) this._touches.set(t.identifier, t);
+            if (this._touches.size === 1) {
+                this._isTouchDrag = true;
+                this.handleMouseDown(_synth('mousedown', [...this._touches.values()][0]));
+            } else if (this._touches.size === 2) {
+                this.handleMouseUp(_synth('mouseup', e.changedTouches[0]));
+                const [a, b] = [...this._touches.values()];
+                this._pinchDist = Math.hypot(b.clientX-a.clientX, b.clientY-a.clientY);
+                this._pinchMidX = (a.clientX+b.clientX)/2; this._pinchMidY = (a.clientY+b.clientY)/2;
+                _tsLastSnap = null;
+            }
+        }, { passive:false });
+        this.canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            for (const t of e.changedTouches) this._touches.set(t.identifier, t);
+            if (this._touches.size === 1) {
+                this.handleMouseMove(_synth('mousemove', [...this._touches.values()][0]));
+            } else if (this._touches.size === 2 && this._pinchDist) {
+                const [a, b] = [...this._touches.values()];
+                const dist = Math.hypot(b.clientX-a.clientX, b.clientY-a.clientY);
+                const midX = (a.clientX+b.clientX)/2, midY = (a.clientY+b.clientY)/2;
+                const dragX = midX - this._pinchMidX, dragY = midY - this._pinchMidY;
+                this.panX += dragX; this.panY += dragY;
+                const rect = this.canvas.getBoundingClientRect();
+                const oldZoom = this.zoom;
+                const factors = [0.125,0.25,0.375,0.5,0.625,0.75,1,1.5,2,3];
+                const rawZoom = Math.max(0.125, Math.min(3, this.zoom * (dist/this._pinchDist)));
+                let closest = _tsLastSnap ?? factors[0], minDiff = Math.abs(rawZoom - closest);
+                for (const f of factors) { const d = Math.abs(rawZoom - f); if (d < minDiff) { minDiff = d; closest = f; } }
+                this.zoom = closest;
+                _tsLastSnap = closest;
+                const cx = (midX - rect.left - this.panX) / oldZoom;
+                const cy = (midY - rect.top - this.panY) / oldZoom;
+                this.panX = midX - rect.left - cx * this.zoom;
+                this.panY = midY - rect.top - cy * this.zoom;
+                this._pinchDist = dist; this._pinchMidX = midX; this._pinchMidY = midY;
+                this._syncZoomUI();
+                this.render();
+            }
+        }, { passive:false });
+        this.canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            for (const t of e.changedTouches) this._touches.delete(t.identifier);
+            if (this._touches.size === 0) { this._syncZoomUI(); this.handleMouseUp(_synth('mouseup', e.changedTouches[0])); this._pinchDist = null; this._isTouchDrag = false; }
+            else if (this._touches.size === 1) { this._pinchDist = null; this.handleMouseDown(_synth('mousedown', [...this._touches.values()][0])); }
+        }, { passive:false });
+        this.canvas.addEventListener('touchcancel', () => { this._touches.clear(); this._pinchDist = null; }, { passive:false });
+        this.canvas.addEventListener('pointermove', (e) => {
+            if (e.pointerType === 'pen') {
+                this._penPressure = e.pressure;
+                if (this.selectedTilesetTiles && this.dragMouseX > 0) { this.dragMouseX = e.clientX; this.dragMouseY = e.clientY; this.requestRender(); }
+            }
+        });
         document.querySelectorAll('.splitter-handle').forEach(handle => {
             handle.addEventListener('mousedown', (e) => {
                 e.preventDefault();
@@ -664,7 +741,7 @@ class LevelEditor {
         document.getElementById('btnEditTileset').addEventListener('click', () => this.editTileset());
         const tzSlider = document.getElementById('tilesetZoomSlider');
         const tzLabel = document.getElementById('tilesetZoomLabel');
-        if (tzSlider) { tzSlider.value = this.tilesetZoom; if (tzLabel) tzLabel.textContent = this.tilesetZoom + 'x'; tzSlider.addEventListener('input', () => { this.tilesetZoom = parseFloat(tzSlider.value); if (tzLabel) tzLabel.textContent = this.tilesetZoom + 'x'; localStorage.setItem('levelEditor_tilesetZoom', this.tilesetZoom); this.updateTilesetDisplay(); }); }
+        if (tzSlider) { tzSlider.value = this.tilesetZoom; if (tzLabel) tzLabel.textContent = Math.round(this.tilesetZoom*100)/100 + 'x'; tzSlider.addEventListener('input', () => { this.tilesetZoom = parseFloat(tzSlider.value); if (tzLabel) tzLabel.textContent = Math.round(this.tilesetZoom*100)/100 + 'x'; localStorage.setItem('levelEditor_tilesetZoom', this.tilesetZoom); this.updateTilesetDisplay(); }); }
         document.getElementById('selectedTileCanvas').addEventListener('dblclick', () => this.clearSelectedTile());
 
         document.getElementById('btnGrid').addEventListener('click', () => this.toggleGrid());
@@ -1695,7 +1772,7 @@ class LevelEditor {
             this.drawMovingSelection();
         }
 
-        if (this.selectedTilesetTiles && this.dragMouseX > 0) {
+        if (this.selectedTilesetTiles && this.dragMouseX > 0 && (!this._isTouchDrag || this._penPressure > 0)) {
             this.drawDraggedTile();
         }
 
@@ -1720,7 +1797,7 @@ class LevelEditor {
             const d = this._linkPickDrag;
             const tw = this.level.tileWidth || 16, th = this.level.tileHeight || 16;
             this.ctx.save();
-            this.ctx.translate(this.panX, this.panY);
+            this.ctx.translate(Math.round(this.panX), Math.round(this.panY));
             this.ctx.scale(this.zoom, this.zoom);
             const rx1 = Math.min(d.sx, d.ex) * tw, ry1 = Math.min(d.sy, d.ey) * th;
             const rx2 = (Math.max(d.sx, d.ex) + 1) * tw, ry2 = (Math.max(d.sy, d.ey) + 1) * th;
@@ -1744,7 +1821,7 @@ class LevelEditor {
         if (this._playMode && this._player) {
             const p = this._player;
             this.ctx.save();
-            this.ctx.translate(this.panX, this.panY);
+            this.ctx.translate(Math.round(this.panX), Math.round(this.panY));
             this.ctx.scale(this.zoom, this.zoom);
             const _sprCX = (p._ganiOX ?? 0) + (p._imgW ?? 0) / 2;
             const _chatHeadY = p.y + (p._ganiOY ?? 0);
@@ -2717,7 +2794,7 @@ class LevelEditor {
                         }
                         this.tilesetZoom = zoomFactors[this.tilesetZoomLevel];
                         localStorage.setItem('levelEditor_tilesetZoom', this.tilesetZoom);
-                        const tzs = document.getElementById('tilesetZoomSlider'); if (tzs) { tzs.value = this.tilesetZoom; const tzl = document.getElementById('tilesetZoomLabel'); if (tzl) tzl.textContent = this.tilesetZoom + 'x'; }
+                        const tzs = document.getElementById('tilesetZoomSlider'); if (tzs) { tzs.value = this.tilesetZoom; const tzl = document.getElementById('tilesetZoomLabel'); if (tzl) tzl.textContent = Math.round(this.tilesetZoom*100)/100 + 'x'; }
                         this.updateTilesetDisplay();
                     } else {
                         e.preventDefault();
@@ -2848,6 +2925,60 @@ class LevelEditor {
 
                 tilesetCanvas.addEventListener('mouseup', handleTilesetMouseUp);
                 document.addEventListener('mouseup', handleTilesetMouseUp);
+
+                const _tsSynth = (type, t) => new MouseEvent(type, { bubbles:true, cancelable:true, clientX:t.clientX, clientY:t.clientY, button:0, buttons:type==='mouseup'?0:1 });
+                const _tsTouches = new Map();
+                let _tsPinchDist = null, _tsPanStartX = 0, _tsPanStartY = 0, _tsPanScrollL = 0, _tsPanScrollT = 0;
+                const tilesetDisplay = tilesetCanvas.parentElement;
+                tilesetCanvas.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    for (const t of e.changedTouches) _tsTouches.set(t.identifier, t);
+                    if (_tsTouches.size === 1) {
+                        tilesetCanvas.dispatchEvent(_tsSynth('mousedown', [..._tsTouches.values()][0]));
+                    } else if (_tsTouches.size === 2) {
+                        tilesetCanvas.dispatchEvent(_tsSynth('mouseup', e.changedTouches[0]));
+                        const [a, b] = [..._tsTouches.values()];
+                        _tsPinchDist = Math.hypot(b.clientX-a.clientX, b.clientY-a.clientY);
+                        _tsPanStartX = (a.clientX+b.clientX)/2; _tsPanStartY = (a.clientY+b.clientY)/2;
+                        if (tilesetDisplay) { _tsPanScrollL = tilesetDisplay.scrollLeft; _tsPanScrollT = tilesetDisplay.scrollTop; }
+                    }
+                }, { passive:false });
+                tilesetCanvas.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    for (const t of e.changedTouches) _tsTouches.set(t.identifier, t);
+                    if (_tsTouches.size === 1) {
+                        tilesetCanvas.dispatchEvent(_tsSynth('mousemove', [..._tsTouches.values()][0]));
+                    } else if (_tsTouches.size === 2 && tilesetDisplay) {
+                        const [a, b] = [..._tsTouches.values()];
+                        const dist = Math.hypot(b.clientX-a.clientX, b.clientY-a.clientY);
+                        const midX = (a.clientX+b.clientX)/2, midY = (a.clientY+b.clientY)/2;
+                        if (_tsPinchDist && Math.abs(dist - _tsPinchDist) > 5) {
+                            const oldZoom = this.tilesetZoom;
+                            const newZoom = Math.max(0.5, Math.min(16, oldZoom * (dist/_tsPinchDist)));
+                            const rect = tilesetDisplay.getBoundingClientRect();
+                            const ratio = newZoom / oldZoom;
+                            const scrollCX = tilesetDisplay.scrollLeft + (midX - rect.left);
+                            const scrollCY = tilesetDisplay.scrollTop + (midY - rect.top);
+                            this.tilesetZoom = newZoom;
+                            const tzs = document.getElementById('tilesetZoomSlider'); if (tzs) { tzs.value = this.tilesetZoom; const tzl = document.getElementById('tilesetZoomLabel'); if (tzl) tzl.textContent = Math.round(this.tilesetZoom*100)/100 + 'x'; }
+                            localStorage.setItem('levelEditor_tilesetZoom', this.tilesetZoom);
+                            this.updateTilesetDisplay();
+                            tilesetDisplay.scrollLeft = scrollCX * ratio - (midX - rect.left);
+                            tilesetDisplay.scrollTop = scrollCY * ratio - (midY - rect.top);
+                            _tsPinchDist = dist; _tsPanStartX = midX; _tsPanStartY = midY; _tsPanScrollL = tilesetDisplay.scrollLeft; _tsPanScrollT = tilesetDisplay.scrollTop;
+                        } else {
+                            tilesetDisplay.scrollLeft = _tsPanScrollL - (midX - _tsPanStartX);
+                            tilesetDisplay.scrollTop = _tsPanScrollT - (midY - _tsPanStartY);
+                        }
+                    }
+                }, { passive:false });
+                tilesetCanvas.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    for (const t of e.changedTouches) _tsTouches.delete(t.identifier);
+                    if (_tsTouches.size === 0) { tilesetCanvas.dispatchEvent(_tsSynth('mouseup', e.changedTouches[0])); _tsPinchDist = null; }
+                    else if (_tsTouches.size === 1) { _tsPinchDist = null; tilesetCanvas.dispatchEvent(_tsSynth('mousedown', [..._tsTouches.values()][0])); }
+                }, { passive:false });
+                tilesetCanvas.addEventListener('touchcancel', () => { _tsTouches.clear(); _tsPinchDist = null; }, { passive:false });
 
                 tilesetCanvas._handlersSet = true;
             }
@@ -3783,9 +3914,100 @@ class LevelEditor {
     }
 
 
+    _createMobileControls() {
+        if (this._mobileControlsEl) return;
+        const el = document.createElement('div');
+        el.id = '_mobileControls';
+        el.style.cssText = 'position:fixed;bottom:0;left:0;right:0;height:180px;pointer-events:none;display:flex;justify-content:space-between;padding:10px 20px;z-index:9999;';
+        const stickCSS = 'width:120px;height:120px;border-radius:50%;border:2px solid rgba(255,255,255,0.2);position:relative;pointer-events:auto;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.08);touch-action:none;';
+        const knobCSS = 'width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,0.35);position:absolute;';
+        const leftStick = document.createElement('div');
+        leftStick.style.cssText = stickCSS;
+        const leftKnob = document.createElement('div');
+        leftKnob.style.cssText = knobCSS;
+        leftStick.appendChild(leftKnob);
+        const rightWrap = document.createElement('div');
+        rightWrap.style.cssText = 'position:relative;display:flex;flex-direction:column;align-items:center;pointer-events:auto;';
+        const btnCSS = 'width:44px;height:44px;border-radius:50%;border:2px solid rgba(255,255,255,0.2);color:rgba(255,255,255,0.6);font-size:18px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.08);user-select:none;-webkit-user-select:none;pointer-events:auto;touch-action:none;filter:brightness(0) invert(1);';
+        const grabBtn = document.createElement('div');
+        grabBtn.style.cssText = btnCSS + 'position:absolute;left:60px;top:60px;transform:translate(-50%,-50%) translate(26px,-84px);';
+        grabBtn.innerHTML = '&#9994;';
+        const noclipBtn = document.createElement('div');
+        noclipBtn.style.cssText = btnCSS + 'position:absolute;left:60px;top:60px;transform:translate(-50%,-50%) translate(-26px,-84px);';
+        noclipBtn.innerHTML = '&#128123;';
+        const rightStick = document.createElement('div');
+        rightStick.style.cssText = stickCSS;
+        const rightKnob = document.createElement('div');
+        rightKnob.style.cssText = knobCSS;
+        rightStick.appendChild(rightKnob);
+        rightWrap.appendChild(noclipBtn);
+        rightWrap.appendChild(grabBtn);
+        rightWrap.appendChild(rightStick);
+        el.appendChild(leftStick);
+        el.appendChild(rightWrap);
+        document.body.appendChild(el);
+        this._mobileControlsEl = el;
+        this._mobileKnobs = { left: { el: leftStick, knob: leftKnob }, right: { el: rightStick, knob: rightKnob } };
+        const _stickVal = (stick, touch) => { const r = stick.el.getBoundingClientRect(); return { x: (touch.clientX - (r.left + r.width/2)) / (r.width/2), y: (touch.clientY - (r.top + r.height/2)) / (r.height/2) }; };
+        const _updateKnob = (stick, x, y) => { const maxD = 30; const dist = Math.sqrt(x*x+y*y); if (dist < 0.001) return; const clamp = Math.min(dist, 1); stick.knob.style.transform = `translate(${(x/dist)*clamp*maxD}px, ${(y/dist)*clamp*maxD}px)`; };
+        const _active = (x, y) => Math.sqrt(x*x+y*y) > 0.35;
+        const _clearKnob = (stick) => stick.knob.style.transform = 'translate(0px, 0px)';
+        const _release = () => { this._mobileStickDir = null; this._mobileStickVal = {x:0,y:0}; _clearKnob(this._mobileKnobs.left); _clearKnob(this._mobileKnobs.right); Object.keys(this._playKeys).forEach(k => delete this._playKeys[k]); };
+        const _stickTouch = (stick, name, deadzone) => {
+            let activeTouchId = null;
+            const onMove = (e) => {
+                if (activeTouchId === null) return;
+                for (const t of e.changedTouches) {
+                    if (t.identifier !== activeTouchId) continue;
+                    e.preventDefault();
+                    const v = _stickVal(stick, t);
+                    if (_active(v.x, v.y)) { _updateKnob(stick, v.x, v.y); this._mobileStickDir = name; this._mobileStickVal = { x: Math.abs(v.x) > deadzone ? v.x : 0, y: Math.abs(v.y) > deadzone ? v.y : 0 }; }
+                    else { _clearKnob(stick); this._mobileStickDir = null; this._mobileStickVal = {x:0,y:0}; }
+                    break;
+                }
+            };
+            const onEnd = (e) => {
+                for (const t of e.changedTouches) {
+                    if (t.identifier !== activeTouchId) continue;
+                    e.preventDefault();
+                    activeTouchId = null;
+                    _clearKnob(stick);
+                    document.removeEventListener('touchmove', onMove);
+                    document.removeEventListener('touchend', onEnd);
+                    document.removeEventListener('touchcancel', onEnd);
+                    this._mobileStickDir = null; this._mobileStickVal = {x:0,y:0};
+                    break;
+                }
+            };
+            stick.el.addEventListener('touchstart', (e) => {
+                e.preventDefault(); e.stopPropagation();
+                if (activeTouchId !== null) return;
+                activeTouchId = e.changedTouches[0].identifier;
+                const v = _stickVal(stick, e.changedTouches[0]);
+                if (_active(v.x, v.y)) { _updateKnob(stick, v.x, v.y); this._mobileStickDir = name; this._mobileStickVal = { x: Math.abs(v.x) > deadzone ? v.x : 0, y: Math.abs(v.y) > deadzone ? v.y : 0 }; }
+                document.addEventListener('touchmove', onMove, { passive:false });
+                document.addEventListener('touchend', onEnd, { passive:false });
+                document.addEventListener('touchcancel', onEnd, { passive:false });
+            }, { passive:false });
+        };
+        _stickTouch(this._mobileKnobs.left, 'left', 0.35);
+        _stickTouch(this._mobileKnobs.right, 'right', 0.35);
+        grabBtn.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); this._playKeys['e'] = true; });
+        grabBtn.addEventListener('touchend', (e) => { e.preventDefault(); e.stopPropagation(); delete this._playKeys['e']; });
+        grabBtn.addEventListener('touchcancel', (e) => { e.preventDefault(); e.stopPropagation(); delete this._playKeys['e']; });
+        noclipBtn.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); this._playNoclip = !this._playNoclip; noclipBtn.style.color = this._playNoclip ? '#4a9eff' : 'rgba(255,255,255,0.6)'; noclipBtn.style.borderColor = this._playNoclip ? '#4a9eff' : 'rgba(255,255,255,0.2)'; });
+        this._mobileRelease = _release;
+    }
+
+    _removeMobileControls() {
+        if (this._mobileControlsEl) { this._mobileControlsEl.remove(); this._mobileControlsEl = null; }
+        if (this._mobileRelease) document.removeEventListener('touchend', this._mobileRelease);
+    }
+
     enterPlayMode() {
         this._colHW = 15; this._colHH = 15;
         this._playMode = true;
+        if ('ontouchstart' in window) this._createMobileControls();
         this.selectedObject = null; this.selectionStartX = -1; this.selectionEndX = -1;
         const btn = document.getElementById('btnPlay');
         if (btn) btn.innerHTML = '&#9632; Stop';
@@ -3857,6 +4079,8 @@ class LevelEditor {
         if (btn) btn.innerHTML = '&#9654; Play';
         (this._hiddenEls || []).forEach(([el, disp]) => el.style.display = disp);
         this._hiddenEls = null; this._player = null; this._playKeys = {}; this._playNoclip = false; this._mngAnimCache = null;
+        this._mobileStickDir = null; this._mobileStickVal = {x:0,y:0}; this._mobileControlsEl = null; this._mobileKnobs = null; this._mobileRelease = null;
+        this._removeMobileControls();
         this._chatOpen = false; this._playerChat = null;
         document.getElementById('_playChatBar')?.remove();
         if (this._chatCanvasClick) this.canvas.removeEventListener('mousedown', this._chatCanvasClick);
@@ -3976,8 +4200,10 @@ class LevelEditor {
         if (k['Shift'] && !p._shiftWas) { this._playNoclip = !this._playNoclip; delete this._playKeys['Shift']; }
         p._shiftWas = k['Shift'];
         const tw = this.level.tileWidth || 16, th = this.level.tileHeight || 16;
-        const up = k['ArrowUp'] || k['w'], down = k['ArrowDown'] || k['s'];
-        const left = k['ArrowLeft'] || k['a'], right = k['ArrowRight'] || k['d'];
+        const up = k['ArrowUp'] || k['w'] || (this._mobileStickDir === 'left' && this._mobileStickVal.y < -0.35);
+        const down = k['ArrowDown'] || k['s'] || (this._mobileStickDir === 'left' && this._mobileStickVal.y > 0.35);
+        const left = k['ArrowLeft'] || k['a'] || (this._mobileStickDir === 'left' && this._mobileStickVal.x < -0.35);
+        const right = k['ArrowRight'] || k['d'] || (this._mobileStickDir === 'left' && this._mobileStickVal.x > 0.35);
         let dx = 0, dy = 0;
         let _pulling = false;
         if (p._grabbing) {
@@ -3987,9 +4213,11 @@ class LevelEditor {
                 if (pullKeys[p._grabDir]) { _pulling = true; }
                 else { p.gani = this._playerSettings?.ganis?.grab||'grab.gani'; return; }
             } else { p._grabbing = false; }
-        }
+        } else if ((k['e'] || k['E']) && !p._eWas) { this._tryGrab(); }
+        p._eWas = k['e'] || k['E'];
         if (k[' '] && !p._spaceWas) { this._setani(this._playerSettings?.ganis?.sword||'sword.gani'); p._attacking = true; p._attackDir = p.dir; p._freezeTimer = 0.15; p._attackFrameCount = 0; }
-        p._spaceWas = k[' '];
+        if (this._mobileStickDir === 'right' && !p._spaceWas) { const sv = this._mobileStickVal, ax = Math.abs(sv.x), ay = Math.abs(sv.y); if (ax > 0.35 || ay > 0.35) { const rd = ay > ax ? (sv.y < 0 ? 0 : 2) : (sv.x > 0 ? 3 : 1); p._attacking = true; p._attackDir = rd; p.dir = rd; p._freezeTimer = 0.15; p._attackFrameCount = 0; this._setani(this._playerSettings?.ganis?.sword||'sword.gani'); } }
+        p._spaceWas = k[' '] || (this._mobileStickDir === 'right' && (Math.abs(this._mobileStickVal.x) > 0.35 || Math.abs(this._mobileStickVal.y) > 0.35));
         if (p._freezeTimer > 0) { p._freezeTimer -= dt; }
         if (!_pulling) {
             if (!p._attacking) {
@@ -4675,7 +4903,7 @@ class LevelEditor {
             row.draggable = true;
             row.style.cssText = `display:flex;align-items:center;gap:6px;padding:5px 6px;background:${isActive?'#1e3a5f':_rowBg};border:1px solid ${isActive?'#4472C4':_rowBorder};cursor:pointer;user-select:none;border-radius:2px;`;
             const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = layer.visible !== false; cb.style.cssText = 'cursor:pointer;flex-shrink:0;'; cb.addEventListener('change', e => { e.stopPropagation(); layer.visible = cb.checked; this.render(); });
-            const thumb = document.createElement('canvas'); thumb.width = 56; thumb.height = 56; thumb.style.cssText = `flex-shrink:0;image-rendering:pixelated;background:${_rowBg};border:1px solid ${_rowBorder};`;
+            const thumb = document.createElement('canvas'); thumb.width = 64; thumb.height = 64; thumb.style.cssText = `flex-shrink:0;image-rendering:pixelated;background:#111;border:1px solid ${_rowBorder};border-radius:2px;`;
             this._renderLayerThumb(thumb, i);
             const name = document.createElement('span'); name.style.cssText = `flex:1;font-size:12px;font-family:chevyray,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${_txt};`; name.textContent = `Layer ${i}`;
             const btnWrap = document.createElement('div'); btnWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;flex-shrink:0;';
@@ -4699,20 +4927,30 @@ class LevelEditor {
     _renderLayerThumb(canvas, layerIndex) {
         if (!this.level?.tilesetImage?.complete || !this.level.tilesetImage.naturalWidth) return;
         const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#1a1a1a'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.imageSmoothingEnabled = false;
+        ctx.fillStyle = '#111'; ctx.fillRect(0, 0, canvas.width, canvas.height);
         const layer = this.level.layers[layerIndex];
         if (!layer) return;
         const tw = this.level.tileWidth || 16, th = this.level.tileHeight || 16;
-        const scale = Math.min(canvas.width / (this.level.width * tw), canvas.height / (this.level.height * th));
+        const lw = this.level.width, lh = this.level.height;
+        const pad = 2;
+        const avail = canvas.width - pad * 2;
+        const scale = Math.min(avail / (lw * tw), avail / (lh * th));
+        const iw = Math.floor(lw * tw * scale), ih = Math.floor(lh * th * scale);
+        const ox = Math.floor((canvas.width - iw) / 2), oy = Math.floor((canvas.height - ih) / 2);
         const tilesPerRow = Math.floor(this.level.tilesetImage.width / tw);
-        for (let y = 0; y < this.level.height; y++) {
-            for (let x = 0; x < this.level.width; x++) {
-                const ti = layer.tiles[y * this.level.width + x];
+        for (let y = 0; y < lh; y++) {
+            for (let x = 0; x < lw; x++) {
+                const ti = layer.tiles[y * lw + x];
                 const di = ti < 0 ? (layerIndex === 0 ? 0 : -1) : ti;
                 if (di < 0) continue;
-                ctx.drawImage(this.level.tilesetImage, (di % tilesPerRow) * tw, Math.floor(di / tilesPerRow) * th, tw, th, x * tw * scale, y * th * scale, tw * scale, th * scale);
+                const sx = (di % tilesPerRow) * tw, sy = Math.floor(di / tilesPerRow) * th;
+                const dx = ox + Math.floor(x * tw * scale), dy = oy + Math.floor(y * th * scale);
+                const dw = Math.max(1, Math.ceil(tw * scale)), dh = Math.max(1, Math.ceil(th * scale));
+                ctx.drawImage(this.level.tilesetImage, sx, sy, tw, th, dx, dy, dw, dh);
             }
         }
+        if (iw > 0 && ih > 0) { ctx.strokeStyle = '#444'; ctx.lineWidth = 1; ctx.strokeRect(ox - 0.5, oy - 0.5, iw + 1, ih + 1); }
     }
 
     addLayer() {
@@ -5336,6 +5574,17 @@ class LevelEditor {
                 <td style="padding:2px 6px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${o.properties?.image||''}">${o.properties?.image||''}</td>
             </tr>`
         ).join('') || `<tr><td colspan="3" style="padding:4px 6px;color:#666;">No NPCs</td></tr>`;
+    }
+
+    _syncZoomUI() {
+        const factors = [0.125,0.25,0.375,0.5,0.625,0.75,1,1.5,2,3];
+        let closest = 0;
+        let minDiff = Infinity;
+        for (let i = 0; i < factors.length; i++) { const d = Math.abs(this.zoom - factors[i]); if (d < minDiff) { minDiff = d; closest = i; } }
+        this.zoomLevel = closest;
+        const zoomSlider = document.getElementById('zoomSlider');
+        if (zoomSlider) zoomSlider.value = closest;
+        this.updateZoomDisplay();
     }
 
     updateZoomDisplay() {
