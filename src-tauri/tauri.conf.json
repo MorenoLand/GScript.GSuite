@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "GraalSuite",
-  "version": "0.1.40",
-    "identifier": "com.morenoland.graalsuite",
+  "productName": "GSuite",
+  "version": "0.1.41",
+    "identifier": "com.morenoland.gsuite",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:13772",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "GraalSuite",
+        "title": "GSuite",
         "width": 1280,
         "height": 800,
         "resizable": true,
@@ -29,7 +29,7 @@
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRFOThCNzk2QjEyMUVEQUUKUldTdTdTR3hscmVZVGlDR2EybW1WN2JlWWRySnJVa1VNN0VTTFlnVzFxNmZUNlB6T2tLT2g3bmQK",
-      "endpoints": ["https://github.com/MorenoLand/GScript.GraalSuite/releases/latest/download/latest.json"]
+      "endpoints": ["https://github.com/MorenoLand/GScript.GSuite/releases/latest/download/latest.json"]
     }
   },
   "bundle": {

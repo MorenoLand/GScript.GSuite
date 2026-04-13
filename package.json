@@ -1,7 +1,7 @@
 {
-  "name": "graalsuite",
-  "version": "0.1.39",
-  "description": "GraalSuite - A web-based suite of tools for Graal Online development.",
+  "name": "gsuite",
+  "version": "0.1.41",
+  "description": "GSuite - A web-based suite of tools for Graal Online development.",
   "main": "anieditor.js",
   "scripts": {
     "dev": "node js/build-web.js && npx tauri dev",
@@ -11,16 +11,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/MorenoLand/GScript.GraalSuite.git"
+    "url": "git+https://github.com/MorenoLand/GScript.GSuite.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/MorenoLand/GScript.GraalSuite/issues"
+    "url": "https://github.com/MorenoLand/GScript.GSuite/issues"
   },
-  "homepage": "https://github.com/MorenoLand/GScript.GraalSuite#readme",
+  "homepage": "https://github.com/MorenoLand/GScript.GSuite#readme",
   "devDependencies": {
     "@tauri-apps/cli": "^2.10.1"
   },

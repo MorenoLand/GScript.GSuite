@@ -111,8 +111,39 @@ class FramePieceSprite {
         retval.yoffset = this.yoffset;
         retval.spriteIndex = this.spriteIndex;
         retval.spriteName = this.spriteName;
+        retval.xscale = this.xscale;
+        retval.yscale = this.yscale;
+        retval._zoom = this._zoom;
+        retval.rotation = this.rotation;
         return retval;
     }
+}
+
+function serializeFramePiece(piece) {
+    const name = piece.spriteIndex === SPRITE_INDEX_STRING ? piece.spriteName : String(piece.spriteIndex);
+    return `${name} ${piece.xoffset} ${piece.yoffset}`;
+}
+
+function parseFramePiece(offset) {
+    const parts = offset.trim().split(/\s+/).filter(p => p);
+    if (parts.length < 3) return null;
+    const piece = new FramePieceSprite();
+    const spriteNameOrIndex = parts[0];
+    const spriteIndex = parseInt(spriteNameOrIndex);
+    if (isNaN(spriteIndex)) {
+        piece.spriteIndex = SPRITE_INDEX_STRING;
+        piece.spriteName = spriteNameOrIndex;
+    } else {
+        piece.spriteIndex = spriteIndex;
+        piece.spriteName = "";
+    }
+    piece.xoffset = parseFloat(parts[1]) || 0;
+    piece.yoffset = parseFloat(parts[2]) || 0;
+    if (parts.length >= 4) piece.xscale = parseFloat(parts[3]) || 1.0;
+    if (parts.length >= 5) piece.yscale = parseFloat(parts[4]) || 1.0;
+    if (parts.length >= 6) piece.rotation = parseFloat(parts[5]) || 0.0;
+    if (parts.length >= 7) piece._zoom = parseFloat(parts[6]) || 1.0;
+    return piece;
 }
 
 class FramePieceSound {
@@ -225,6 +256,8 @@ class Animation {
         return this.defaultImages.get(name.toUpperCase()) || "";
     }
 }
+const _GANI_PREFIXED_IDS = new Set(['btnAbout','btnCenterView','btnCloseAll','btnColorScheme','btnCustomCSS','btnGmapGen','btnNew','btnOpen','btnOpenDefault','btnPlay','btnRedo','btnReset','btnSave','btnSaveAll','btnSaveAs','btnSetshape2','btnSettings','btnUndo','btnWorkingDir','colorSchemeDropdown','fileInput','folderInput','imageInput','mainCanvas','mainSplitter','switchBtn','zoomSlider','btnCollab','collabDropdown','collabToggleTrack','collabToggleThumb','collabStatus','collabDisconnect','collabPeers','collabCodeSection','collabMyCode','collabCopy','collabJoinCode','collabJoin']);
+function $(id) { return document.getElementById(_GANI_PREFIXED_IDS.has(id) ? 'gani-' + id : id); }
 
 const SPRITE_INDEX_STRING = -21374783;
 const imageLibrary = new Map();
@@ -278,8 +311,52 @@ function stopAllSounds() {
 }
 const ENABLE_F12_LOGGING = false;
 let animations = [];
+let newGaniCounter = 0;
 let currentTabIndex = 0;
 let currentAnimation = null;
+let isRestoringGaniSession = false;
+
+function activateGaniTab(tab) {
+    if (!tab || !tab.data) return;
+    const idx = tab.data.ani
+        ? animations.indexOf(tab.data.ani)
+        : (typeof tab.data.index === 'number' ? tab.data.index : -1);
+    if (idx >= 0 && idx < animations.length) switchTab(idx);
+}
+function deactivateGaniTab(tab) {}
+function closeGaniTab(tab) {
+    if (!tab || !tab.data) return false;
+    const idx = tab.data.ani
+        ? animations.indexOf(tab.data.ani)
+        : (typeof tab.data.index === 'number' ? tab.data.index : -1);
+    if (idx < 0) return false;
+    closeTab(idx);
+    return true;
+}
+window.activateGaniTab = activateGaniTab;
+window.deactivateGaniTab = deactivateGaniTab;
+window.closeGaniTab = closeGaniTab;
+window.isGaniTabDirty = function(tab) {
+    const ani = tab?.data?.ani;
+    if (ani) return ani.modified === true;
+    const idx = typeof tab?.data?.index === 'number' ? tab.data.index : -1;
+    if (idx >= 0 && idx < animations.length) return animations[idx].modified === true;
+    return false;
+};
+
+function updateGaniTitle() {
+    const _isTauri = window.__TAURI__ != null;
+    if (currentAnimation && currentAnimation.fileName) {
+        document.title = currentAnimation.fileName;
+        if (_isTauri) { window.__TAURI__.window.getCurrentWindow().setTitle(currentAnimation.fileName); }
+        const t = document.getElementById('tbTitle'); if (t) t.textContent = currentAnimation.fileName;
+    } else {
+        document.title = 'GSuite';
+        if (_isTauri) { window.__TAURI__.window.getCurrentWindow().setTitle('GSuite'); }
+        const t = document.getElementById('tbTitle'); if (t) t.textContent = 'GSuite';
+    }
+}
+window.updateGaniTitle = updateGaniTitle;
 let localFileCache = { images: [], ganis: [], sounds: [], ganiFiles: [] };
 let workspaceImageKeys = new Set();
 
@@ -377,7 +454,18 @@ let panY = 0;
 let isPlaying = false;
 let playPosition = 0;
 let playStartTime = 0;
-let keysSwapped = false;
+let keysSwapped = localStorage.getItem("editorSwapKeys") === "true";
+if (localStorage.getItem("editorShowGrid") === null) {
+    localStorage.setItem("editorShowGrid", "true");
+}
+function updateSwapKeysUI() {
+    const _btn = document.getElementById("btnSwapKeys");
+    if (_btn) {
+        _btn.classList.toggle("active", keysSwapped);
+        const tip = keysSwapped ? "Arrows=Direction, WASD=Move — click to restore" : "WASD=Direction, Arrows=Move — click to swap";
+        if (_btn.hasAttribute("data-title")) _btn.dataset.title = tip; else _btn.title = tip;
+    }
+}
 let backgroundColor = "#006400";
 let workingDirectory = "";
 let lastWorkingDirectory = localStorage.getItem("ganiEditorLastWorkingDir") || "";
@@ -462,9 +550,22 @@ let attachedSpriteStartMove = null;
 let isPlacingAttachment = false;
 let lastMouseX = 0;
 let lastMouseY = 0;
+let leftMouseHeld = false;
 let boxSelectStart = null;
 let boxSelectEnd = null;
 let isBoxSelecting = false;
+let isPanning = false;
+let isRotatingSelection = false;
+let rotationReferenceHandle = null;
+let rotationStartMouseAngle = 0;
+let rotationStartAngles = new Map();
+let rotationStartState = null;
+let isScalingSelection = false;
+let scaleReferenceHandle = null;
+let scaleStartLX = 0, scaleStartLY = 0;
+let scaleStartScales = new Map();
+let scaleStartState = null;
+let syncSelectedPieceRotationDisplay = () => {};
 let boxSelectQuadrant = -1;
 let spriteSplitterDragging = false;
 let leftCenterSplitterDragging = false;
@@ -473,8 +574,8 @@ let canvasTimelineSplitterDragging = false;
 let activeContextMenu = null;
 
 function createSliderSync(numberId, sliderId, getter, setter, onChange = () => {}, undoDesc = "") {
-    const numberEl = document.getElementById(numberId);
-    const sliderEl = document.getElementById(sliderId);
+    const numberEl = $(numberId);
+    const sliderEl = $(sliderId);
     if (!numberEl || !sliderEl) return;
 
     const performChange = (val, saveUndo = false) => {
@@ -539,10 +640,10 @@ document.addEventListener("contextmenu", (e) => {
     }
 }, true);
 
-const mainCanvas = document.getElementById("mainCanvas");
+const mainCanvas = $("mainCanvas");
 const mainCtx = mainCanvas.getContext("2d");
-let timelineCanvas = document.getElementById("timelineCanvas");
-let spritePreviewCanvas = document.getElementById("spritePreviewCanvas");
+let timelineCanvas = $("timelineCanvas");
+let spritePreviewCanvas = $("spritePreviewCanvas");
 const ctx = mainCanvas.getContext("2d");
 let timelineCtx = timelineCanvas ? timelineCanvas.getContext("2d") : null;
 const previewCtx = spritePreviewCanvas.getContext("2d");
@@ -589,6 +690,7 @@ function formatKeybind(binding) {
 }
 let scrollbarDragStartX = 0;
 let scrollbarDragStartScrollX = 0;
+let isDraggingScrollbar = false;
 let timelineScrollX = 0;
 let timelineZoom = 1.0;
 let timelineTotalWidth = 0;
@@ -605,9 +707,10 @@ let rightClickPanStartPanX = 0;
 let rightClickPanStartPanY = 0;
 let rightClickPanMoved = false;
 let rightClickJustDragged = false;
-const leftPanel = document.querySelector(".left-panel");
-const rightPanel = document.querySelector(".right-panel");
-const centerPanel = document.querySelector(".center-panel");
+const _ganiRoot = document.getElementById("ganiRoot");
+const leftPanel = _ganiRoot ? _ganiRoot.querySelector(".left-panel") : document.querySelector(".left-panel");
+const rightPanel = _ganiRoot ? _ganiRoot.querySelector(".right-panel") : document.querySelector(".right-panel");
+const centerPanel = _ganiRoot ? _ganiRoot.querySelector(".center-panel") : document.querySelector(".center-panel");
 function updateSpinnerStates() {
     document.querySelectorAll('input[type="number"]').forEach(input => {
         const wrapper = input.closest('.number-input-wrapper');
@@ -631,7 +734,8 @@ function resizeCanvas() {
     const container = centerPanel;
     const dpr = window.devicePixelRatio || 1;
     const containerWidth = centerPanel.clientWidth + 4;
-    const containerHeight = container.clientHeight || window.innerHeight;
+    const containerHeight = container.clientHeight;
+    if (containerHeight <= 0 || containerWidth <= 4) return;
 
     if (leftPanel && rightPanel) {
         const leftWidth = parseInt(leftPanel.style.width) || 270;
@@ -662,7 +766,7 @@ function resizeCanvas() {
         }
     }
 
-    const canvasContainer = document.querySelector(".canvas-container");
+    const canvasContainer = _ganiRoot ? _ganiRoot.querySelector(".canvas-container") : document.querySelector(".canvas-container");
     if (canvasContainer) {
         canvasContainer.style.width = "100%";
         canvasContainer.style.height = "100%";
@@ -673,25 +777,24 @@ function resizeCanvas() {
     
     mainCanvas.width = actualWidth * dpr;
     mainCanvas.height = actualHeight * dpr;
-    mainCanvas.style.width = "100%";
-    mainCanvas.style.height = "100%";
+    mainCanvas.style.width = actualWidth + "px";
+    mainCanvas.style.height = actualHeight + "px";
     mainCanvas.style.position = "absolute";
     mainCanvas.style.top = "0";
     mainCanvas.style.left = "0";
     mainCanvas.style.zIndex = "1";
-    const canvasControls = document.querySelector(".canvas-controls");
+    const canvasControls = _ganiRoot ? _ganiRoot.querySelector(".canvas-controls") : document.querySelector(".canvas-controls");
     if (canvasControls) {
         canvasControls.style.left = "10px";
     }
-    ctx.scale(dpr, dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const timelineView = timelineCanvas.parentElement;
     if (timelineView && timelineView.clientWidth > 0) {
         timelineCanvas.width = timelineView.clientWidth;
         timelineCanvas.height = timelineView.clientHeight || 60;
     } else {
-        const timelineContainer = document.querySelector(".timeline-container");
+        const timelineContainer = _ganiRoot ? _ganiRoot.querySelector(".timeline-container") : document.querySelector(".timeline-container");
         if (timelineContainer && timelineContainer.clientWidth > 0) {
-            timelineCanvas.width = timelineContainer.clientWidth;
             const containerHeight = timelineContainer.clientHeight || 100;
             timelineCanvas.height = containerHeight - 20;
         } else {
@@ -712,8 +815,8 @@ function resizeCanvas() {
             timelineVisible = timelineVisible !== "false";
             const timelineContainer = document.querySelector(".timeline-container");
             const timelineView = document.querySelector(".timeline-view");
-            const canvas = document.getElementById("timelineCanvas");
-            const canvasTimelineSplitter = document.getElementById("canvasTimelineSplitter");
+            const canvas = $("timelineCanvas");
+            const canvasTimelineSplitter = $("canvasTimelineSplitter");
             if (timelineVisible) {
                 drawTimeline();
             if (timelineContainer) {
@@ -1052,12 +1155,8 @@ function getSpriteImage(sprite) {
     return img;
 }
 
-async function loadLocalImages(loading) {
+async function loadLocalImages() {
     const updateProgress = (current, total) => {
-        if (loading) {
-            const percent = total > 0 ? Math.round((current / total) * 100) : 0;
-            loading.update(`Loading Gani Editor... ${percent}%`);
-        }
     };
     const fallbackImages = ["2002_32x32sprites-flame.png","arrowsbox.png","baddyblue.png","baddydragon.png","baddygold.png","baddygray.png","baddyhare.png","baddylizardon.png","baddyninja.png","baddyoctopus.png","baddyred.png","baddytest.png","bcalarmclock.png","bigshield.png","block.png","bluelampani.mng","bluelampani2.mng","blueletters.png","body.png","body2.png","body3.png","body4.png","bomb1.png","bomb2.png","brother1.png","brother2.png","bshield0.png","chest.png","chestopen.png","door.png","door1.png","editorcursor.png","emoticon_AFK_stay.mng","emoticon_BRB_stay.mng","emoticon_conf.png","emoticon_Dgrin.png","emoticon_Eyes.mng","emoticon_Frown.png","emoticon_Grr.png","emoticon_Heart.png","emoticon_Idea.png","emoticon_jpm_stay.mng","emoticon_kitty.png","emoticon_LOL.mng","emoticon_Maybe.png","emoticon_Ncool.png","emoticon_Ohh.png","emoticon_Ptongue.mng","emoticon_Qphone_stay.png","emoticon_ROFL.mng","emoticon_Smile.png","emoticon_Tears.mng","emoticon_Umad.png","emoticon_Vsorry.mng","emoticon_Wink.png","emoticon_XX.png","emoticon_Yummy.png","emoticon_Zzz_stay.mng","emoticonbubbles.png","emoticonmicro.png","emotions_template.png","g4_animation_fire.gif","g4_particle_bluelight.png","g4_particle_bluex.png","g4_particle_bubble.png","g4_particle_cloud.png","g4_particle_halo.png","g4_particle_leaf.png","g4_particle_minus.png","g4_particle_ring.png","g4_particle_sbubble.png","g4_particle_smoke.png","g4_particle_spark.png","g4_particle_sun.png","g4_particle_tornado.png","g4_particle_whitespot.png","g4_particle_x.png","g4_particle_yellowlight.png","gate1.png","gate2.png","ghostanimation.png","ghostshadow.png","graal2002letters.png","gralats.png","hat0.png","hat1.png","hat2.png","haticon.png","head0.png","head19.png","head23.png","headnpc.png","khairs0.png","khead0.png","klegs0.png","kmarms100.png","kmbody100.png","lamps_wood.png","letters.png","light2.png","opps.png","pics1.png","ride.png","ride2.png","ride3.png","shield1.png","shield2.png","shield3.png","skip_icon.png","skip.png","sprites.png","state.png","sword1.png","treeview_foldericons.png","tutorial_arrowdown.png"];
     let imageFiles = [];
@@ -1156,6 +1255,27 @@ function redraw() {
             ctx.beginPath();
             ctx.rect(quadX, quadY, quadWidth, quadHeight);
             ctx.clip();
+            if (_dragMoveIndicator && isDragging) {
+                ctx.save();
+                ctx.translate(quadX + quadWidth / 2 + panX, quadY + quadHeight / 2 + panY);
+                ctx.scale(scale, scale);
+                for (const [piece, startPos] of _dragMoveIndicator.startPositions) {
+                    const bb = piece.getBoundingBox(currentAnimation);
+                    if (!bb) continue;
+                    const hw = bb.width / 2, hh = bb.height / 2;
+                    const sx = startPos.x + hw, sy = startPos.y + hh;
+                    const cx = piece.xoffset + hw, cy = piece.yoffset + hh;
+                    ctx.setLineDash([6 / scale, 6 / scale]);
+                    ctx.strokeStyle = "rgba(255,200,0,0.7)";
+                    ctx.lineWidth = 2.5 / scale;
+                    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(cx, cy); ctx.stroke();
+                    ctx.setLineDash([]);
+                    ctx.beginPath(); ctx.arc(sx, sy, 9 / scale, 0, Math.PI * 2);
+                    ctx.fillStyle = "rgba(255,200,0,0.35)"; ctx.fill();
+                    ctx.strokeStyle = "rgba(255,200,0,1)"; ctx.lineWidth = 2.5 / scale; ctx.stroke();
+                }
+                ctx.restore();
+            }
             drawQuadrant(ctx, frame, i, quadX, quadY, quadWidth, quadHeight, scale, panX, panY);
             ctx.restore();
             ctx.save();
@@ -1189,6 +1309,23 @@ function redraw() {
     drawGrid(ctx);
             }
     if (pixelGridEnabled) drawPixelGrid(ctx);
+    if (_dragMoveIndicator && isDragging) {
+        for (const [piece, startPos] of _dragMoveIndicator.startPositions) {
+            const bb = piece.getBoundingBox(currentAnimation);
+            if (!bb) continue;
+            const hw = bb.width / 2, hh = bb.height / 2;
+            const sx = startPos.x + hw, sy = startPos.y + hh;
+            const cx = piece.xoffset + hw, cy = piece.yoffset + hh;
+            ctx.setLineDash([6 / scale, 6 / scale]);
+            ctx.strokeStyle = "rgba(255,200,0,0.7)";
+            ctx.lineWidth = 2.5 / scale;
+            ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(cx, cy); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.beginPath(); ctx.arc(sx, sy, 9 / scale, 0, Math.PI * 2);
+            ctx.fillStyle = "rgba(255,200,0,0.35)"; ctx.fill();
+            ctx.strokeStyle = "rgba(255,200,0,1)"; ctx.lineWidth = 2.5 / scale; ctx.stroke();
+        }
+    }
     if (frame) {
         if (onionSkinEnabled) {
             if (currentFrame > 0) {
@@ -1284,38 +1421,6 @@ function redraw() {
             _drawBoxSelect(boxSelectStart.x * zoom + width / 2 + panX, boxSelectStart.y * zoom + height / 2 + panY, boxSelectEnd.x * zoom + width / 2 + panX, boxSelectEnd.y * zoom + height / 2 + panY);
         }
     }
-    if (_dragMoveIndicator && isDragging) {
-        const zoom = zoomFactors[zoomLevel] || 1.0;
-        const _drawDragIndicator = (centerX, centerY) => {
-            ctx.save();
-            ctx.translate(centerX, centerY);
-            ctx.scale(zoom, zoom);
-            for (const [piece, startPos] of _dragMoveIndicator.startPositions) {
-                const bb = piece.getBoundingBox(currentAnimation);
-                if (!bb) continue;
-                const hw = bb.width / 2, hh = bb.height / 2;
-                const sx = startPos.x + hw, sy = startPos.y + hh;
-                const cx = piece.xoffset + hw, cy = piece.yoffset + hh;
-                ctx.setLineDash([6 / zoom, 6 / zoom]);
-                ctx.strokeStyle = "rgba(255,200,0,0.7)";
-                ctx.lineWidth = 2.5 / zoom;
-                ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(cx, cy); ctx.stroke();
-                ctx.setLineDash([]);
-                ctx.beginPath(); ctx.arc(sx, sy, 9 / zoom, 0, Math.PI * 2);
-                ctx.fillStyle = "rgba(255,200,0,0.35)"; ctx.fill();
-                ctx.strokeStyle = "rgba(255,200,0,1)"; ctx.lineWidth = 2.5 / zoom; ctx.stroke();
-            }
-            ctx.restore();
-        };
-        if (splitViewEnabled && !currentAnimation.singleDir && selectedPieceDir !== null) {
-            const quadWidth = width / 2, quadHeight = height / 2;
-            const quadX = (selectedPieceDir % 2) * quadWidth;
-            const quadY = Math.floor(selectedPieceDir / 2) * quadHeight;
-            _drawDragIndicator(quadX + quadWidth / 2 + panX, quadY + quadHeight / 2 + panY);
-        } else {
-            _drawDragIndicator(width / 2 + panX, height / 2 + panY);
-        }
-    }
     if (insertPieces.length > 0 && insertPiece) {
         const rect = mainCanvas.getBoundingClientRect();
         const zoom = zoomFactors[zoomLevel] || 1.0;
@@ -1338,7 +1443,7 @@ function redraw() {
     }
     if (insertPiece) {
         mainCanvas.style.cursor = "crosshair";
-    } else {
+    } else if (!isDragging && !isPanning && !isRightClickPanning && !isRotatingSelection && !isScalingSelection) {
         mainCanvas.style.cursor = "default";
     }
     });
@@ -1369,24 +1474,39 @@ function drawFrame(ctx, frame, dir) {
                     ctx.globalAlpha = borderOpacity;
                     ctx.strokeStyle = borderColor;
                     ctx.lineWidth = borderThickness;
-                    const bb = piece.getBoundingBox(currentAnimation);
-                    ctx.strokeRect(bb.x - borderThickness, bb.y - borderThickness, bb.width + borderThickness * 2, bb.height + borderThickness * 2);
+                    const outline = getPieceRotationOutline(piece);
+                    if (outline && outline.length === 4) {
+                        ctx.beginPath();
+                        ctx.moveTo(outline[0].x, outline[0].y);
+                        for (let i = 1; i < outline.length; i++) ctx.lineTo(outline[i].x, outline[i].y);
+                        ctx.closePath();
+                        ctx.stroke();
+                        const zoom = zoomFactors[zoomLevel] || 1.0;
+                        const anchorRadius = 3.5 / zoom;
+                        for (const point of outline) {
+                            drawAnchorDot(ctx, point.x, point.y, anchorRadius, borderColor, "#0a0a0a", Math.max(1 / zoom, borderThickness / 2));
+                        }
+                    } else {
+                        const bb = piece.getBoundingBox(currentAnimation);
+                        ctx.strokeRect(bb.x - borderThickness, bb.y - borderThickness, bb.width + borderThickness * 2, bb.height + borderThickness * 2);
+                    }
+                    const rotationHandles = getPieceRotationHandles(piece);
+                    if (rotationHandles.length) {
+                        const zoom = zoomFactors[zoomLevel] || 1.0;
+                        for (const rotationHandle of rotationHandles) {
+                            drawAnchorDot(ctx, rotationHandle.x, rotationHandle.y, rotationHandle.radius, borderColor, "#0a0a0a", Math.max(1 / zoom, borderThickness / 2));
+                        }
+                    }
+                    const scaleHandles = getPieceScaleHandles(piece);
+                    if (scaleHandles.length) {
+                        const zoom = zoomFactors[zoomLevel] || 1.0;
+                        for (const sh of scaleHandles) {
+                            drawScaleHandle(ctx, sh.x, sh.y, sh.radius, "#ffffff", "#0a0a0a", Math.max(1 / zoom, borderThickness / 2));
+                        }
+                    }
                     ctx.restore();
                 }
-                ctx.save();
-                ctx.imageSmoothingEnabled = false;
-                ctx.translate(Math.round(piece.xoffset), Math.round(piece.yoffset));
-                const _pz = piece._zoom || 1.0;
-                const _px = piece.xscale * _pz, _py = piece.yscale * _pz;
-                if (piece.rotation !== 0 || _px !== 1 || _py !== 1) {
-                    const spriteSize = piece.getSize(currentAnimation);
-                    ctx.translate(spriteSize.width / 2, spriteSize.height / 2);
-                    ctx.scale(_px, _py);
-                    ctx.rotate(piece.rotation * Math.PI / 180);
-                    ctx.translate(-spriteSize.width / 2, -spriteSize.height / 2);
-                }
-                drawSprite(ctx, sprite, 0, 0);
-                ctx.restore();
+                drawSprite(ctx, sprite, piece.xoffset, piece.yoffset);
             }
         } else if (piece.type === "sound") {
             ctx.fillStyle = "#ffff00";
@@ -1486,6 +1606,163 @@ function drawQuadrant(ctx, frame, dir, quadrantX, quadrantY, quadrantWidth, quad
     ctx.restore();
 }
 
+function normalizeRotationDegrees(degrees) {
+    let value = degrees;
+    while (value > 180) value -= 360;
+    while (value <= -180) value += 360;
+    return value;
+}
+
+function getPieceTransformGeometry(piece) {
+    if (!currentAnimation || !piece || piece.type !== "sprite") return null;
+    const sprite = currentAnimation.getAniSprite(piece.spriteIndex, piece.spriteName || "");
+    if (!sprite) return null;
+    const spriteZoom = sprite._zoom || 1.0;
+    const pieceZoom = piece._zoom || 1.0;
+    const scaleX = (sprite.xscale ?? 1.0) * spriteZoom * (piece.xscale ?? 1.0) * pieceZoom;
+    const scaleY = (sprite.yscale ?? 1.0) * spriteZoom * (piece.yscale ?? 1.0) * pieceZoom;
+    const spriteCenterX = sprite.width / 2;
+    const spriteCenterY = sprite.height / 2;
+    const centerX = piece.xoffset + spriteCenterX;
+    const centerY = piece.yoffset + spriteCenterY;
+    const angle = ((sprite.rotation || 0) + (piece.rotation || 0)) * Math.PI / 180;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const localCorners = [
+        { x: -spriteCenterX, y: -spriteCenterY },
+        { x: sprite.width - spriteCenterX, y: -spriteCenterY },
+        { x: sprite.width - spriteCenterX, y: sprite.height - spriteCenterY },
+        { x: -spriteCenterX, y: sprite.height - spriteCenterY }
+    ];
+    const corners = localCorners.map(point => {
+        const dx = point.x * scaleX;
+        const dy = point.y * scaleY;
+        return {
+            x: centerX + dx * cos - dy * sin,
+            y: centerY + dx * sin + dy * cos
+        };
+    });
+    const topMid = { x: (corners[0].x + corners[1].x) / 2, y: (corners[0].y + corners[1].y) / 2 };
+    const topNormalX = topMid.x - centerX;
+    const topNormalY = topMid.y - centerY;
+    const topNormalLen = Math.hypot(topNormalX, topNormalY) || 1;
+    return {
+        centerX,
+        centerY,
+        corners,
+        angle,
+        topMid,
+        outwardX: topNormalX / topNormalLen,
+        outwardY: topNormalY / topNormalLen
+    };
+}
+
+function getPieceRotationHandles(piece) {
+    const geometry = getPieceTransformGeometry(piece);
+    if (!geometry) return [];
+    const zoom = zoomFactors[zoomLevel] || 1.0;
+    const handleRadius = 5 / zoom;
+    const handleGap = 14 / zoom;
+    const [topLeft, topRight, bottomRight, bottomLeft] = geometry.corners;
+    const leftMid = { x: (topLeft.x + bottomLeft.x) / 2, y: (topLeft.y + bottomLeft.y) / 2 };
+    const rightMid = { x: (topRight.x + bottomRight.x) / 2, y: (topRight.y + bottomRight.y) / 2 };
+    const sideNormals = [
+        { mid: geometry.topMid },
+        { mid: leftMid },
+        { mid: rightMid }
+    ];
+    return sideNormals.map(({ mid }) => {
+        const nx = mid.x - geometry.centerX;
+        const ny = mid.y - geometry.centerY;
+        const len = Math.hypot(nx, ny) || 1;
+        return {
+            piece,
+            type: "rotate",
+            centerX: geometry.centerX,
+            centerY: geometry.centerY,
+            x: mid.x + (nx / len) * handleGap,
+            y: mid.y + (ny / len) * handleGap,
+            radius: handleRadius,
+            angle: geometry.angle
+        };
+    });
+}
+
+function getPieceScaleHandles(piece) {
+    const geometry = getPieceTransformGeometry(piece);
+    if (!geometry) return [];
+    const zoom = zoomFactors[zoomLevel] || 1.0;
+    const handleRadius = 5 / zoom;
+    const [topLeft, topRight, bottomRight, bottomLeft] = geometry.corners;
+    if (!currentAnimation) return [];
+    const sprite = currentAnimation.getAniSprite(piece.spriteIndex, piece.spriteName || "");
+    if (!sprite) return [];
+    const hw = sprite.width / 2;
+    const hh = sprite.height / 2;
+    return [
+        { piece, type: "scale", localX: -hw, localY: -hh, x: topLeft.x,     y: topLeft.y,     radius: handleRadius, centerX: geometry.centerX, centerY: geometry.centerY, angle: geometry.angle, cursor: "nw-resize" },
+        { piece, type: "scale", localX:  hw, localY: -hh, x: topRight.x,    y: topRight.y,    radius: handleRadius, centerX: geometry.centerX, centerY: geometry.centerY, angle: geometry.angle, cursor: "ne-resize" },
+        { piece, type: "scale", localX:  hw, localY:  hh, x: bottomRight.x, y: bottomRight.y, radius: handleRadius, centerX: geometry.centerX, centerY: geometry.centerY, angle: geometry.angle, cursor: "se-resize" },
+        { piece, type: "scale", localX: -hw, localY:  hh, x: bottomLeft.x,  y: bottomLeft.y,  radius: handleRadius, centerX: geometry.centerX, centerY: geometry.centerY, angle: geometry.angle, cursor: "sw-resize" },
+    ];
+}
+function findScaleHandleAt(wx, wy) {
+    const selectedSpritePieces = Array.from(selectedPieces).filter(p => p?.type === "sprite");
+    for (let i = selectedSpritePieces.length - 1; i >= 0; i--) {
+        const handles = getPieceScaleHandles(selectedSpritePieces[i]);
+        for (const handle of handles) {
+            const dx = wx - handle.x, dy = wy - handle.y;
+            if (dx * dx + dy * dy <= handle.radius * handle.radius) return handle;
+        }
+    }
+    return null;
+}
+function drawAnchorDot(ctx, x, y, radius, fillColor, strokeColor, lineWidth) {
+    ctx.save();
+    ctx.fillStyle = fillColor;
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = lineWidth;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+}
+function drawScaleHandle(ctx, x, y, radius, fillColor, strokeColor, lineWidth) {
+    ctx.save();
+    ctx.fillStyle = fillColor;
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = lineWidth;
+    ctx.beginPath();
+    ctx.rect(x - radius, y - radius, radius * 2, radius * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+}
+
+function getPieceRotationHandle(piece) {
+    const handles = getPieceRotationHandles(piece);
+    return handles[0] || null;
+}
+
+function getPieceRotationOutline(piece) {
+    const geometry = getPieceTransformGeometry(piece);
+    return geometry ? geometry.corners : null;
+}
+
+function findRotationHandleAt(wx, wy) {
+    const selectedSpritePieces = Array.from(selectedPieces).filter(piece => piece?.type === "sprite");
+    for (let i = selectedSpritePieces.length - 1; i >= 0; i--) {
+        const handles = getPieceRotationHandles(selectedSpritePieces[i]);
+        for (const handle of handles) {
+            const dx = wx - handle.x;
+            const dy = wy - handle.y;
+            if ((dx * dx) + (dy * dy) <= handle.radius * handle.radius) return handle;
+        }
+    }
+    return null;
+}
+
 function getTimelineBackgroundColor() {
     const cssBg = getComputedStyle(document.documentElement).getPropertyValue('--timeline-bg').trim();
     if (cssBg) return cssBg;
@@ -1507,7 +1784,7 @@ function getTimelineBackgroundColor() {
 }
 function drawTimeline() {
     if (!timelineCanvas) {
-        timelineCanvas = document.getElementById("timelineCanvas");
+        timelineCanvas = $("timelineCanvas");
         if (!timelineCanvas) return;
         timelineCtx = timelineCanvas.getContext("2d");
     }
@@ -1521,7 +1798,7 @@ function drawTimeline() {
         return;
     }
     if (!timelineCanvas) {
-        timelineCanvas = document.getElementById("timelineCanvas");
+        timelineCanvas = $("timelineCanvas");
         if (!timelineCanvas) return;
         timelineCtx = timelineCanvas.getContext("2d");
     }
@@ -1539,7 +1816,7 @@ function drawTimeline() {
         }
     }
     timelineCanvas.width = canvasWidth;
-    const viewHeight = timelineView ? timelineView.clientHeight : 60;
+    const viewHeight = timelineView ? (timelineView.clientHeight || 116) : 116;
     timelineCanvas.height = viewHeight || 60;
     const width = timelineCanvas.width;
     const height = timelineCanvas.height;
@@ -1867,7 +2144,7 @@ function drawTimeline() {
         timelineCtx.lineWidth = 1;
         timelineCtx.strokeRect(thumbX, scrollbarY, thumbWidth, scrollbarHeight);
     }
-    const canvasEl = document.getElementById("timelineCanvas");
+    const canvasEl = $("timelineCanvas");
     const timelineViewEl = document.querySelector(".timeline-view");
     if (canvasEl) {
         canvasEl.style.display = "block";
@@ -1879,7 +2156,6 @@ function drawTimeline() {
     if (timelineViewEl) {
         timelineViewEl.style.display = "block";
         timelineViewEl.style.visibility = "visible";
-        timelineViewEl.style.height = "116px";
     }
 }
 
@@ -2063,33 +2339,20 @@ function parseGani(text) {
                     let frameLeft = 0, frameTop = 0, frameRight = 0, frameBottom = 0;
                     const offsets = line.split(",").filter(o => o.trim());
                     for (const offset of offsets) {
-                        const parts = offset.trim().split(/\s+/).filter(p => p);
-                        if (parts.length >= 3) {
-                            const piece = new FramePieceSprite();
-                            const spriteNameOrIndex = parts[0];
-                            const spriteIndex = parseInt(spriteNameOrIndex);
-                            if (isNaN(spriteIndex)) {
-                                piece.spriteIndex = SPRITE_INDEX_STRING;
-                                piece.spriteName = spriteNameOrIndex;
-                            } else {
-                                piece.spriteIndex = spriteIndex;
-                                piece.spriteName = "";
-                            }
-                            piece.xoffset = parseFloat(parts[1]) || 0;
-                            piece.yoffset = parseFloat(parts[2]) || 0;
-                            if (piece.xoffset < left) left = piece.xoffset;
-                            if (piece.yoffset < top) top = piece.yoffset;
-                            if (piece.xoffset < frameLeft) frameLeft = piece.xoffset;
-                            if (piece.yoffset < frameTop) frameTop = piece.yoffset;
-                            const sprite = ani.getAniSprite(piece.spriteIndex, piece.spriteName);
-                            if (sprite) {
-                                if (piece.xoffset + sprite.width > right) right = piece.xoffset + sprite.width;
-                                if (piece.yoffset + sprite.height > bottom) bottom = piece.yoffset + sprite.height;
-                                if (piece.xoffset + sprite.width > frameRight) frameRight = piece.xoffset + sprite.width;
-                                if (piece.yoffset + sprite.height > frameBottom) frameBottom = piece.yoffset + sprite.height;
-                            }
-                            frame.pieces[0].push(piece);
+                        const piece = parseFramePiece(offset);
+                        if (!piece) continue;
+                        if (piece.xoffset < left) left = piece.xoffset;
+                        if (piece.yoffset < top) top = piece.yoffset;
+                        if (piece.xoffset < frameLeft) frameLeft = piece.xoffset;
+                        if (piece.yoffset < frameTop) frameTop = piece.yoffset;
+                        const sprite = ani.getAniSprite(piece.spriteIndex, piece.spriteName);
+                        if (sprite) {
+                            if (piece.xoffset + sprite.width > right) right = piece.xoffset + sprite.width;
+                            if (piece.yoffset + sprite.height > bottom) bottom = piece.yoffset + sprite.height;
+                            if (piece.xoffset + sprite.width > frameRight) frameRight = piece.xoffset + sprite.width;
+                            if (piece.yoffset + sprite.height > frameBottom) frameBottom = piece.yoffset + sprite.height;
                         }
+                        frame.pieces[0].push(piece);
                     }
                     frame.boundingBox = {x: frameLeft, y: frameTop, width: frameRight - frameLeft, height: frameBottom - frameTop};
                     frame.duration = 50;
@@ -2107,33 +2370,20 @@ function parseGani(text) {
                     if (line) {
                         const offsets = line.split(",").filter(o => o.trim());
                         for (const offset of offsets) {
-                            const parts = offset.trim().split(/\s+/).filter(p => p);
-                            if (parts.length >= 3) {
-                                const piece = new FramePieceSprite();
-                                const spriteNameOrIndex = parts[0];
-                                const spriteIndex = parseInt(spriteNameOrIndex);
-                                if (isNaN(spriteIndex)) {
-                                    piece.spriteIndex = SPRITE_INDEX_STRING;
-                                    piece.spriteName = spriteNameOrIndex;
-                                } else {
-                                    piece.spriteIndex = spriteIndex;
-                                    piece.spriteName = "";
-                                }
-                                piece.xoffset = parseFloat(parts[1]) || 0;
-                                piece.yoffset = parseFloat(parts[2]) || 0;
-                                if (piece.xoffset < left) left = piece.xoffset;
-                                if (piece.yoffset < top) top = piece.yoffset;
-                                if (piece.xoffset < frameLeft) frameLeft = piece.xoffset;
-                                if (piece.yoffset < frameTop) frameTop = piece.yoffset;
-                                const sprite = ani.getAniSprite(piece.spriteIndex, piece.spriteName);
-                                if (sprite) {
-                                    if (piece.xoffset + sprite.width > right) right = piece.xoffset + sprite.width;
-                                    if (piece.yoffset + sprite.height > bottom) bottom = piece.yoffset + sprite.height;
-                                    if (piece.xoffset + sprite.width > frameRight) frameRight = piece.xoffset + sprite.width;
-                                    if (piece.yoffset + sprite.height > frameBottom) frameBottom = piece.yoffset + sprite.height;
-                                }
-                                dirPieces.push(piece);
+                            const piece = parseFramePiece(offset);
+                            if (!piece) continue;
+                            if (piece.xoffset < left) left = piece.xoffset;
+                            if (piece.yoffset < top) top = piece.yoffset;
+                            if (piece.xoffset < frameLeft) frameLeft = piece.xoffset;
+                            if (piece.yoffset < frameTop) frameTop = piece.yoffset;
+                            const sprite = ani.getAniSprite(piece.spriteIndex, piece.spriteName);
+                            if (sprite) {
+                                if (piece.xoffset + sprite.width > right) right = piece.xoffset + sprite.width;
+                                if (piece.yoffset + sprite.height > bottom) bottom = piece.yoffset + sprite.height;
+                                if (piece.xoffset + sprite.width > frameRight) frameRight = piece.xoffset + sprite.width;
+                                if (piece.yoffset + sprite.height > frameBottom) frameBottom = piece.yoffset + sprite.height;
                             }
+                            dirPieces.push(piece);
                         }
                     }
                     newFrame.push({pieces: dirPieces, boundingBox: {x: frameLeft, y: frameTop, width: frameRight - frameLeft, height: frameBottom - frameTop}});
@@ -2278,10 +2528,7 @@ function saveGani(ani) {
         for (let dir = 0; dir < (ani.singleDir ? 1 : 4); dir++) {
             const pieces = frame.pieces[dir];
             if (pieces.length > 0) {
-                const offsets = pieces.map(p => {
-                    const name = p.spriteIndex === SPRITE_INDEX_STRING ? p.spriteName : String(p.spriteIndex);
-                    return `${name} ${p.xoffset} ${p.yoffset}`;
-                });
+                const offsets = pieces.map(p => serializeFramePiece(p));
                 if (ani.singleDir) {
                     output += " " + offsets.join(",") + "\n";
                 } else {
@@ -2472,7 +2719,6 @@ async function loadWorkspaceFromDisk(dirPath) {
                 window._workspaceScanUnlisten();
                 window._workspaceScanUnlisten = null;
             }
-            console.log(`[TAURI] Workspace indexed: ${chunk.image_count} images, ${chunk.gani_count} ganis (streamed)`);
             refreshAllAnimationsSprites();
             drawSpritePreview();
             updateSpritesList();
@@ -2510,7 +2756,6 @@ async function restoreWorkspaceFromCache() {
         if (soundExts.has(e)) localFileCache.sounds.push(path);
     });
     localFileCache.ganis = localFileCache.ganiFiles.map(g => g.path);
-    console.log(`[TAURI] Workspace restored from cache: ${workspacePathIndex.size} files, dir=${cached.dir}`);
     refreshAllAnimationsSprites();
     drawSpritePreview();
     updateSpritesList();
@@ -2528,7 +2773,7 @@ async function tauriReadTextFile(filePath) {
 }
 
 function updateSpritesList() {
-    const list = document.getElementById("spritesList");
+    const list = $("spritesList");
     list.innerHTML = "";
     if (!currentAnimation) return;
     const sortedSprites = Array.from(currentAnimation.sprites.values()).sort((a, b) => a.index - b.index);
@@ -2742,12 +2987,18 @@ function updateSpritesList() {
         const itemCtx = canvas.getContext("2d");
         itemCtx.imageSmoothingEnabled = false;
         if (img && sprite.width > 0 && sprite.height > 0) {
-            const dispW = Math.max(sprite.width * Math.abs(sprite.xscale) * (sprite._zoom || 1), 1);
-            const dispH = Math.max(sprite.height * Math.abs(sprite.yscale) * (sprite._zoom || 1), 1);
+            const _sz = sprite._zoom || 1.0;
+            const _sx = Math.abs((sprite.xscale ?? 1.0) * _sz);
+            const _sy = Math.abs((sprite.yscale ?? 1.0) * _sz);
+            const r = (sprite.rotation || 0) * Math.PI / 180;
+            const cosR = Math.abs(Math.cos(r)), sinR = Math.abs(Math.sin(r));
+            const dispW = Math.max(sprite.width * _sx * cosR + sprite.height * _sy * sinR, 1);
+            const dispH = Math.max(sprite.width * _sx * sinR + sprite.height * _sy * cosR, 1);
             const scale = Math.min(maxSize / dispW, maxSize / dispH);
             itemCtx.save();
+            itemCtx.translate(maxSize / 2, maxSize / 2);
             itemCtx.scale(scale, scale);
-            drawSprite(itemCtx, sprite, 0, 0);
+            drawSprite(itemCtx, sprite, -sprite.width / 2, -sprite.height / 2);
             itemCtx.restore();
         } else {
             const placeholderWidth = sprite.width > 0 ? sprite.width : 32;
@@ -2779,7 +3030,7 @@ function updateSpritesList() {
         item.appendChild(label);
         list.appendChild(item);
     }
-    const spritesList = document.getElementById("spritesList");
+    const spritesList = $("spritesList");
     if (spritesList && !spritesList.hasAttribute("data-context-menu-bound")) {
         spritesList.setAttribute("data-context-menu-bound", "true");
         spritesList.setAttribute("tabindex", "0");
@@ -2870,48 +3121,81 @@ function selectSprite(sprite) {
     drawSpritePreview();
 }
 
+function getSpriteEditorTargets() {
+    if (currentAnimation && selectedPieces.size > 1) {
+        const targets = [];
+        const seen = new Set();
+        for (const piece of selectedPieces) {
+            if (!piece || piece.type !== "sprite") continue;
+            const sprite = currentAnimation.getAniSprite(piece.spriteIndex, piece.spriteName || "");
+            if (!sprite) continue;
+            if (seen.has(sprite.index)) continue;
+            seen.add(sprite.index);
+            targets.push(sprite);
+        }
+        if (targets.length > 0) return targets;
+    }
+    return editingSprite ? [editingSprite] : [];
+}
+
+function getPrimarySpriteEditorTarget() {
+    const targets = getSpriteEditorTargets();
+    return targets.length ? targets[0] : null;
+}
+
+function getSpriteEditorSummary(targets) {
+    if (!targets.length) return "Sprite";
+    if (targets.length === 1) {
+        const sprite = targets[0];
+        return sprite.comment ? `"${sprite.comment}"` : `Sprite ${sprite.index}`;
+    }
+    return `${targets.length} Sprites`;
+}
+
 function editSprite(sprite) {
     showAddSpriteDialog(sprite);
 }
 
 function updateSpriteEditor() {
-    if (!editingSprite) {
-        document.getElementById("spriteEditPanel").style.display = "none";
+    const spriteTargets = getSpriteEditorTargets();
+    const primarySprite = spriteTargets[0] || null;
+    if (!primarySprite) {
+        $("spriteEditPanel").style.display = "none";
         return;
     }
-    const spriteEditPanel = document.getElementById("spriteEditPanel");
-    const spriteID = document.getElementById("spriteID");
-    const spriteSource = document.getElementById("spriteSource");
-    const spriteImage = document.getElementById("spriteImage");
-    const spriteComment = document.getElementById("spriteComment");
-    const xScale = document.getElementById("xScale");
-    const xScaleSlider = document.getElementById("xScaleSlider");
-    const yScale = document.getElementById("yScale");
-    const yScaleSlider = document.getElementById("yScaleSlider");
-    const rotationEl = document.getElementById("rotation");
-    const rotationSlider = document.getElementById("rotationSlider");
-    const zoomEl = document.getElementById("zoom");
-    const zoomSlider = document.getElementById("zoomSlider");
-    const spriteMode = document.getElementById("spriteMode");
-    const spriteLeft = document.getElementById("spriteLeft");
-    const spriteTop = document.getElementById("spriteTop");
-    const spriteWidth = document.getElementById("spriteWidth");
-    const spriteHeight = document.getElementById("spriteHeight");
-    const colorSwatch = document.getElementById("colorSwatch");
+    const spriteEditPanel = $("spriteEditPanel");
+    const spriteID = $("spriteID");
+    const spriteSource = $("spriteSource");
+    const spriteImage = $("spriteImage");
+    const spriteComment = $("spriteComment");
+    const xScale = $("xScale");
+    const xScaleSlider = $("xScaleSlider");
+    const yScale = $("yScale");
+    const yScaleSlider = $("yScaleSlider");
+    const rotationEl = $("rotation");
+    const rotationSlider = $("rotationSlider");
+    const zoomEl = $("zoom");
+    const zoomSlider = $("zoomSlider");
+    const spriteMode = $("spriteMode");
+    const spriteLeft = $("spriteLeft");
+    const spriteTop = $("spriteTop");
+    const spriteWidth = $("spriteWidth");
+    const spriteHeight = $("spriteHeight");
+    const colorSwatch = $("colorSwatch");
 
     spriteEditPanel.style.display = "block";
-    spriteID.value = editingSprite.index;
-    spriteSource.value = editingSprite.type;
-    spriteImage.value = editingSprite.customImageName;
-    spriteComment.value = editingSprite.comment;
-    const xscale = editingSprite.xscale !== undefined ? editingSprite.xscale : 1.0;
-    const yscale = editingSprite.yscale !== undefined ? editingSprite.yscale : 1.0;
-    const rotation = editingSprite.rotation !== undefined ? editingSprite.rotation : 0.0;
-    const zoom = editingSprite._zoom !== undefined ? editingSprite._zoom : 1.0;
-    if (editingSprite.xscale === undefined) editingSprite.xscale = 1.0;
-    if (editingSprite.yscale === undefined) editingSprite.yscale = 1.0;
-    if (editingSprite._zoom === undefined) editingSprite._zoom = 1.0;
-    if (editingSprite.rotation === undefined) editingSprite.rotation = 0.0;
+    spriteID.value = spriteTargets.map(sprite => sprite.index).join(", ");
+    spriteSource.value = primarySprite.type;
+    spriteImage.value = primarySprite.customImageName;
+    spriteComment.value = primarySprite.comment;
+    const xscale = primarySprite.xscale !== undefined ? primarySprite.xscale : 1.0;
+    const yscale = primarySprite.yscale !== undefined ? primarySprite.yscale : 1.0;
+    const rotation = primarySprite.rotation !== undefined ? primarySprite.rotation : 0.0;
+    const zoom = primarySprite._zoom !== undefined ? primarySprite._zoom : 1.0;
+    if (primarySprite.xscale === undefined) primarySprite.xscale = 1.0;
+    if (primarySprite.yscale === undefined) primarySprite.yscale = 1.0;
+    if (primarySprite._zoom === undefined) primarySprite._zoom = 1.0;
+    if (primarySprite.rotation === undefined) primarySprite.rotation = 0.0;
     xScale.value = xscale;
     xScaleSlider.value = xscale;
     yScale.value = yscale;
@@ -2921,8 +3205,8 @@ function updateSpriteEditor() {
     if (zoomEl) zoomEl.value = zoom;
     if (zoomSlider) zoomSlider.value = zoom;
     if (spriteMode) {
-        if (editingSprite.hasOwnProperty("mode") && editingSprite.mode !== undefined && editingSprite.mode !== null) {
-            spriteMode.value = editingSprite.mode.toString();
+        if (primarySprite.hasOwnProperty("mode") && primarySprite.mode !== undefined && primarySprite.mode !== null) {
+            spriteMode.value = primarySprite.mode.toString();
         } else {
             spriteMode.value = "";
         }
@@ -2937,31 +3221,31 @@ function updateSpriteEditor() {
             }
         }
     }
-    spriteLeft.value = editingSprite.left;
-    spriteTop.value = editingSprite.top;
-    spriteWidth.value = editingSprite.width;
-    spriteHeight.value = editingSprite.height;
-    const colorEffectCheckbox = document.getElementById("colorEffectCheckbox");
+    spriteLeft.value = primarySprite.left;
+    spriteTop.value = primarySprite.top;
+    spriteWidth.value = primarySprite.width;
+    spriteHeight.value = primarySprite.height;
+    const colorEffectCheckbox = $("colorEffectCheckbox");
     if (colorEffectCheckbox) colorEffectCheckbox.textContent = editingSprite.colorEffectEnabled ? "✓" : " ";
-    if (colorSwatch && editingSprite.colorEffect) {
-        const c = editingSprite.colorEffect;
+    if (colorSwatch && primarySprite.colorEffect) {
+        const c = primarySprite.colorEffect;
         const hex = `#${[c.r, c.g, c.b].map(x => x.toString(16).padStart(2, '0')).join('')}`;
         colorSwatch.value = hex;
     }
-    const colorR = document.getElementById("colorR");
-    const colorG = document.getElementById("colorG");
-    const colorB = document.getElementById("colorB");
-    const colorA = document.getElementById("colorA");
-    if (colorR && editingSprite.colorEffect) colorR.value = editingSprite.colorEffect.r || 255;
-    if (colorG && editingSprite.colorEffect) colorG.value = editingSprite.colorEffect.g || 255;
-    if (colorB && editingSprite.colorEffect) colorB.value = editingSprite.colorEffect.b || 255;
-    if (colorA && editingSprite.colorEffect) colorA.value = editingSprite.colorEffect.a || 255;
-    editingSprite.updateBoundingBox();
+    const colorR = $("colorR");
+    const colorG = $("colorG");
+    const colorB = $("colorB");
+    const colorA = $("colorA");
+    if (colorR && primarySprite.colorEffect) colorR.value = primarySprite.colorEffect.r || 255;
+    if (colorG && primarySprite.colorEffect) colorG.value = primarySprite.colorEffect.g || 255;
+    if (colorB && primarySprite.colorEffect) colorB.value = primarySprite.colorEffect.b || 255;
+    if (colorA && primarySprite.colorEffect) colorA.value = primarySprite.colorEffect.a || 255;
+    primarySprite.updateBoundingBox();
     drawSpritePreview();
 }
 
 function updateItemsCombo() {
-    const combo = document.getElementById("itemsCombo");
+    const combo = $("itemsCombo");
     const frame = currentAnimation ? currentAnimation.getFrame(currentFrame) : null;
     const selectedPiece = selectedPieces.size === 1 ? Array.from(selectedPieces)[0] : null;
     const selectedId = selectedPiece && selectedPiece.id ? selectedPiece.id : (combo ? combo.value : null);
@@ -3001,15 +3285,38 @@ function updateItemsCombo() {
             }
         }
     }
+    updateSpriteEditor();
     updateItemSettings();
 }
 
+function getSelectedSpriteIdLabel(pieces) {
+    const ids = [];
+    const seen = new Set();
+    for (const piece of pieces) {
+        if (!piece || piece.type !== "sprite") continue;
+        const id = piece.spriteIndex === SPRITE_INDEX_STRING ? piece.spriteName : String(piece.spriteIndex);
+        if (!seen.has(id)) {
+            seen.add(id);
+            ids.push(id);
+        }
+    }
+    return ids.join(", ");
+}
+
 function updateItemSettings() {
-    const combo = document.getElementById("itemsCombo");
+    const combo = $("itemsCombo");
     const frame = currentAnimation ? currentAnimation.getFrame(currentFrame) : null;
     const actualDir = (splitViewEnabled && !currentAnimation.singleDir && selectedPieceDir !== null) ? selectedPieceDir : getDirIndex(currentDir);
     const pieces = frame ? frame.pieces[actualDir] || [] : [];
     const sounds = frame ? (frame.sounds || []) : [];
+    const itemXScale = $("itemXScale");
+    const itemYScale = $("itemYScale");
+    const itemRotation = $("itemRotation");
+    const itemXScaleSlider = $("itemXScaleSlider");
+    const itemYScaleSlider = $("itemYScaleSlider");
+    const itemRotationSlider = $("itemRotationSlider");
+    const itemX = $("itemX");
+    const itemY = $("itemY");
     let piece = null;
     if (selectedPieces.size === 1) {
         const selectedPiece = Array.from(selectedPieces)[0];
@@ -3021,6 +3328,33 @@ function updateItemSettings() {
             if (piece.id) combo.value = piece.id;
             else if (piece.toString) combo.value = piece.toString();
         }
+    } else if (selectedPieces.size > 1) {
+        const multiPieces = Array.from(selectedPieces).filter(p => p?.type === "sprite");
+        if (multiPieces.length === 0) return;
+        $("itemSpriteID").value = getSelectedSpriteIdLabel(multiPieces);
+        const allX = multiPieces.map(p => p.xoffset);
+        const allY = multiPieces.map(p => p.yoffset);
+        const allXScale = multiPieces.map(p => p.xscale ?? 1.0);
+        const allYScale = multiPieces.map(p => p.yscale ?? 1.0);
+        const allRot = multiPieces.map(p => p.rotation ?? 0.0);
+        const allZoom = multiPieces.map(p => p._zoom ?? 1.0);
+        const same = arr => arr.every(v => v === arr[0]);
+        if (itemX) { itemX.value = same(allX) ? allX[0] : ""; itemX.disabled = false; }
+        if (itemY) { itemY.value = same(allY) ? allY[0] : ""; itemY.disabled = false; }
+        if (itemXScale) { itemXScale.value = same(allXScale) ? allXScale[0] : ""; itemXScale.disabled = false; }
+        if (itemXScaleSlider) { if (same(allXScale)) itemXScaleSlider.value = allXScale[0]; itemXScaleSlider.disabled = false; }
+        if (itemYScale) { itemYScale.value = same(allYScale) ? allYScale[0] : ""; itemYScale.disabled = false; }
+        if (itemYScaleSlider) { if (same(allYScale)) itemYScaleSlider.value = allYScale[0]; itemYScaleSlider.disabled = false; }
+        if (itemRotation) { itemRotation.value = same(allRot) ? allRot[0] : ""; itemRotation.disabled = false; }
+        if (itemRotationSlider) { if (same(allRot)) itemRotationSlider.value = allRot[0]; itemRotationSlider.disabled = false; }
+        const itemZoom = $("itemZoom");
+        const itemZoomSlider = $("itemZoomSlider");
+        if (itemZoom) { itemZoom.value = same(allZoom) ? allZoom[0] : ""; itemZoom.disabled = false; }
+        if (itemZoomSlider) { if (same(allZoom)) itemZoomSlider.value = allZoom[0]; itemZoomSlider.disabled = false; }
+        const itemLayer = $("itemLayer");
+        if (itemLayer) { itemLayer.value = ""; itemLayer.disabled = true; }
+        updateSpinnerStates();
+        return;
     } else if (selectedPieces.size === 0) {
         const pieceId = combo ? combo.value : null;
         if (pieceId) {
@@ -3034,17 +3368,9 @@ function updateItemSettings() {
             }
         }
     }
-    const itemXScale = document.getElementById("itemXScale");
-    const itemYScale = document.getElementById("itemYScale");
-    const itemRotation = document.getElementById("itemRotation");
-    const itemXScaleSlider = document.getElementById("itemXScaleSlider");
-    const itemYScaleSlider = document.getElementById("itemYScaleSlider");
-    const itemRotationSlider = document.getElementById("itemRotationSlider");
-    const itemX = document.getElementById("itemX");
-    const itemY = document.getElementById("itemY");
     const isSound = piece && piece.type === "sound";
     if (!piece) {
-        document.getElementById("itemSpriteID").value = "";
+        $("itemSpriteID").value = "";
         if (itemX) {
             itemX.value = "";
             itemX.disabled = true;
@@ -3068,14 +3394,14 @@ function updateItemSettings() {
         if (itemXScaleSlider) itemXScaleSlider.disabled = true;
         if (itemYScaleSlider) itemYScaleSlider.disabled = true;
         if (itemRotationSlider) itemRotationSlider.disabled = true;
-        const itemZoom = document.getElementById("itemZoom");
-        const itemZoomSlider = document.getElementById("itemZoomSlider");
+        const itemZoom = $("itemZoom");
+        const itemZoomSlider = $("itemZoomSlider");
         if (itemZoom) {
             itemZoom.value = "1.0";
             itemZoom.disabled = true;
         }
         if (itemZoomSlider) itemZoomSlider.disabled = true;
-        const itemLayer = document.getElementById("itemLayer");
+        const itemLayer = $("itemLayer");
         if (itemLayer) {
             itemLayer.value = "";
             itemLayer.disabled = true;
@@ -3083,7 +3409,7 @@ function updateItemSettings() {
         return;
     }
     if (isSound) {
-        document.getElementById("itemSpriteID").value = piece.fileName || "";
+        $("itemSpriteID").value = piece.fileName || "";
         if (itemX) {
             itemX.value = piece.xoffset || 0;
             itemX.disabled = false;
@@ -3107,21 +3433,21 @@ function updateItemSettings() {
         if (itemXScaleSlider) itemXScaleSlider.disabled = true;
         if (itemYScaleSlider) itemYScaleSlider.disabled = true;
         if (itemRotationSlider) itemRotationSlider.disabled = true;
-        const itemZoom = document.getElementById("itemZoom");
-        const itemZoomSlider = document.getElementById("itemZoomSlider");
+        const itemZoom = $("itemZoom");
+        const itemZoomSlider = $("itemZoomSlider");
         if (itemZoom) {
             itemZoom.value = "1.0";
             itemZoom.disabled = true;
         }
         if (itemZoomSlider) itemZoomSlider.disabled = true;
-        const itemLayer = document.getElementById("itemLayer");
+        const itemLayer = $("itemLayer");
         if (itemLayer) {
             itemLayer.value = "0";
             itemLayer.disabled = true;
         }
         updateSpinnerStates();
     } else {
-        document.getElementById("itemSpriteID").value = piece.spriteIndex === SPRITE_INDEX_STRING ? piece.spriteName : String(piece.spriteIndex);
+        $("itemSpriteID").value = piece.spriteIndex === SPRITE_INDEX_STRING ? piece.spriteName : String(piece.spriteIndex);
         if (itemX) {
             itemX.value = piece.xoffset;
             itemX.disabled = false;
@@ -3162,8 +3488,9 @@ function updateItemSettings() {
             itemRotationSlider.value = rotation;
             itemRotationSlider.disabled = false;
         }
-        const itemZoom = document.getElementById("itemZoom");
-        const itemZoomSlider = document.getElementById("itemZoomSlider");
+        syncSelectedPieceRotationDisplay();
+        const itemZoom = $("itemZoom");
+        const itemZoomSlider = $("itemZoomSlider");
         if (itemZoom) {
             itemZoom.value = zoom;
             itemZoom.disabled = false;
@@ -3172,7 +3499,7 @@ function updateItemSettings() {
             itemZoomSlider.value = zoom;
             itemZoomSlider.disabled = false;
         }
-        const itemLayer = document.getElementById("itemLayer");
+        const itemLayer = $("itemLayer");
         if (itemLayer) {
             const pieceId = combo ? combo.value : null;
             const pieceIndex = pieceId ? pieces.findIndex(p => p.id === pieceId) : -1;
@@ -3224,11 +3551,11 @@ function moveSelectedPieces(dx, dy) {
 
 function updateFrameInfo() {
     if (!currentAnimation) {
-        document.getElementById("frameCount").textContent = "0/0";
-        document.getElementById("totalDuration").textContent = "0.00s";
-        document.getElementById("timelineSlider").max = 0;
-        document.getElementById("timelineSlider").value = 0;
-        const framePosition = document.getElementById("framePosition");
+        $("frameCount").textContent = "0/0";
+        $("totalDuration").textContent = "0.00s";
+        $("timelineSlider").max = 0;
+        $("timelineSlider").value = 0;
+        const framePosition = $("framePosition");
         if (framePosition) {
             framePosition.value = "0";
             framePosition.disabled = true;
@@ -3236,12 +3563,12 @@ function updateFrameInfo() {
         }
         return;
     }
-    document.getElementById("frameCount").textContent = `${currentFrame + 1}/${currentAnimation.frames.length || 1}`;
+    $("frameCount").textContent = `${currentFrame + 1}/${currentAnimation.frames.length || 1}`;
     const totalDuration = currentAnimation.frames.reduce((sum, f) => sum + f.duration, 0);
-    document.getElementById("totalDuration").textContent = (totalDuration / 1000).toFixed(2) + "s";
-    document.getElementById("timelineSlider").max = Math.max(0, currentAnimation.frames.length - 1);
-    document.getElementById("timelineSlider").value = currentFrame;
-    const framePosition = document.getElementById("framePosition");
+    $("totalDuration").textContent = (totalDuration / 1000).toFixed(2) + "s";
+    $("timelineSlider").max = Math.max(0, currentAnimation.frames.length - 1);
+    $("timelineSlider").value = currentFrame;
+    const framePosition = $("framePosition");
     if (framePosition) {
         framePosition.value = currentFrame;
         framePosition.max = currentAnimation.frames.length - 1;
@@ -3249,14 +3576,14 @@ function updateFrameInfo() {
     }
     const frame = currentAnimation.getFrame(currentFrame);
     if (frame) {
-        document.getElementById("duration").value = frame.duration;
+        $("duration").value = frame.duration;
         updateSoundsList();
     }
     updateItemsCombo();
 }
 
 function updateSoundsList() {
-    const list = document.getElementById("soundsList");
+    const list = $("soundsList");
     list.innerHTML = "";
     const frame = currentAnimation.getFrame(currentFrame);
     if (!frame) return;
@@ -3386,13 +3713,13 @@ function updateSoundsList() {
 
 function updateAnimationSettings() {
     if (!currentAnimation) return;
-    const singleDirCheckbox = document.getElementById("singleDirCheckbox");
-    const loopedCheckbox = document.getElementById("loopedCheckbox");
-    const continousCheckbox = document.getElementById("continousCheckbox");
+    const singleDirCheckbox = $("singleDirCheckbox");
+    const loopedCheckbox = $("loopedCheckbox");
+    const continousCheckbox = $("continousCheckbox");
     if (singleDirCheckbox) singleDirCheckbox.textContent = currentAnimation.singleDir ? "✓" : " ";
     if (loopedCheckbox) loopedCheckbox.textContent = currentAnimation.looped ? "✓" : " ";
     if (continousCheckbox) continousCheckbox.textContent = currentAnimation.continous ? "✓" : " ";
-    document.getElementById("nextAni").value = currentAnimation.nextAni;
+    $("nextAni").value = currentAnimation.nextAni;
 }
 
 function updateDefaultsTable() {
@@ -3439,12 +3766,12 @@ function updateDefaultsTable() {
 }
 
 function updateHistoryMenu() {
-    const historyList = document.getElementById("historyList");
-    const historyGroup = document.getElementById("historyGroup");
-    const btnHistoryUndo = document.getElementById("btnHistoryUndo");
-    const btnHistoryRedo = document.getElementById("btnHistoryRedo");
-    const btnToolbarUndo = document.getElementById("btnUndo");
-    const btnToolbarRedo = document.getElementById("btnRedo");
+    const historyList = $("historyList");
+    const historyGroup = $("historyGroup");
+    const btnHistoryUndo = $("btnHistoryUndo");
+    const btnHistoryRedo = $("btnHistoryRedo");
+    const btnToolbarUndo = $("btnUndo");
+    const btnToolbarRedo = $("btnRedo");
     if (!historyList || !historyGroup) return;
     if (!currentAnimation) {
         historyGroup.style.display = "none";
@@ -3562,7 +3889,7 @@ function updateHistoryMenu() {
     if (btnToolbarUndo) btnToolbarUndo.disabled = undoIndex < 0;
     if (btnToolbarRedo) btnToolbarRedo.disabled = undoIndex >= undoStack.length - 1;
 
-    const historyLoggingToggleCheckbox = document.getElementById("historyLoggingToggleCheckbox");
+    const historyLoggingToggleCheckbox = $("historyLoggingToggleCheckbox");
     if (historyLoggingToggleCheckbox) {
         const enabled = getCurrentHistoryLoggingEnabled();
         historyLoggingToggleCheckbox.textContent = enabled ? "✓" : " ";
@@ -4147,7 +4474,7 @@ function switchTab(index) {
         }
     }
     restoreUndoStack();
-    const historyLoggingToggleCheckbox = document.getElementById("historyLoggingToggleCheckbox");
+    const historyLoggingToggleCheckbox = $("historyLoggingToggleCheckbox");
     if (historyLoggingToggleCheckbox) {
         const enabled = getCurrentHistoryLoggingEnabled();
         historyLoggingToggleCheckbox.textContent = enabled ? "✓" : " ";
@@ -4175,6 +4502,16 @@ function switchTab(index) {
     updateDefaultsTable();
     ensureShadowSprite(currentAnimation);
     saveSession();
+    const _isTauri = window.__TAURI__ != null;
+    if (currentAnimation && currentAnimation.fileName) {
+        document.title = currentAnimation.fileName;
+        if (_isTauri) { window.__TAURI__.window.getCurrentWindow().setTitle(currentAnimation.fileName); }
+        const t = document.getElementById('tbTitle'); if (t) t.textContent = currentAnimation.fileName;
+    } else {
+        document.title = 'GSuite';
+        if (_isTauri) { window.__TAURI__.window.getCurrentWindow().setTitle('GSuite'); }
+        const t = document.getElementById('tbTitle'); if (t) t.textContent = 'GSuite';
+    }
 }
 
 function ensureShadowSprite(ani) {
@@ -4235,12 +4572,23 @@ function refreshAllAnimationsSprites() {
 
 function addTab(ani, fileName = "") {
     if (fileName) ani.fileName = fileName;
-    f12Log("addTab: animation defaults: " + JSON.stringify(Array.from(ani.defaultImages.entries())));
     ensureShadowSprite(ani);
     animations.push(ani);
     switchTab(animations.length - 1);
     updateUIVisibility();
+    const mainCanvas = document.getElementById('gani-mainCanvas');
     saveSession();
+    const tryAddTab = () => {
+        const listEl = document.getElementById('suiteTabsList');
+        if (window.tabManager && typeof tabManager.addTab === 'function' && listEl) {
+            const name = fileName || ani.fileName || 'Untitled.gani';
+            tabManager.addTab('gani', name, { ani, index: animations.length - 1 });
+            requestAnimationFrame(() => { resizeCanvas(); redraw(); });
+        } else {
+            setTimeout(tryAddTab, 50);
+        }
+    };
+    tryAddTab();
 }
 
 function closeTab(index) {
@@ -4281,23 +4629,24 @@ function closeTab(index) {
 
 function updateUIVisibility() {
     const hasAnimations = animations.length > 0;
-    const tabsContainer = document.getElementById("tabsContainer");
+    const tabsContainer = $("tabsContainer");
     const contentArea = document.querySelector(".content-area");
     if (tabsContainer) tabsContainer.style.display = hasAnimations ? "flex" : "none";
     if (contentArea) contentArea.style.display = hasAnimations ? "flex" : "none";
 }
 
 function updateTabScrollButtons() {
-    const tabCont = document.getElementById("tabsContainer");
-    const btnL = document.getElementById("tabScrollLeft");
-    const btnR = document.getElementById("tabScrollRight");
+    const tabCont = $("tabsContainer");
+    const btnL = $("tabScrollLeft");
+    const btnR = $("tabScrollRight");
     if (!tabCont || !btnL || !btnR) return;
     const hasOverflow = tabCont.scrollWidth > tabCont.clientWidth + 2;
     btnL.style.display = hasOverflow && tabCont.scrollLeft > 0 ? "block" : "none";
     btnR.style.display = hasOverflow ? "block" : "none";
 }
 function updateTabs() {
-    const container = document.getElementById("tabsContainer");
+    const container = $("tabsContainer");
+    if (!container) return;
     container.innerHTML = "";
     for (let i = 0; i < animations.length; i++) {
         const tab = document.createElement("div");
@@ -4323,10 +4672,6 @@ function updateTabs() {
                 isDraggingTab = false;
             }
         });
-        tab.oncontextmenu = (e) => {
-            e.preventDefault();
-            showTabContextMenu(e, i);
-        };
         const close = document.createElement("span");
         close.className = "tab-close";
         close.innerHTML = "×";
@@ -4413,7 +4758,7 @@ function updateTabs() {
 }
 
 function updateTabDragTarget(clientX) {
-    const container = document.getElementById("tabsContainer");
+    const container = $("tabsContainer");
     if (!container) return;
     const tabs = container.querySelectorAll(".tab");
     let closestEdge = null;
@@ -4516,6 +4861,7 @@ function showTabContextMenu(e, tabIndex) {
 let saveSessionDebounceTimer = null;
 function saveSession(immediate = false) {
     if (DEBUG_MODE) f12Log(`saveSession called with immediate=${immediate}`);
+    if (isRestoringGaniSession) return;
     if (saveSessionDebounceTimer) {
         clearTimeout(saveSessionDebounceTimer);
         saveSessionDebounceTimer = null;
@@ -4523,9 +4869,9 @@ function saveSession(immediate = false) {
     const doSave = () => {
         try {
             const session = {
-                animations: animations.map(ani => {
+                animations: animations.map((ani, idx) => {
                     const content = saveGani(ani);
-                    f12Log(`Saving animation ${ani.fileName || 'unnamed'}: ${ani.frames.length} frames`);
+                    f12Log(`Saving animation ${ani.fileName || 'unnamed'} at index ${idx}: ${ani.frames.length} frames`);
                     return {
                         fileName: ani.fileName,
                         fullPath: ani.fullPath,
@@ -4551,10 +4897,12 @@ function saveSession(immediate = false) {
     }
 }
 async function restoreSession() {
+    isRestoringGaniSession = true;
     try {
         const sessionData = localStorage.getItem("ganiEditorSession");
         if (!sessionData) return false;
         const session = JSON.parse(sessionData);
+        const restoredCurrentTabIndex = Math.max(0, session.currentTabIndex || 0);
         if (session.workingDirectory) {
             workingDirectory = session.workingDirectory;
         }
@@ -4567,7 +4915,7 @@ async function restoreSession() {
         }
         if (session.keysSwapped !== undefined) {
             keysSwapped = session.keysSwapped;
-            const _btn = document.getElementById("btnSwapKeys");
+            const _btn = $("btnSwapKeys");
             if (_btn) {
                 _btn.classList.toggle("active", keysSwapped);
                 const tip = keysSwapped ? "Arrows=Direction, WASD=Move — click to restore" : "WASD=Direction, Arrows=Move — click to swap";
@@ -4612,8 +4960,23 @@ async function restoreSession() {
             if (animations.length === 0) {
                 initNewAnimation();
             } else {
-                currentTabIndex = Math.min(session.currentTabIndex || 0, animations.length - 1);
+                currentTabIndex = Math.min(restoredCurrentTabIndex, animations.length - 1);
                 currentAnimation = animations[currentTabIndex];
+            }
+            if (window.tabManager && typeof tabManager.addTab === 'function') {
+                for (let i = 0; i < animations.length; i++) {
+                    const ani = animations[i];
+                    tabManager.addTab('gani', ani.fileName || 'Untitled.gani', { ani, index: i });
+                }
+            }
+            if (animations.length > 0) {
+                currentTabIndex = Math.min(restoredCurrentTabIndex, animations.length - 1);
+                currentAnimation = animations[currentTabIndex];
+                switchTab(currentTabIndex);
+                if (window.tabManager && typeof tabManager.getTabsByType === 'function' && typeof tabManager.switchTo === 'function') {
+                    const activeTab = tabManager.getTabsByType('gani').find(tab => tab.data?.ani === currentAnimation);
+                    if (activeTab) tabManager.switchTo(activeTab.id);
+                }
             }
             for (let i = 0; i < animations.length; i++) {
                 const ani = animations[i];
@@ -4649,7 +5012,7 @@ async function restoreSession() {
             drawTimeline();
             updateFrameInfo();
             restoreUndoStack();
-            const historyLoggingToggleCheckbox = document.getElementById("historyLoggingToggleCheckbox");
+            const historyLoggingToggleCheckbox = $("historyLoggingToggleCheckbox");
             if (historyLoggingToggleCheckbox && currentAnimation) {
                 const enabled = getCurrentHistoryLoggingEnabled();
                 historyLoggingToggleCheckbox.textContent = enabled ? "✓" : " ";
@@ -4662,6 +5025,8 @@ async function restoreSession() {
     } catch (e) {
         console.error("Failed to restore session:", e);
         return false;
+    } finally {
+        isRestoringGaniSession = false;
     }
 }
 window.addEventListener("beforeunload", () => {
@@ -4705,53 +5070,7 @@ function showLoadingMessage(message, showOverlay = true) {
         }
     };
 }
-// ── Floating tooltip system ──────────────────────────────────────────────────
-const _tooltipEl = document.createElement('div');
-_tooltipEl.id = 'floatingTooltip';
-document.body.appendChild(_tooltipEl);
-let _tooltipTarget = null;
 
-function _positionTooltip(mx, my) {
-    _tooltipEl.style.left = '0';
-    _tooltipEl.style.top = '0';
-    const tw = _tooltipEl.offsetWidth, th = _tooltipEl.offsetHeight;
-    const vw = window.innerWidth, vh = window.innerHeight, gap = 12;
-    let x = mx - tw / 2;
-    let y = my - th - gap;
-    if (y < 4) y = my + gap;
-    x = Math.max(4, Math.min(x, vw - tw - 4));
-    y = Math.max(4, Math.min(y, vh - th - 4));
-    _tooltipEl.style.left = x + 'px';
-    _tooltipEl.style.top = y + 'px';
-}
-
-document.addEventListener('mouseover', e => {
-    const btn = e.target.closest('button[title]');
-    if (btn) { btn.dataset.title = btn.title; btn.removeAttribute('title'); }
-    const target = e.target.closest('button[data-title]');
-    if (target) {
-        _tooltipTarget = target;
-        _tooltipEl.textContent = target.dataset.title;
-        _tooltipEl.style.display = 'block';
-    }
-}, true);
-
-document.addEventListener('mousemove', e => {
-    if (_tooltipTarget) {
-        const tip = _tooltipTarget.dataset.title;
-        if (tip && _tooltipEl.textContent !== tip) _tooltipEl.textContent = tip;
-        _positionTooltip(e.clientX, e.clientY);
-    }
-});
-
-document.addEventListener('mouseout', e => {
-    const btn = e.target.closest('button[data-title]');
-    if (btn && !btn.hasAttribute('title')) { btn.setAttribute('title', btn.dataset.title); delete btn.dataset.title; }
-    if (_tooltipTarget && !_tooltipTarget.contains(e.relatedTarget)) {
-        _tooltipTarget = null;
-        _tooltipEl.style.display = 'none';
-    }
-}, true);
 
 // ── Monaco editor ────────────────────────────────────────────────────────────
 let monacoReady = null;
@@ -4946,15 +5265,13 @@ function createMonacoEditor(container, value, language) {
 }
 
 window.addEventListener("load", async () => {
-    const loading = showLoadingMessage("Loading Gani Editor...");
     resizeCanvas();
     window.addEventListener("resize", resizeCanvas);
     const criticalImages = ["sprites.png", "body.png", "head19.png", "shield1.png"];
     await Promise.all(criticalImages.filter(f => !imageLibrary.has(f.toLowerCase())).map(f => loadImageFromUrl(`images/${f}`, f.toLowerCase()).catch(() => {})));
     await refreshLocalFileCache();
     if (_isTauri) await restoreWorkspaceFromCache();
-    await loadLocalImages(loading);
-    loading.close();
+    await loadLocalImages();
     resizeCanvas();
     const restored = await restoreSession();
     if (!restored) {
@@ -4975,7 +5292,7 @@ window.addEventListener("load", async () => {
             updateFrameInfo();
             const timelineContainer = document.querySelector(".timeline-container");
             const timelineView = document.querySelector(".timeline-view");
-            const canvas = document.getElementById("timelineCanvas");
+            const canvas = $("timelineCanvas");
             let timelineVisible = localStorage.getItem("timelineVisible");
             if (timelineVisible === null) {
                 timelineVisible = "true";
@@ -5032,7 +5349,7 @@ window.addEventListener("load", async () => {
                     rightPanel.style.visibility = "hidden";
                 }
             }
-            const mainSplitter = document.getElementById("mainSplitter");
+            const mainSplitter = $("mainSplitter");
             if (timelineContainer) {
                 if (timelineVisible) {
                 timelineContainer.style.display = "flex";
@@ -5077,7 +5394,7 @@ window.addEventListener("load", async () => {
                     timelineView.style.opacity = "0";
                 }
             }
-            const canvasTimelineSplitter = document.getElementById("canvasTimelineSplitter");
+            const canvasTimelineSplitter = $("canvasTimelineSplitter");
             if (canvasTimelineSplitter) {
                 if (timelineVisible) {
                     canvasTimelineSplitter.style.display = "block";
@@ -5105,40 +5422,65 @@ window.addEventListener("load", async () => {
                 canvas.style.position = "relative";
                 canvas.style.zIndex = "1";
             }
+            setTimeout(() => { const tv = document.querySelector(".timeline-view"); if (tv && timelineCanvas) { timelineCanvas.height = tv.clientHeight; drawTimeline(); } }, 10);
         }, 200);
     }
     if (DEBUG_MODE) f12Log("Background image loading complete");
-    const spriteList = document.getElementById("spritesList");
-    const spriteEditPanel = document.getElementById("spriteEditPanel");
-    const spriteSplitterHandle = document.getElementById("spriteSplitterHandle");
+    const spriteList = $("spritesList");
+    const spriteEditPanel = $("spriteEditPanel");
+    const spriteSplitterHandle = $("spriteSplitterHandle");
     if (spriteList && spriteEditPanel && spriteSplitterHandle) {
-        spriteList.style.height = "300px";
+        const minSpriteListHeight = 140;
+        const minSpriteEditHeight = 220;
+        let spriteSplitterStartY = 0;
+        let spriteSplitterStartHeight = 0;
+        const applySpriteListHeight = (height) => {
+            spriteList.style.height = height + "px";
+            spriteList.style.minHeight = height + "px";
+            spriteList.style.maxHeight = height + "px";
+        };
+        const getClampedSpriteListHeight = (desiredHeight) => {
+            const leftPanel = spriteList.parentElement;
+            if (!leftPanel) return desiredHeight;
+            const toolbar = leftPanel.querySelector(".sprite-toolbar");
+            const availableHeight = leftPanel.clientHeight
+                - (toolbar?.offsetHeight || 0)
+                - spriteSplitterHandle.offsetHeight;
+            const maxListHeight = Math.max(minSpriteListHeight, availableHeight - minSpriteEditHeight);
+            return Math.max(minSpriteListHeight, Math.min(desiredHeight, maxListHeight));
+        };
+        applySpriteListHeight(300);
         spriteSplitterHandle.onmousedown = (e) => {
             spriteSplitterDragging = true;
+            leftCenterSplitterDragging = false;
+            centerRightSplitterDragging = false;
+            canvasTimelineSplitterDragging = false;
+            spriteSplitterStartY = e.clientY;
+            spriteSplitterStartHeight = spriteList.getBoundingClientRect().height;
+            e.stopPropagation();
+            e.stopImmediatePropagation();
             e.preventDefault();
         };
         spriteSplitterHandle.addEventListener("touchstart", (e) => {
             spriteSplitterDragging = true;
+            leftCenterSplitterDragging = false;
+            centerRightSplitterDragging = false;
+            canvasTimelineSplitterDragging = false;
+            spriteSplitterStartY = e.touches[0].clientY;
+            spriteSplitterStartHeight = spriteList.getBoundingClientRect().height;
+            e.stopPropagation();
             e.preventDefault();
         }, {passive: false});
         document.addEventListener("mousemove", (e) => {
             if (spriteSplitterDragging) {
-                const leftPanel = spriteList.parentElement;
-                const rect = leftPanel.getBoundingClientRect();
-                const newHeight = e.clientY - rect.top - spriteList.offsetTop;
-                if (newHeight >= 200 && newHeight <= 600) {
-                    spriteList.style.height = newHeight + "px";
-                }
+                const newHeight = spriteSplitterStartHeight + (e.clientY - spriteSplitterStartY);
+                applySpriteListHeight(getClampedSpriteListHeight(newHeight));
             }
         });
         document.addEventListener("touchmove", (e) => {
             if (spriteSplitterDragging && e.touches.length === 1) {
-                const leftPanel = spriteList.parentElement;
-                const rect = leftPanel.getBoundingClientRect();
-                const newHeight = e.touches[0].clientY - rect.top - spriteList.offsetTop;
-                if (newHeight >= 200 && newHeight <= 600) {
-                    spriteList.style.height = newHeight + "px";
-                }
+                const newHeight = spriteSplitterStartHeight + (e.touches[0].clientY - spriteSplitterStartY);
+                applySpriteListHeight(getClampedSpriteListHeight(newHeight));
                 e.preventDefault();
             }
         }, {passive: false});
@@ -5149,7 +5491,7 @@ window.addEventListener("load", async () => {
             spriteSplitterDragging = false;
         });
     }
-    const leftCenterSplitter = document.getElementById("leftCenterSplitter");
+    const leftCenterSplitter = $("leftCenterSplitter");
     const leftPanel = document.querySelector(".left-panel");
     const centerPanel = document.querySelector(".center-panel");
     if (leftCenterSplitter && leftPanel && centerPanel) {
@@ -5163,7 +5505,7 @@ window.addEventListener("load", async () => {
             e.preventDefault();
         }, {passive: false});
     }
-    const centerRightSplitter = document.getElementById("centerRightSplitter");
+    const centerRightSplitter = $("centerRightSplitter");
     const rightPanel = document.querySelector(".right-panel");
     if (centerRightSplitter && centerPanel && rightPanel) {
         rightPanel.style.width = "250px";
@@ -5176,7 +5518,7 @@ window.addEventListener("load", async () => {
             e.preventDefault();
         }, {passive: false});
     }
-    const canvasTimelineSplitter = document.getElementById("canvasTimelineSplitter");
+    const canvasTimelineSplitter = $("canvasTimelineSplitter");
     const timelineContainer = document.querySelector(".timeline-container");
     if (canvasTimelineSplitter && timelineContainer) {
         canvasTimelineSplitter.onmousedown = (e) => {
@@ -5194,7 +5536,7 @@ window.addEventListener("load", async () => {
             const newWidth = e.clientX - rect.left;
             if (newWidth >= 200 && newWidth <= 800) {
                 leftPanel.style.width = newWidth + "px";
-                const mainSplitter = document.getElementById("mainSplitter");
+                const mainSplitter = $("mainSplitter");
                 const centerWidth = mainSplitter ? mainSplitter.clientWidth - leftPanel.offsetWidth - rightPanel.offsetWidth : centerPanel.clientWidth;
                 const dpr = window.devicePixelRatio || 1;
                 const canvasContainer = document.querySelector(".canvas-container");
@@ -5217,7 +5559,7 @@ window.addEventListener("load", async () => {
             const newRightWidth = rect.right - e.clientX;
             if (newRightWidth >= 200 && newRightWidth <= 800) {
                 rightPanel.style.width = newRightWidth + "px";
-                const mainSplitter = document.getElementById("mainSplitter");
+                const mainSplitter = $("mainSplitter");
                 const centerWidth = mainSplitter ? mainSplitter.clientWidth - leftPanel.offsetWidth - rightPanel.offsetWidth : centerPanel.clientWidth;
                 const dpr = window.devicePixelRatio || 1;
                 const canvasContainer = document.querySelector(".canvas-container");
@@ -5264,7 +5606,7 @@ window.addEventListener("load", async () => {
             const newWidth = e.touches[0].clientX - rect.left;
             if (newWidth >= 200 && newWidth <= 800) {
                 leftPanel.style.width = newWidth + "px";
-                const mainSplitter = document.getElementById("mainSplitter");
+                const mainSplitter = $("mainSplitter");
                 const centerWidth = mainSplitter ? mainSplitter.clientWidth - leftPanel.offsetWidth - rightPanel.offsetWidth : centerPanel.clientWidth;
                 const dpr = window.devicePixelRatio || 1;
                 const canvasContainer = document.querySelector(".canvas-container");
@@ -5288,7 +5630,7 @@ window.addEventListener("load", async () => {
             const newRightWidth = rect.right - e.touches[0].clientX;
             if (newRightWidth >= 200 && newRightWidth <= 800) {
                 rightPanel.style.width = newRightWidth + "px";
-                const mainSplitter = document.getElementById("mainSplitter");
+                const mainSplitter = $("mainSplitter");
                 const centerWidth = mainSplitter ? mainSplitter.clientWidth - leftPanel.offsetWidth - rightPanel.offsetWidth : centerPanel.clientWidth;
                 const dpr = window.devicePixelRatio || 1;
                 const canvasContainer = document.querySelector(".canvas-container");
@@ -5334,7 +5676,7 @@ window.addEventListener("load", async () => {
         leftCenterSplitterDragging = false;
         centerRightSplitterDragging = false;
         canvasTimelineSplitterDragging = false;
-        if (isDraggingScrollbar) {
+        if (typeof isDraggingScrollbar !== 'undefined' && isDraggingScrollbar) {
             isDraggingScrollbar = false;
             scrollbarDragStartX = 0;
             scrollbarDragStartScrollX = 0;
@@ -5349,143 +5691,190 @@ window.addEventListener("load", async () => {
         drawTimeline();
         updateFrameInfo();
     }
-    document.getElementById("btnNew").onclick = () => {
-        const ani = new Animation();
-        ani.setDefaultImage("SPRITES", "sprites.png");
-        ani.setDefaultImage("PICS", "pics1.png");
-        ani.setDefaultImage("HEAD", "head1.png");
-        ani.setDefaultImage("BODY", "body.png");
-        ani.setDefaultImage("SWORD", "sword1.png");
-        ani.setDefaultImage("SHIELD", "shield1.png");
-        const shadow = new AniSprite();
-        shadow.type = "SPRITES";
-        shadow.left = 0;
-        shadow.top = 0;
-        shadow.width = 24;
-        shadow.height = 12;
-        shadow.comment = "shadow";
-        shadow.index = ani.nextSpriteIndex++;
-        shadow.updateBoundingBox();
-        ani.addSprite(shadow);
-        const frame = new Frame();
-        ani.frames.push(frame);
-        for (let dir = 0; dir < 4; dir++) {
-            const shadowPiece = new FramePieceSprite();
-            shadowPiece.spriteIndex = shadow.index;
-            shadowPiece.xoffset = 12;
-            shadowPiece.yoffset = dir % 2 === 0 ? 34 : 36;
-            frame.pieces[dir].push(shadowPiece);
-        }
-        addTab(ani);
-    };
-    document.getElementById("btnOpen").onclick = async () => {
-        if (_isTauri) {
-            const selected = await tauriOpenDialog({ multiple: false, filters: [{ name: 'Gani Files', extensions: ['gani'] }] });
-            if (selected) {
-                const text = await tauriReadTextFile(selected);
-                if (/[\x00-\x08\x0e-\x1f]/.test(text.substring(0, 256))) { showAlertDialog('Not a valid plain-text .gani file'); return; }
-                const ani = parseGani(text);
-                if (ani) { ani.fileName = selected.split(/[\\/]/).pop(); addTab(ani, ani.fileName); }
-            }
-            return;
-        }
-        const fileInput = document.getElementById("fileInput");
-        if (lastOpenDirectory && fileInput.setAttribute) {
-            try {
-                fileInput.setAttribute("webkitdirectory", "");
-                fileInput.removeAttribute("webkitdirectory");
-            } catch(e) {}
-        }
-        fileInput.click();
-    };
-    const defaultGaniDialog = document.getElementById("defaultGaniDialog");
-    const btnOpenDefault = document.getElementById("btnOpenDefault");
-    let selectedGaniItem = null;
-    btnOpenDefault.onclick = async () => {
-        const container = document.querySelector("#defaultGaniDialog .dialog-content");
-        if (container) {
-            container.innerHTML = '<div style="color: #e0e0e0; padding: 20px; text-align: center;">Loading...</div>';
-
-            const fallbackGaniList = [
-                "carried.gani", "carry.gani", "carrypeople.gani", "carrystill.gani", "dead.gani", "def.gani",
-                "editorcursor.gani", "editorcursor2.gani", "ghostani.gani", "gotgoldball.gani", "grab.gani", "gralats.gani",
-                "horse.gani", "horsestill.gani", "hurt.gani", "idle.gani", "kick.gani", "lamps_wood.gani",
-                "lava.gani", "lay.gani", "lift.gani", "maps1.gani", "maps2.gani", "maps3.gani",
-                "palmtree1.gani", "palmtree2.gani", "pray.gani", "pull.gani", "push.gani", "ride.gani",
-                "rideeat.gani", "ridefire.gani", "ridehurt.gani", "ridejump.gani", "ridestill.gani", "ridesword.gani",
-                "shoot.gani", "shovel.gani", "shovel2.gani", "sit.gani", "skip.gani", "sleep.gani",
-                "spin.gani", "swim.gani", "sword.gani", "tutorial_touch.gani", "walk.gani", "walkslow.gani"
-            ];
-
-            try {
-                let files = [];
-
-                const response = await fetch('ganis/');
-                if (response.ok) {
-                    try {
-                        const data = await response.json();
-                        if (Array.isArray(data)) {
-                            files = data.filter(file => file.endsWith('.gani')).map(file => file.replace('.gani', '') + '.gani');
-                        } else {
-                            files = fallbackGaniList;
+    const newBtn = document.getElementById('gani-btnNew');
+    if (newBtn) {
+        newBtn.onclick = () => {
+            const dlg = document.createElement('div');
+            dlg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:99999;display:flex;align-items:center;justify-content:center;';
+            const _bs = 'background:#2b2b2b;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#e0e0e0;padding:6px 12px;cursor:pointer;font-family:chevyray,monospace;font-size:12px;';
+            dlg.innerHTML = `<div class="ed-dialog-box" style="background:var(--dialog-bg,#2b2b2b);border:2px solid #404040;padding:24px 28px;max-width:300px;font-family:chevyray,monospace;font-size:12px;line-height:1.7;color:#e0e0e0;">
+                <div class="ed-dlg-title">New File</div>
+                <div style="margin-bottom:14px;">
+                    <button class="newfile-btn" data-fmt="gani" style="${_bs}display:block;width:100%;text-align:left;margin-bottom:6px;">.gani — Graal Animation</button>
+                    <button class="newfile-btn" data-fmt="nw" style="${_bs}display:block;width:100%;text-align:left;margin-bottom:6px;">.nw — Graal Level (text)</button>
+                    <button class="newfile-btn" data-fmt="graal" style="${_bs}display:block;width:100%;text-align:left;margin-bottom:6px;">.graal — Classic Binary</button>
+                    <button class="newfile-btn" data-fmt="zelda" style="${_bs}display:block;width:100%;text-align:left;margin-bottom:6px;">.zelda — Zelda Binary</button>
+                </div>
+                <div style="text-align:right;"><button id="newfileCancel" style="${_bs}">Cancel</button></div>
+            </div>`;
+            const close = () => document.body.removeChild(dlg);
+            dlg.querySelector('#newfileCancel').onclick = close;
+            dlg.addEventListener('click', e => { if (e.target === dlg) close(); });
+            dlg.querySelectorAll('.newfile-btn').forEach(btn => {
+                btn.onclick = () => {
+                    close();
+                    const fmt = btn.dataset.fmt;
+                    if (fmt === 'gani') {
+                        const ani = new Animation();
+                        ani.setDefaultImage("SPRITES", "sprites.png");
+                        ani.setDefaultImage("PICS", "pics1.png");
+                        ani.setDefaultImage("HEAD", "head1.png");
+                        ani.setDefaultImage("BODY", "body.png");
+                        ani.setDefaultImage("SWORD", "sword1.png");
+                        ani.setDefaultImage("SHIELD", "shield1.png");
+                        const shadow = new AniSprite();
+                        shadow.type = "SPRITES";
+                        shadow.left = 0;
+                        shadow.top = 0;
+                        shadow.width = 24;
+                        shadow.height = 12;
+                        shadow.comment = "shadow";
+                        shadow.index = ani.nextSpriteIndex++;
+                        shadow.updateBoundingBox();
+                        ani.addSprite(shadow);
+                        const frame = new Frame();
+                        ani.frames.push(frame);
+                        for (let dir = 0; dir < 4; dir++) {
+                            const shadowPiece = new FramePieceSprite();
+                            shadowPiece.spriteIndex = shadow.index;
+                            shadowPiece.xoffset = 12;
+                            shadowPiece.yoffset = dir % 2 === 0 ? 34 : 36;
+                            frame.pieces[dir].push(shadowPiece);
                         }
-                    } catch (e) {
-                        files = fallbackGaniList;
-                    }
-                } else {
-                    files = fallbackGaniList;
-                }
-
-                container.innerHTML = "";
-                files.forEach(fileName => {
-                    const item = document.createElement("div");
-                    item.className = "default-gani-item";
-                    item.setAttribute("data-gani", fileName);
-                    item.style.cssText = "padding: 12px 16px; cursor: pointer; color: #e0e0e0; font-size: 14px; border-bottom: 1px solid #1a1a1a;";
-                    item.textContent = fileName;
-                    item.onclick = async (e) => {
-                        e.stopPropagation();
-                        document.querySelectorAll(".default-gani-item").forEach(i => i.classList.remove("selected"));
-                        item.classList.add("selected");
-                        selectedGaniItem = item;
-                        const selectedFileName = item.getAttribute("data-gani");
-                        defaultGaniDialog.style.display = "none";
-                        selectedGaniItem = null;
-                        try {
-                            const response = await fetch(`ganis/${selectedFileName}`);
-                            if (!response.ok) {
-                                showAlertDialog(`Failed to load ${selectedFileName}: ${response.statusText}`);
-                                return;
+                        addTab(ani, `New ${++newGaniCounter}.gani`);
+                    } else {
+                        window.switchToTab?.('level');
+                        setTimeout(() => {
+                            const editor = window._levelEditor;
+                            if (editor && typeof editor.newLevel === 'function') {
+                                editor.newLevel();
+                                setTimeout(() => {
+                                    const dlg2 = document.querySelector('.ed-dialog-box');
+                                    if (dlg2) {
+                                        const btns = dlg2.querySelectorAll('.newlvl-btn');
+                                        btns.forEach(b => {
+                                            if (b.dataset.fmt === fmt) b.click();
+                                        });
+                                    }
+                                }, 100);
                             }
-                            const text = await response.text();
-                            const ani = parseGani(text);
-                            ani.fileName = selectedFileName;
-                            addTab(ani, selectedFileName);
-                        } catch (error) {
-                            showAlertDialog(`Error loading ${selectedFileName}: ${error.message}`);
-                        }
-                    };
-                    container.appendChild(item);
-                });
-            } catch (error) {
-                container.innerHTML = '<div style="color: #e0e0e0; padding: 20px; text-align: center;">Failed to load gani files</div>';
+                        }, 100);
+                    }
+                };
+            });
+            document.body.appendChild(dlg);
+        };
+        window.createNewGani = () => {
+            const ani = new Animation();
+            ani.setDefaultImage("SPRITES", "sprites.png");
+            ani.setDefaultImage("PICS", "pics1.png");
+            ani.setDefaultImage("HEAD", "head1.png");
+            ani.setDefaultImage("BODY", "body.png");
+            ani.setDefaultImage("SWORD", "sword1.png");
+            ani.setDefaultImage("SHIELD", "shield1.png");
+            const shadow = new AniSprite();
+            shadow.type = "SPRITES";
+            shadow.left = 0;
+            shadow.top = 0;
+            shadow.width = 24;
+            shadow.height = 12;
+            shadow.comment = "shadow";
+            shadow.index = ani.nextSpriteIndex++;
+            shadow.updateBoundingBox();
+            ani.addSprite(shadow);
+            const frame = new Frame();
+            ani.frames.push(frame);
+            for (let dir = 0; dir < 4; dir++) {
+                const shadowPiece = new FramePieceSprite();
+                shadowPiece.spriteIndex = shadow.index;
+                shadowPiece.xoffset = 12;
+                shadowPiece.yoffset = dir % 2 === 0 ? 34 : 36;
+                frame.pieces[dir].push(shadowPiece);
             }
+            addTab(ani, `New ${++newGaniCounter}.gani`);
+        };
+    }
+    $("btnOpen").onclick = async () => {
+        const input = $("fileInput");
+        input.value = '';
+        input.click();
+        input.onchange = (e) => {
+            const files = [...e.target.files];
+            if (!files.length) return;
+            files.forEach(file => {
+                const ext = file.name.split('.').pop().toLowerCase();
+                if (ext === 'gani') {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        const text = event.target.result;
+                        if (/[\x00-\x08\x0e-\x1f]/.test(text.substring(0, 256))) { showAlertDialog('Not a valid plain-text .gani file'); return; }
+                        const ani = parseGani(text);
+                        if (ani) { ani.fileName = file.name; addTab(ani, ani.fileName); }
+                    };
+                    reader.readAsText(file);
+                } else if (['nw', 'graal', 'zelda'].includes(ext)) {
+                    window.switchToTab?.('level');
+                    setTimeout(() => {
+                        const editor = window._levelEditor;
+                        if (editor && typeof editor.openLevel === 'function') {
+                            const data = { files: [file], ext };
+                            editor.openLevel.call(editor, data);
+                        }
+                    }, 50);
+                }
+            });
+        };
+    };
+    window._defaultDialogLoaders = window._defaultDialogLoaders || {};
+    window._defaultDialogLoaders.gani = async (container) => {
+        const fallbackGaniList = [
+            "carried.gani", "carry.gani", "carrypeople.gani", "carrystill.gani", "dead.gani", "def.gani",
+            "editorcursor.gani", "editorcursor2.gani", "ghostani.gani", "gotgoldball.gani", "grab.gani", "gralats.gani",
+            "horse.gani", "horsestill.gani", "hurt.gani", "idle.gani", "kick.gani", "lamps_wood.gani",
+            "lava.gani", "lay.gani", "lift.gani", "maps1.gani", "maps2.gani", "maps3.gani",
+            "palmtree1.gani", "palmtree2.gani", "pray.gani", "pull.gani", "push.gani", "ride.gani",
+            "rideeat.gani", "ridefire.gani", "ridehurt.gani", "ridejump.gani", "ridestill.gani", "ridesword.gani",
+            "shoot.gani", "shovel.gani", "shovel2.gani", "sit.gani", "skip.gani", "sleep.gani",
+            "spin.gani", "swim.gani", "sword.gani", "tutorial_touch.gani", "walk.gani", "walkslow.gani"
+        ];
+        try {
+            let files = fallbackGaniList;
+            let r = await fetch('ganis/index.json').catch(() => null);
+            if (!r?.ok) r = await fetch('ganis/').catch(() => null);
+            if (r?.ok) {
+                try {
+                    const data = await r.json();
+                    if (Array.isArray(data)) files = data.filter(f => f.endsWith('.gani'));
+                } catch(e) {}
+            }
+            container.innerHTML = '';
+            files.forEach(fileName => {
+                const item = document.createElement('div');
+                item.className = 'default-gani-item';
+                item.style.cssText = 'padding:12px 16px;cursor:pointer;color:#e0e0e0;font-size:12px;font-family:chevyray,monospace;border-bottom:1px solid #1a1a1a;';
+                item.textContent = fileName;
+                item.onmouseenter = () => item.style.background = '#404040';
+                item.onmouseleave = () => item.style.background = '';
+                item.onclick = async (e) => {
+                    e.stopPropagation();
+                    document.getElementById('defaultOpenDialog').style.display = 'none';
+                    try {
+                        const resp = await fetch(`ganis/${fileName}`);
+                        if (!resp.ok) { showAlertDialog(`Failed to load ${fileName}: ${resp.statusText}`); return; }
+                        const text = await resp.text();
+                        const ani = parseGani(text);
+                        ani.fileName = fileName;
+                        addTab(ani, fileName);
+                    } catch(err) { showAlertDialog(`Error loading ${fileName}: ${err.message}`); }
+                };
+                container.appendChild(item);
+            });
+        } catch(err) {
+            container.innerHTML = '<div style="color:#888;padding:20px;text-align:center;font-family:chevyray,monospace;font-size:12px;">Failed to load files</div>';
         }
-
-        defaultGaniDialog.style.display = "flex";
-        selectedGaniItem = null;
     };
-    document.getElementById("defaultGaniCancel").onclick = () => {
-        defaultGaniDialog.style.display = "none";
-        selectedGaniItem = null;
-    };
-    defaultGaniDialog.onclick = (e) => {
-        if (e.target === defaultGaniDialog) {
-            defaultGaniDialog.style.display = "none";
-            selectedGaniItem = null;
-        }
-    };
-    document.getElementById("fileInput").onchange = async (e) => {
+    $('btnOpenDefault').onclick = () => window.openDefaultDialog('gani');
+    $("fileInput").onchange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
         if (file.path) {
@@ -5521,7 +5910,7 @@ window.addEventListener("load", async () => {
         }
         if (opened) updateDefaultsTable();
     });
-    document.getElementById("btnSave").onclick = async () => {
+    $("btnSave").onclick = async () => {
         if (!currentAnimation) return;
         if (currentAnimation.fileHandle) {
             try {
@@ -5541,10 +5930,10 @@ window.addEventListener("load", async () => {
                 URL.revokeObjectURL(url);
             }
         } else {
-            document.getElementById("btnSaveAs").click();
+            $("btnSaveAs").click();
         }
     };
-    document.getElementById("btnSaveAs").onclick = async () => {
+    $("btnSaveAs").onclick = async () => {
         if (!currentAnimation) return;
         const defaultName = currentAnimation.fileName || "animation.gani";
 
@@ -5589,7 +5978,7 @@ window.addEventListener("load", async () => {
             saveSession();
         }
     };
-    document.getElementById("btnSaveAll").onclick = () => {
+    $("btnSaveAll").onclick = () => {
         const blob = new Blob([saveGani(currentAnimation)], {type: "text/plain"});
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -5598,25 +5987,29 @@ window.addEventListener("load", async () => {
         a.click();
         URL.revokeObjectURL(url);
     };
-    document.getElementById("btnCloseAll").onclick = () => {
-        showConfirmDialog("Close all animations? Unsaved changes will be lost.", (confirmed) => {
-            if (confirmed) {
-                animations = [];
-                currentAnimation = null;
-                currentTabIndex = -1;
-                currentFrame = 0;
-                selectedPieces.clear();
-                updateTabs();
-                updateUIVisibility();
-                redraw();
-                updateFrameInfo();
-                updateSpritesList();
-                updateDefaultsTable();
-                saveSession();
-            }
-        });
+    $("btnCloseAll").onclick = () => {
+        if (window.tabManager && window.tabManager.getTabsByType('gani').length > 0) {
+            window.tabManager.closeAll();
+        } else {
+            showConfirmDialog("Close all animations? Unsaved changes will be lost.", (confirmed) => {
+                if (confirmed) {
+                    animations = [];
+                    currentAnimation = null;
+                    currentTabIndex = -1;
+                    currentFrame = 0;
+                    selectedPieces.clear();
+                    updateTabs();
+                    updateUIVisibility();
+                    redraw();
+                    updateFrameInfo();
+                    updateSpritesList();
+                    updateDefaultsTable();
+                    saveSession();
+                }
+            });
+        }
     };
-    document.getElementById("btnReset").onclick = () => {
+    $("btnReset").onclick = () => {
         showConfirmDialog("Reset the editor to default state? This will reset zoom, pan, selections, UI layout, and all settings.", (confirmed, clearStorage) => {
             if (confirmed) {
                 if (clearStorage) {
@@ -5648,7 +6041,7 @@ window.addEventListener("load", async () => {
                 undoStack = [];
                 undoIndex = -1;
                 localStorage.setItem("mainCanvasZoom", zoomLevel);
-                const zoomDisplay = document.getElementById("mainCanvasZoomLevel");
+                const zoomDisplay = $("mainCanvasZoomLevel");
                 if (zoomDisplay) zoomDisplay.textContent = (zoomFactors[zoomLevel] || 1.0).toFixed(1) + "x";
                 localStorage.setItem("editorFont", "chevyray");
                 localStorage.setItem("editorFontSize", "12");
@@ -5662,66 +6055,72 @@ window.addEventListener("load", async () => {
             }
         }, true);
     };
-    document.getElementById("directionCombo").onchange = (e) => {
+    $("directionCombo").onchange = (e) => {
         currentDir = ["UP", "LEFT", "DOWN", "RIGHT"].indexOf(e.target.value);
         selectedPieces.clear();
         selectedPieceDir = null;
         redraw();
         updateItemsCombo();
     };
-    document.getElementById("itemsCombo").onchange = () => { selectedPieces.clear(); updateItemSettings(); redraw(); };
-    document.getElementById("itemX").onchange = (e) => {
-        const pieceId = document.getElementById("itemsCombo").value;
-        const frame = currentAnimation.getFrame(currentFrame);
-        if (frame && pieceId) {
-            const actualDir = getDirIndex(currentDir);
-            const pieces = frame.pieces[actualDir] || [];
-            const piece = pieces.find(p => p.id === pieceId);
-            if (piece) {
-                const oldState = serializeAnimationState();
-                piece.xoffset = parseFloat(e.target.value) || 0;
-                const newState = serializeAnimationState();
-                const sprite = currentAnimation.getAniSprite(piece.spriteIndex, piece.spriteName || "");
-                const spriteName = sprite && sprite.comment ? `"${sprite.comment}"` : `Sprite ${piece.spriteIndex}`;
-                addUndoCommand({
-                    description: `Change ${spriteName} X Position`,
-                    oldState: oldState,
-                    newState: newState,
-                    undo: () => restoreAnimationState(oldState),
-                    redo: () => restoreAnimationState(newState)
-                });
-                redraw();
-                saveSession();
-            }
+    $("itemsCombo").onchange = () => {
+        if (selectedPieces.size > 1) {
+            updateItemSettings();
+            redraw();
+            return;
         }
+        selectedPieces.clear();
+        const pieceId = $("itemsCombo").value;
+        const frame = currentAnimation?.getFrame(currentFrame);
+        if (frame && pieceId) {
+            const actualDir = (splitViewEnabled && !currentAnimation.singleDir && selectedPieceDir !== null) ? selectedPieceDir : getDirIndex(currentDir);
+            const pieces = frame.pieces[actualDir] || [];
+            const sounds = frame.sounds || [];
+            const piece = pieces.find(p => p.id === pieceId) || sounds.find(s => s.id === pieceId);
+            if (piece) selectedPieces.add(piece);
+        }
+        updateItemSettings();
+        redraw();
     };
-    document.getElementById("itemY").onchange = (e) => {
-        const pieceId = document.getElementById("itemsCombo").value;
-        const frame = currentAnimation.getFrame(currentFrame);
-        if (frame && pieceId) {
-            const actualDir = getDirIndex(currentDir);
-            const pieces = frame.pieces[actualDir] || [];
-            const piece = pieces.find(p => p.id === pieceId);
-            if (piece) {
-                const oldState = serializeAnimationState();
-                piece.yoffset = parseFloat(e.target.value) || 0;
-                const newState = serializeAnimationState();
-                const sprite = currentAnimation.getAniSprite(piece.spriteIndex, piece.spriteName || "");
-                const spriteName = sprite && sprite.comment ? `"${sprite.comment}"` : `Sprite ${piece.spriteIndex}`;
-                addUndoCommand({
-                    description: `Change ${spriteName} Y Position`,
-                    oldState: oldState,
-                    newState: newState,
-                    undo: () => restoreAnimationState(oldState),
-                    redo: () => restoreAnimationState(newState)
-                });
-                redraw();
-                saveSession();
-            }
-        }
+    $("itemX").onchange = (e) => {
+        const val = parseFloat(e.target.value);
+        if (isNaN(val)) return;
+        const targets = selectedPieces.size > 1
+            ? Array.from(selectedPieces).filter(p => p?.type === "sprite" || p?.type === "sound")
+            : (() => { const pieceId = $("itemsCombo").value; const frame = currentAnimation?.getFrame(currentFrame); if (!frame || !pieceId) return []; const actualDir = getDirIndex(currentDir); return (frame.pieces[actualDir] || []).filter(p => p.id === pieceId); })();
+        if (targets.length === 0) return;
+        const oldState = serializeAnimationState();
+        for (const piece of targets) piece.xoffset = val;
+        const newState = serializeAnimationState();
+        addUndoCommand({
+            description: targets.length > 1 ? `Set X Position (${targets.length} pieces)` : `Change ${getSpriteName(targets[0])} X Position`,
+            oldState, newState,
+            undo: () => restoreAnimationState(oldState),
+            redo: () => restoreAnimationState(newState)
+        });
+        redraw();
+        saveSession();
+    };
+    $("itemY").onchange = (e) => {
+        const val = parseFloat(e.target.value);
+        if (isNaN(val)) return;
+        const targets = selectedPieces.size > 1
+            ? Array.from(selectedPieces).filter(p => p?.type === "sprite" || p?.type === "sound")
+            : (() => { const pieceId = $("itemsCombo").value; const frame = currentAnimation?.getFrame(currentFrame); if (!frame || !pieceId) return []; const actualDir = getDirIndex(currentDir); return (frame.pieces[actualDir] || []).filter(p => p.id === pieceId); })();
+        if (targets.length === 0) return;
+        const oldState = serializeAnimationState();
+        for (const piece of targets) piece.yoffset = val;
+        const newState = serializeAnimationState();
+        addUndoCommand({
+            description: targets.length > 1 ? `Set Y Position (${targets.length} pieces)` : `Change ${getSpriteName(targets[0])} Y Position`,
+            oldState, newState,
+            undo: () => restoreAnimationState(oldState),
+            redo: () => restoreAnimationState(newState)
+        });
+        redraw();
+        saveSession();
     };
     const getCurrentPiece = () => {
-        const pieceId = document.getElementById("itemsCombo").value;
+        const pieceId = $("itemsCombo").value;
         const frame = currentAnimation?.getFrame(currentFrame);
         if (frame && pieceId) {
             const actualDir = getDirIndex(currentDir);
@@ -5736,45 +6135,51 @@ window.addEventListener("load", async () => {
         return sprite && sprite.comment ? `"${sprite.comment}"` : `Sprite ${piece.spriteIndex}`;
     };
 
+    const getItemTargets = () => {
+        if (selectedPieces.size > 1) return Array.from(selectedPieces).filter(p => p?.type === "sprite");
+        const piece = getCurrentPiece();
+        return piece ? [piece] : [];
+    };
+
     createSliderSync("itemXScale", "itemXScaleSlider",
-        () => getCurrentPiece()?.xscale || 1.0,
-        (val) => { const piece = getCurrentPiece(); if (piece) piece.xscale = val; },
+        () => getCurrentPiece()?.xscale ?? 1.0,
+        (val) => { for (const p of getItemTargets()) p.xscale = val; },
         () => { redraw(); saveSession(); },
         () => {
-            const piece = getCurrentPiece();
-            return piece ? `Change ${getSpriteName(piece)} X Scale` : "Change Item X Scale";
+            const targets = getItemTargets();
+            return targets.length > 1 ? `Change X Scale (${targets.length} pieces)` : targets.length === 1 ? `Change ${getSpriteName(targets[0])} X Scale` : "Change Item X Scale";
         }
     );
     createSliderSync("itemYScale", "itemYScaleSlider",
-        () => getCurrentPiece()?.yscale || 1.0,
-        (val) => { const piece = getCurrentPiece(); if (piece) piece.yscale = val; },
+        () => getCurrentPiece()?.yscale ?? 1.0,
+        (val) => { for (const p of getItemTargets()) p.yscale = val; },
         () => { redraw(); saveSession(); },
         () => {
-            const piece = getCurrentPiece();
-            return piece ? `Change ${getSpriteName(piece)} Y Scale` : "Change Item Y Scale";
+            const targets = getItemTargets();
+            return targets.length > 1 ? `Change Y Scale (${targets.length} pieces)` : targets.length === 1 ? `Change ${getSpriteName(targets[0])} Y Scale` : "Change Item Y Scale";
         }
     );
     createSliderSync("itemRotation", "itemRotationSlider",
-        () => getCurrentPiece()?.rotation || 0,
-        (val) => { const piece = getCurrentPiece(); if (piece) piece.rotation = val; },
+        () => getCurrentPiece()?.rotation ?? 0,
+        (val) => { for (const p of getItemTargets()) p.rotation = val; },
         () => { redraw(); saveSession(); },
         () => {
-            const piece = getCurrentPiece();
-            return piece ? `Change ${getSpriteName(piece)} Rotation` : "Change Item Rotation";
+            const targets = getItemTargets();
+            return targets.length > 1 ? `Change Rotation (${targets.length} pieces)` : targets.length === 1 ? `Change ${getSpriteName(targets[0])} Rotation` : "Change Item Rotation";
         }
     );
     createSliderSync("itemZoom", "itemZoomSlider",
         () => { const piece = getCurrentPiece(); return piece?._zoom !== undefined ? piece._zoom : 1.0; },
-        (val) => { const piece = getCurrentPiece(); if (piece) piece._zoom = val; },
+        (val) => { for (const p of getItemTargets()) p._zoom = val; },
         () => { redraw(); saveSession(); },
         () => {
-            const piece = getCurrentPiece();
-            return piece ? `Change ${getSpriteName(piece)} Zoom` : "Change Item Zoom";
+            const targets = getItemTargets();
+            return targets.length > 1 ? `Change Zoom (${targets.length} pieces)` : targets.length === 1 ? `Change ${getSpriteName(targets[0])} Zoom` : "Change Item Zoom";
         }
     );
 
-    document.getElementById("itemLayer").onchange = (e) => {
-        const pieceId = document.getElementById("itemsCombo").value;
+    $("itemLayer").onchange = (e) => {
+        const pieceId = $("itemsCombo").value;
         const frame = currentAnimation.getFrame(currentFrame);
         if (frame && pieceId) {
             const actualDir = getDirIndex(currentDir);
@@ -5803,7 +6208,7 @@ window.addEventListener("load", async () => {
             }
         }
     };
-    document.getElementById("duration").onchange = (e) => {
+    $("duration").onchange = (e) => {
         const frame = currentAnimation.getFrame(currentFrame);
         if (frame) {
             const oldState = serializeAnimationState();
@@ -5821,11 +6226,11 @@ window.addEventListener("load", async () => {
             saveSession();
         }
     };
-    document.getElementById("framePosition").onchange = (e) => {
+    $("framePosition").onchange = (e) => {
         const targetPos = parseInt(e.target.value);
         const sourcePos = currentFrame;
         if (isNaN(targetPos) || targetPos < 0 || targetPos >= currentAnimation.frames.length || targetPos === sourcePos) {
-            document.getElementById("framePosition").value = sourcePos;
+            $("framePosition").value = sourcePos;
             return;
         }
         const oldState = serializeAnimationState();
@@ -5848,15 +6253,15 @@ window.addEventListener("load", async () => {
         drawTimeline();
         saveSession();
     };
-    document.getElementById("btnAddSprite").onclick = () => {
+    $("btnAddSprite").onclick = () => {
         showAddSpriteDialog();
     };
-    document.getElementById("btnEditSprite").onclick = () => {
+    $("btnEditSprite").onclick = () => {
         if (editingSprite) {
             editSprite(editingSprite);
         }
     };
-    document.getElementById("spriteSource").onchange = (e) => {
+    $("spriteSource").onchange = (e) => {
         if (editingSprite) {
             const oldState = serializeAnimationState();
             editingSprite.type = e.target.value;
@@ -5875,7 +6280,7 @@ window.addEventListener("load", async () => {
             saveSession();
         }
     };
-    document.getElementById("spriteImage").onchange = (e) => {
+    $("spriteImage").onchange = (e) => {
         if (editingSprite) {
             const oldState = serializeAnimationState();
             editingSprite.customImageName = e.target.value;
@@ -5893,12 +6298,13 @@ window.addEventListener("load", async () => {
             saveSession(true);
         }
     };
-    document.getElementById("spriteComment").onchange = (e) => {
-        if (editingSprite) {
+    $("spriteComment").onchange = (e) => {
+        const targets = getSpriteEditorTargets();
+        if (targets.length > 0) {
             const oldState = serializeAnimationState();
-            editingSprite.comment = e.target.value;
+            for (const sprite of targets) sprite.comment = e.target.value;
             const newState = serializeAnimationState();
-            const spriteName = editingSprite.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite.index}`;
+            const spriteName = getSpriteEditorSummary(targets);
             addUndoCommand({
                 description: `Change ${spriteName} Comment`,
                 oldState: oldState,
@@ -5911,35 +6317,35 @@ window.addEventListener("load", async () => {
         }
     };
     createSliderSync("xScale", "xScaleSlider",
-        () => editingSprite?.xscale || 1.0,
-        (val) => { if (editingSprite) { editingSprite.xscale = val; editingSprite.updateBoundingBox(); } },
+        () => getPrimarySpriteEditorTarget()?.xscale || 1.0,
+        (val) => { for (const sprite of getSpriteEditorTargets()) { sprite.xscale = val; sprite.updateBoundingBox(); } },
         () => { redraw(); drawSpritePreview(); updateSpritesList(); saveSession(true); },
-        `Change ${editingSprite.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite.index}`} X Scale`
+        () => `Change ${getSpriteEditorSummary(getSpriteEditorTargets())} X Scale`
     );
     createSliderSync("yScale", "yScaleSlider",
-        () => editingSprite?.yscale || 1.0,
-        (val) => { if (editingSprite) { editingSprite.yscale = val; editingSprite.updateBoundingBox(); } },
+        () => getPrimarySpriteEditorTarget()?.yscale || 1.0,
+        (val) => { for (const sprite of getSpriteEditorTargets()) { sprite.yscale = val; sprite.updateBoundingBox(); } },
         () => { redraw(); drawSpritePreview(); updateSpritesList(); saveSession(true); },
-        `Change ${editingSprite.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite.index}`} Y Scale`
+        () => `Change ${getSpriteEditorSummary(getSpriteEditorTargets())} Y Scale`
     );
     createSliderSync("rotation", "rotationSlider",
-        () => editingSprite?.rotation || 0,
-        (val) => { if (editingSprite) { editingSprite.rotation = val; editingSprite.updateBoundingBox(); } },
+        () => getPrimarySpriteEditorTarget()?.rotation || 0,
+        (val) => { for (const sprite of getSpriteEditorTargets()) { sprite.rotation = val; sprite.updateBoundingBox(); } },
         () => { redraw(); drawSpritePreview(); updateSpritesList(); saveSession(true); },
-        `Change ${editingSprite.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite.index}`} Rotation`
+        () => `Change ${getSpriteEditorSummary(getSpriteEditorTargets())} Rotation`
     );
     createSliderSync("zoom", "zoomSlider",
-        () => editingSprite?._zoom !== undefined ? editingSprite._zoom : 1.0,
+        () => getPrimarySpriteEditorTarget()?._zoom !== undefined ? getPrimarySpriteEditorTarget()._zoom : 1.0,
         (val) => {
-            if (editingSprite) {
-                editingSprite._zoom = val;
-                editingSprite.updateBoundingBox();
+            for (const sprite of getSpriteEditorTargets()) {
+                sprite._zoom = val;
+                sprite.updateBoundingBox();
             }
         },
         () => { redraw(); drawSpritePreview(); updateSpritesList(); saveSession(true); },
-        () => `Change ${editingSprite?.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite?.index}`} Zoom`
+        () => `Change ${getSpriteEditorSummary(getSpriteEditorTargets())} Zoom`
     );
-    const spriteModeSelect = document.getElementById("spriteMode");
+    const spriteModeSelect = $("spriteMode");
     if (spriteModeSelect) {
         spriteModeSelect.addEventListener("change", (e) => {
             if (!editingSprite) return;
@@ -5984,12 +6390,14 @@ window.addEventListener("load", async () => {
             saveSession(true);
         });
     }
-    document.getElementById("spriteLeft").onchange = (e) => {
-        if (editingSprite) {
+    $("spriteLeft").onchange = (e) => {
+        const targets = getSpriteEditorTargets();
+        if (targets.length > 0) {
             const oldState = serializeAnimationState();
-            editingSprite.left = parseInt(e.target.value) || 0;
+            const value = parseInt(e.target.value) || 0;
+            for (const sprite of targets) sprite.left = value;
             const newState = serializeAnimationState();
-            const spriteName = editingSprite.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite.index}`;
+            const spriteName = getSpriteEditorSummary(targets);
             addUndoCommand({
                 description: `Change ${spriteName} Left`,
                 oldState: oldState,
@@ -6002,12 +6410,14 @@ window.addEventListener("load", async () => {
             saveSession(true);
         }
     };
-    document.getElementById("spriteTop").onchange = (e) => {
-        if (editingSprite) {
+    $("spriteTop").onchange = (e) => {
+        const targets = getSpriteEditorTargets();
+        if (targets.length > 0) {
             const oldState = serializeAnimationState();
-            editingSprite.top = parseInt(e.target.value) || 0;
+            const value = parseInt(e.target.value) || 0;
+            for (const sprite of targets) sprite.top = value;
             const newState = serializeAnimationState();
-            const spriteName = editingSprite.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite.index}`;
+            const spriteName = getSpriteEditorSummary(targets);
             addUndoCommand({
                 description: `Change ${spriteName} Top`,
                 oldState: oldState,
@@ -6020,13 +6430,17 @@ window.addEventListener("load", async () => {
             saveSession(true);
         }
     };
-    document.getElementById("spriteWidth").onchange = (e) => {
-        if (editingSprite) {
+    $("spriteWidth").onchange = (e) => {
+        const targets = getSpriteEditorTargets();
+        if (targets.length > 0) {
             const oldState = serializeAnimationState();
-            editingSprite.width = parseInt(e.target.value) || 32;
-            editingSprite.updateBoundingBox();
+            const value = parseInt(e.target.value) || 32;
+            for (const sprite of targets) {
+                sprite.width = value;
+                sprite.updateBoundingBox();
+            }
             const newState = serializeAnimationState();
-            const spriteName = editingSprite.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite.index}`;
+            const spriteName = getSpriteEditorSummary(targets);
             addUndoCommand({
                 description: `Change ${spriteName} Width`,
                 oldState: oldState,
@@ -6039,13 +6453,17 @@ window.addEventListener("load", async () => {
             saveSession(true);
         }
     };
-    document.getElementById("spriteHeight").onchange = (e) => {
-        if (editingSprite) {
+    $("spriteHeight").onchange = (e) => {
+        const targets = getSpriteEditorTargets();
+        if (targets.length > 0) {
             const oldState = serializeAnimationState();
-            editingSprite.height = parseInt(e.target.value) || 32;
-            editingSprite.updateBoundingBox();
+            const value = parseInt(e.target.value) || 32;
+            for (const sprite of targets) {
+                sprite.height = value;
+                sprite.updateBoundingBox();
+            }
             const newState = serializeAnimationState();
-            const spriteName = editingSprite.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite.index}`;
+            const spriteName = getSpriteEditorSummary(targets);
             addUndoCommand({
                 description: `Change ${spriteName} Height`,
                 oldState: oldState,
@@ -6058,7 +6476,7 @@ window.addEventListener("load", async () => {
             saveSession(true);
         }
     };
-    const colorEffectCheckbox = document.getElementById("colorEffectCheckbox");
+    const colorEffectCheckbox = $("colorEffectCheckbox");
     if (colorEffectCheckbox) {
         colorEffectCheckbox.onclick = () => {
             if (editingSprite) {
@@ -6080,23 +6498,27 @@ window.addEventListener("load", async () => {
             }
         };
     }
-    document.getElementById("colorSwatch").onchange = (e) => {
-        if (!editingSprite) return;
+    $("colorSwatch").onchange = (e) => {
+        const targets = getSpriteEditorTargets();
+        if (targets.length === 0) return;
         const oldState = serializeAnimationState();
         const hex = e.target.value;
         const r = parseInt(hex.substr(1,2), 16);
         const g = parseInt(hex.substr(3,2), 16);
         const b = parseInt(hex.substr(5,2), 16);
-        editingSprite.colorEffect = {r, g, b, a: editingSprite.colorEffect.a || 255};
-        if (!editingSprite.colorEffectEnabled) { editingSprite.colorEffectEnabled = true; const cb = document.getElementById("colorEffectCheckbox"); if (cb) cb.textContent = "✓"; }
-        const colorR = document.getElementById("colorR");
-        const colorG = document.getElementById("colorG");
-        const colorB = document.getElementById("colorB");
+        for (const sprite of targets) {
+            sprite.colorEffect = {r, g, b, a: sprite.colorEffect?.a || 255};
+            sprite.colorEffectEnabled = true;
+        }
+        if (!editingSprite.colorEffectEnabled) { editingSprite.colorEffectEnabled = true; const cb = $("colorEffectCheckbox"); if (cb) cb.textContent = "✓"; }
+        const colorR = $("colorR");
+        const colorG = $("colorG");
+        const colorB = $("colorB");
         if (colorR) colorR.value = r;
         if (colorG) colorG.value = g;
         if (colorB) colorB.value = b;
         const newState = serializeAnimationState();
-        const spriteName = editingSprite.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite.index}`;
+        const spriteName = getSpriteEditorSummary(targets);
         addUndoCommand({
             description: `Change ${spriteName} Color`,
             oldState: oldState,
@@ -6109,26 +6531,30 @@ window.addEventListener("load", async () => {
         saveSession();
     };
     const updateColorFromRGB = () => {
-        if (!editingSprite) return;
-        const colorR = document.getElementById("colorR");
-        const colorG = document.getElementById("colorG");
-        const colorB = document.getElementById("colorB");
-        const colorA = document.getElementById("colorA");
-        const colorSwatch = document.getElementById("colorSwatch");
+        const targets = getSpriteEditorTargets();
+        if (targets.length === 0) return;
+        const colorR = $("colorR");
+        const colorG = $("colorG");
+        const colorB = $("colorB");
+        const colorA = $("colorA");
+        const colorSwatch = $("colorSwatch");
         if (!colorR || !colorG || !colorB) return;
         const oldState = serializeAnimationState();
         const r = Math.max(0, Math.min(255, parseInt(colorR.value) || 255));
         const g = Math.max(0, Math.min(255, parseInt(colorG.value) || 255));
         const b = Math.max(0, Math.min(255, parseInt(colorB.value) || 255));
-        const a = colorA ? Math.max(0, Math.min(255, parseInt(colorA.value) || 255)) : (editingSprite.colorEffect.a || 255);
-        editingSprite.colorEffect = {r, g, b, a};
-        if (!editingSprite.colorEffectEnabled) { editingSprite.colorEffectEnabled = true; const cb = document.getElementById("colorEffectCheckbox"); if (cb) cb.textContent = "✓"; }
+        const a = colorA ? Math.max(0, Math.min(255, parseInt(colorA.value) || 255)) : 255;
+        for (const sprite of targets) {
+            sprite.colorEffect = {r, g, b, a};
+            sprite.colorEffectEnabled = true;
+        }
+        if (!editingSprite.colorEffectEnabled) { editingSprite.colorEffectEnabled = true; const cb = $("colorEffectCheckbox"); if (cb) cb.textContent = "✓"; }
         if (colorSwatch) {
             const hex = `#${[r, g, b].map(x => x.toString(16).padStart(2, '0')).join('')}`;
             colorSwatch.value = hex;
         }
         const newState = serializeAnimationState();
-        const spriteName = editingSprite.comment ? `"${editingSprite.comment}"` : `Sprite ${editingSprite.index}`;
+        const spriteName = getSpriteEditorSummary(targets);
         addUndoCommand({
             description: `Change ${spriteName} Color`,
             oldState: oldState,
@@ -6141,16 +6567,16 @@ window.addEventListener("load", async () => {
         updateSpritesList();
         saveSession();
     };
-    if (document.getElementById("colorR")) document.getElementById("colorR").onchange = updateColorFromRGB;
-    if (document.getElementById("colorG")) document.getElementById("colorG").onchange = updateColorFromRGB;
-    if (document.getElementById("colorB")) document.getElementById("colorB").onchange = updateColorFromRGB;
-    if (document.getElementById("colorA")) document.getElementById("colorA").onchange = updateColorFromRGB;
-    document.getElementById("colorSwatch").onclick = (e) => {
+    if ($("colorR")) $("colorR").onchange = updateColorFromRGB;
+    if ($("colorG")) $("colorG").onchange = updateColorFromRGB;
+    if ($("colorB")) $("colorB").onchange = updateColorFromRGB;
+    if ($("colorA")) $("colorA").onchange = updateColorFromRGB;
+    $("colorSwatch").onclick = (e) => {
         if (e.target.type === "color") {
             e.target.click();
         }
     };
-    document.getElementById("btnNewFrame").onclick = () => {
+    $("btnNewFrame").onclick = () => {
         if (!currentAnimation) return;
         const oldState = serializeAnimationState();
         const frame = new Frame();
@@ -6169,7 +6595,7 @@ window.addEventListener("load", async () => {
     updateFrameInfo();
     saveSession();
 };
-    document.getElementById("btnDeleteFrame").onclick = () => {
+    $("btnDeleteFrame").onclick = () => {
         if (currentAnimation.frames.length <= 1) {
             showAlertDialog("Cannot delete the last frame");
             return;
@@ -6193,13 +6619,13 @@ window.addEventListener("load", async () => {
             }
         });
     };
-    document.getElementById("btnCopyFrame").onclick = () => {
+    $("btnCopyFrame").onclick = () => {
         if (!currentAnimation) return;
         const indices = selectedFrames.size > 1 ? [...selectedFrames].sort((a, b) => a - b) : [currentFrame];
         const frames = indices.map(i => currentAnimation.getFrame(i)).filter(Boolean);
         if (frames.length) clipboardFrames = frames.map(f => f.duplicate());
     };
-    document.getElementById("btnPasteBefore").onclick = () => {
+    $("btnPasteBefore").onclick = () => {
         if (!clipboardFrames || !currentAnimation) return;
         const oldState = serializeAnimationState();
         clipboardFrames.forEach((f, i) => currentAnimation.frames.splice(currentFrame + i, 0, f.duplicate()));
@@ -6210,7 +6636,7 @@ window.addEventListener("load", async () => {
         updateFrameInfo();
         saveSession();
     };
-    document.getElementById("btnPasteAfter").onclick = () => {
+    $("btnPasteAfter").onclick = () => {
         if (!clipboardFrames || !currentAnimation) return;
         const oldState = serializeAnimationState();
         clipboardFrames.forEach((f, i) => currentAnimation.frames.splice(currentFrame + 1 + i, 0, f.duplicate()));
@@ -6223,7 +6649,7 @@ window.addEventListener("load", async () => {
         updateFrameInfo();
         saveSession();
     };
-    document.getElementById("btnReverseFrame").onclick = () => {
+    $("btnReverseFrame").onclick = () => {
         const frame = currentAnimation.getFrame(currentFrame);
         if (frame) {
             const actualDir = getDirIndex(currentDir);
@@ -6231,7 +6657,7 @@ window.addEventListener("load", async () => {
             redraw();
         }
     };
-    document.getElementById("timelineSlider").oninput = (e) => {
+    $("timelineSlider").oninput = (e) => {
         saveCurrentFrame();
         const actualDir = getDirIndex(currentDir);
         const oldPieces = (currentAnimation.getFrame(currentFrame)?.pieces[actualDir]) || [];
@@ -6249,56 +6675,56 @@ window.addEventListener("load", async () => {
         redraw();
         updateFrameInfo();
     };
-    document.getElementById("btnPlay").onclick = () => {
+    $("btnPlay").onclick = () => {
         if (isPlaying) {
             isPlaying = false;
             stopAllSounds();
-            document.getElementById("btnPlay").innerHTML = '<i class="fas fa-play"></i>';
+            $("btnPlay").innerHTML = '<i class="fas fa-play"></i>';
         } else {
             isPlaying = true;
             playPosition = 0;
             playStartTime = Date.now();
-            document.getElementById("btnPlay").innerHTML = '<i class="fas fa-pause"></i>';
+            $("btnPlay").innerHTML = '<i class="fas fa-pause"></i>';
             playAnimation();
         }
     };
-    document.getElementById("btnStop").onclick = () => {
+    $("btnStop").onclick = () => {
         isPlaying = false;
         playStartTime = 0;
         playPosition = 0;
         currentFrame = 0;
         stopAllSounds();
-        document.getElementById("btnPlay").innerHTML = '<i class="fas fa-play"></i>';
+        $("btnPlay").innerHTML = '<i class="fas fa-play"></i>';
         redraw();
         updateFrameInfo();
     };
-    document.getElementById("btnOnionSkin").onclick = (e) => {
+    $("btnOnionSkin").onclick = (e) => {
         onionSkinEnabled = !onionSkinEnabled;
         e.target.closest("button").classList.toggle("active", onionSkinEnabled);
         redraw();
     };
-    const btnSplitView = document.getElementById("btnSplitView");
+    const btnSplitView = $("btnSplitView");
     if (btnSplitView) {
         btnSplitView.classList.toggle("active", splitViewEnabled);
+        btnSplitView.onclick = (e) => {
+            if (currentAnimation && currentAnimation.singleDir) return;
+            splitViewEnabled = !splitViewEnabled;
+            localStorage.setItem("ganiEditorSplitView", splitViewEnabled ? "true" : "false");
+            btnSplitView.classList.toggle("active", splitViewEnabled);
+            if (!splitViewEnabled) selectedPieceDir = null;
+            redraw();
+        };
     }
-    document.getElementById("btnSplitView").onclick = (e) => {
-        if (currentAnimation && currentAnimation.singleDir) return;
-        splitViewEnabled = !splitViewEnabled;
-        localStorage.setItem("ganiEditorSplitView", splitViewEnabled ? "true" : "false");
-        e.target.closest("button").classList.toggle("active", splitViewEnabled);
-        if (!splitViewEnabled) selectedPieceDir = null;
-        redraw();
-    };
-    document.getElementById("btnMirroredActions").onclick = (e) => {
+    $("btnMirroredActions").onclick = (e) => {
         mirroredActionsEnabled = !mirroredActionsEnabled;
         e.target.closest("button").classList.toggle("active", mirroredActionsEnabled);
         redraw();
     };
-    document.getElementById("btnUndo").onclick = undo;
-    document.getElementById("btnRedo").onclick = redo;
-    const btnHistoryUndo = document.getElementById("btnHistoryUndo");
-    const btnHistoryRedo = document.getElementById("btnHistoryRedo");
-    const btnHistoryClear = document.getElementById("btnHistoryClear");
+    $("btnUndo").onclick = undo;
+    $("btnRedo").onclick = redo;
+    const btnHistoryUndo = $("btnHistoryUndo");
+    const btnHistoryRedo = $("btnHistoryRedo");
+    const btnHistoryClear = $("btnHistoryClear");
     if (btnHistoryUndo) btnHistoryUndo.onclick = undo;
     if (btnHistoryRedo) btnHistoryRedo.onclick = redo;
     if (btnHistoryClear) btnHistoryClear.onclick = () => {
@@ -6342,7 +6768,7 @@ window.addEventListener("load", async () => {
                 if (frame.duration !== newDuration) {
                     frame.duration = newDuration;
                     if (resizeFrame === currentFrame) {
-                        document.getElementById("duration").value = frame.duration;
+                        $("duration").value = frame.duration;
                     }
                     redraw();
                     updateFrameInfo();
@@ -6473,7 +6899,7 @@ window.addEventListener("load", async () => {
                             }
                             redraw();
                             updateFrameInfo();
-                            const slider = document.getElementById("timelineSlider");
+                            const slider = $("timelineSlider");
                             if (slider) slider.value = currentFrame;
                         }
                     }
@@ -6580,7 +7006,7 @@ window.addEventListener("load", async () => {
                     }
                     redraw();
                     updateFrameInfo();
-                    const slider = document.getElementById("timelineSlider");
+                    const slider = $("timelineSlider");
                     if (slider) slider.value = currentFrame;
                 }
                 break;
@@ -6655,7 +7081,7 @@ window.addEventListener("load", async () => {
                 if (frame.duration !== newDuration) {
                     frame.duration = newDuration;
                     if (resizeFrame === currentFrame) {
-                        document.getElementById("duration").value = frame.duration;
+                        $("duration").value = frame.duration;
                     }
                     redraw();
                     updateFrameInfo();
@@ -6871,8 +7297,6 @@ window.addEventListener("load", async () => {
         drawTimeline();
     };
 
-    let isDraggingScrollbar = false;
-
     timelineCanvas.onwheel = (e) => {
         e.preventDefault();
         if (e.ctrlKey) {
@@ -6896,7 +7320,7 @@ window.addEventListener("load", async () => {
     document.addEventListener("keydown", (e) => {
         if (matchesKeybind(e, keybinds.save)) {
             e.preventDefault();
-            if (currentAnimation) document.getElementById("btnSave").click();
+            if (currentAnimation) $("btnSave").click();
             return;
         }
         const activeElement = document.activeElement;
@@ -6947,20 +7371,20 @@ window.addEventListener("load", async () => {
             }
         } else if (matchesKeybind(e, keybinds.resetEditor)) {
             e.preventDefault();
-            const settingsReset = document.getElementById("settingsReset");
+            const settingsReset = $("settingsReset");
             if (settingsReset && settingsReset.onclick) {
                 settingsReset.onclick({ stopPropagation: () => {} });
             }
         } else if (matchesKeybind(e, keybinds.open)) {
             e.preventDefault();
-            const btnOpen = document.getElementById("btnOpen");
+            const btnOpen = $("btnOpen");
             if (btnOpen && btnOpen.onclick) btnOpen.onclick();
         } else if (matchesKeybind(e, keybinds.infoDialog)) {
             e.preventDefault();
             window.openInfoDialog?.("about");
         } else if (matchesKeybind(e, keybinds.settingsDialog)) {
             e.preventDefault();
-            const btnSettings = document.getElementById("btnSettings");
+            const btnSettings = $("btnSettings");
             if (btnSettings && btnSettings.onclick) btnSettings.onclick();
         } else if (matchesKeybind(e, keybinds.togglePanels)) {
             e.preventDefault();
@@ -7017,8 +7441,8 @@ window.addEventListener("load", async () => {
                 resizeCanvas();
             }
             if (timelineContainer) {
-                const canvasTimelineSplitter = document.getElementById("canvasTimelineSplitter");
-                const mainSplitter = document.getElementById("mainSplitter");
+                const canvasTimelineSplitter = $("canvasTimelineSplitter");
+                const mainSplitter = $("mainSplitter");
                 if (allVisible) {
                     timelineContainer.style.setProperty("display", "none", "important");
                     timelineContainer.style.setProperty("visibility", "hidden", "important");
@@ -7102,7 +7526,7 @@ window.addEventListener("load", async () => {
                 fileInput.click();
         } else if (e.ctrlKey && e.shiftKey && e.key === "R" && currentAnimation && currentAnimation.fileName) {
             e.preventDefault();
-                const fileInput = document.getElementById("fileInput");
+                const fileInput = $("fileInput");
                 if (fileInput) {
                     fileInput.click();
             }
@@ -7110,7 +7534,7 @@ window.addEventListener("load", async () => {
             e.preventDefault();
             selectedPieces.clear();
             editingSprite = null;
-            const combo = document.getElementById("itemsCombo");
+            const combo = $("itemsCombo");
             if (combo) combo.value = "";
             updateItemsCombo();
             updateItemSettings();
@@ -7183,10 +7607,10 @@ window.addEventListener("load", async () => {
             }
         } else if (matchesKeybind(e, keybinds.layerUp) && currentAnimation) {
             e.preventDefault();
-            document.getElementById("btnItemLayerUp").click();
+            $("btnItemLayerUp").click();
         } else if (matchesKeybind(e, keybinds.layerDown) && currentAnimation) {
             e.preventDefault();
-            document.getElementById("btnItemLayerDown").click();
+            $("btnItemLayerDown").click();
         } else if ((matchesKeybind(e, keybinds.prevFrame) || matchesKeybind(e, keybinds.nextFrame)) && currentAnimation) {
             e.preventDefault();
             const dir = matchesKeybind(e, keybinds.prevFrame) ? -1 : 1;
@@ -7207,7 +7631,7 @@ window.addEventListener("load", async () => {
                 }
                 redraw();
                 updateFrameInfo();
-                const slider = document.getElementById("timelineSlider");
+                const slider = $("timelineSlider");
                 if (slider) slider.value = currentFrame;
             }
         } else if (matchesKeybind(e, keybinds.zoomIn) || e.key === "=") {
@@ -7232,33 +7656,33 @@ window.addEventListener("load", async () => {
             redraw();
         } else if (matchesKeybind(e, keybinds.play)) {
             e.preventDefault();
-            document.getElementById("btnPlay").click();
+            $("btnPlay").click();
         } else if (!currentAnimation) {
             return;
         } else if (keysSwapped) {
             if (e.key === "ArrowUp") {
                 e.preventDefault();
                 if (currentDir !== 0) {
-                    document.getElementById("directionCombo").value = "UP";
-                    document.getElementById("directionCombo").dispatchEvent(new Event("change"));
+                    $("directionCombo").value = "UP";
+                    $("directionCombo").dispatchEvent(new Event("change"));
                 }
             } else if (e.key === "ArrowLeft") {
                 e.preventDefault();
                 if (currentDir !== 1) {
-                    document.getElementById("directionCombo").value = "LEFT";
-                    document.getElementById("directionCombo").dispatchEvent(new Event("change"));
+                    $("directionCombo").value = "LEFT";
+                    $("directionCombo").dispatchEvent(new Event("change"));
                 }
             } else if (e.key === "ArrowDown") {
                 e.preventDefault();
                 if (currentDir !== 2) {
-                    document.getElementById("directionCombo").value = "DOWN";
-                    document.getElementById("directionCombo").dispatchEvent(new Event("change"));
+                    $("directionCombo").value = "DOWN";
+                    $("directionCombo").dispatchEvent(new Event("change"));
                 }
             } else if (e.key === "ArrowRight") {
                 e.preventDefault();
                 if (currentDir !== 3) {
-                    document.getElementById("directionCombo").value = "RIGHT";
-                    document.getElementById("directionCombo").dispatchEvent(new Event("change"));
+                    $("directionCombo").value = "RIGHT";
+                    $("directionCombo").dispatchEvent(new Event("change"));
                 }
             } else if (e.key === "w" || e.key === "W") {
                 e.preventDefault();
@@ -7277,26 +7701,26 @@ window.addEventListener("load", async () => {
             if (e.key === "w" || e.key === "W") {
                 e.preventDefault();
                 if (currentDir !== 0) {
-                    document.getElementById("directionCombo").value = "UP";
-                    document.getElementById("directionCombo").dispatchEvent(new Event("change"));
+                    $("directionCombo").value = "UP";
+                    $("directionCombo").dispatchEvent(new Event("change"));
                 }
             } else if (e.key === "a" || e.key === "A") {
                 e.preventDefault();
                 if (currentDir !== 1) {
-                    document.getElementById("directionCombo").value = "LEFT";
-                    document.getElementById("directionCombo").dispatchEvent(new Event("change"));
+                    $("directionCombo").value = "LEFT";
+                    $("directionCombo").dispatchEvent(new Event("change"));
                 }
             } else if (e.key === "s" || e.key === "S") {
                 e.preventDefault();
                 if (currentDir !== 2) {
-                    document.getElementById("directionCombo").value = "DOWN";
-                    document.getElementById("directionCombo").dispatchEvent(new Event("change"));
+                    $("directionCombo").value = "DOWN";
+                    $("directionCombo").dispatchEvent(new Event("change"));
                 }
             } else if (e.key === "d" || e.key === "D") {
                 e.preventDefault();
                 if (currentDir !== 3) {
-                    document.getElementById("directionCombo").value = "RIGHT";
-                    document.getElementById("directionCombo").dispatchEvent(new Event("change"));
+                    $("directionCombo").value = "RIGHT";
+                    $("directionCombo").dispatchEvent(new Event("change"));
                 }
             } else if (e.key === "ArrowUp") {
                 e.preventDefault();
@@ -7314,47 +7738,63 @@ window.addEventListener("load", async () => {
         }
     });
     pixelGridEnabled = localStorage.getItem("editorPixelGrid") === "true";
-    document.getElementById("btnPixelGrid").classList.toggle("active", pixelGridEnabled);
-    document.getElementById("btnPixelGrid").onclick = () => {
+    $("btnPixelGrid").classList.toggle("active", pixelGridEnabled);
+    $("btnPixelGrid").onclick = () => {
         pixelGridEnabled = !pixelGridEnabled;
         localStorage.setItem("editorPixelGrid", pixelGridEnabled ? "true" : "false");
-        document.getElementById("btnPixelGrid").classList.toggle("active", pixelGridEnabled);
+        $("btnPixelGrid").classList.toggle("active", pixelGridEnabled);
         redraw();
     };
-    document.getElementById("btnCenterView").onclick = () => {
+    $("btnCenterView").onclick = () => {
         panX = 0;
         panY = 0;
         redraw();
     };
     const updateMainCanvasZoomDisplay = () => {
         const zoomFactor = zoomFactors[zoomLevel] || 1.0;
-        const zoomDisplay = document.getElementById("mainCanvasZoomLevel");
+        const zoomDisplay = $("mainCanvasZoomLevel");
         if (zoomDisplay) zoomDisplay.textContent = zoomFactor.toFixed(1) + "x";
     };
-    document.getElementById("btnZoomOut").onclick = () => {
+    $("btnZoomOut").onclick = () => {
+        const mainCanvas = $("gani-mainCanvas");
+        if (!mainCanvas) return;
+        const dpr = window.devicePixelRatio || 1;
+        const width = mainCanvas.width / dpr;
+        const height = mainCanvas.height / dpr;
         const oldZoom = zoomFactors[zoomLevel] || 1.0;
         zoomLevel--;
         if (zoomLevel < 0) zoomLevel = 0;
         const newZoom = zoomFactors[zoomLevel] || 1.0;
-        panX *= newZoom / oldZoom;
-        panY *= newZoom / oldZoom;
+        const zoomRatio = newZoom / oldZoom;
+        const mx = width / 2;
+        const my = height / 2;
+        panX = mx - (mx - panX) * zoomRatio;
+        panY = my - (my - panY) * zoomRatio;
         localStorage.setItem("mainCanvasZoom", zoomLevel);
         updateMainCanvasZoomDisplay();
         redraw();
     };
-    document.getElementById("btnZoomIn").onclick = () => {
+    $("btnZoomIn").onclick = () => {
+        const mainCanvas = $("gani-mainCanvas");
+        if (!mainCanvas) return;
+        const dpr = window.devicePixelRatio || 1;
+        const width = mainCanvas.width / dpr;
+        const height = mainCanvas.height / dpr;
         const oldZoom = zoomFactors[zoomLevel] || 1.0;
         zoomLevel++;
         if (zoomLevel >= zoomFactors.length) zoomLevel = zoomFactors.length - 1;
         const newZoom = zoomFactors[zoomLevel] || 1.0;
-        panX *= newZoom / oldZoom;
-        panY *= newZoom / oldZoom;
+        const zoomRatio = newZoom / oldZoom;
+        const mx = width / 2;
+        const my = height / 2;
+        panX = mx - (mx - panX) * zoomRatio;
+        panY = my - (my - panY) * zoomRatio;
         localStorage.setItem("mainCanvasZoom", zoomLevel);
         updateMainCanvasZoomDisplay();
         redraw();
     };
     updateMainCanvasZoomDisplay();
-    const singleDirCheckbox = document.getElementById("singleDirCheckbox");
+    const singleDirCheckbox = $("singleDirCheckbox");
     if (singleDirCheckbox) {
         singleDirCheckbox.onclick = () => {
             currentAnimation.singleDir = !currentAnimation.singleDir;
@@ -7363,13 +7803,13 @@ window.addEventListener("load", async () => {
                 currentDir = 0;
                 splitViewEnabled = false;
                 localStorage.setItem("ganiEditorSplitView", "false");
-                const btnSplitView = document.getElementById("btnSplitView");
+                const btnSplitView = $("btnSplitView");
                 if (btnSplitView) {
                     btnSplitView.classList.remove("active");
                     btnSplitView.disabled = true;
                 }
             } else {
-                const btnSplitView = document.getElementById("btnSplitView");
+                const btnSplitView = $("btnSplitView");
                 if (btnSplitView) btnSplitView.disabled = false;
             }
             redraw();
@@ -7377,7 +7817,7 @@ window.addEventListener("load", async () => {
             saveSession();
         };
     }
-    const loopedCheckbox = document.getElementById("loopedCheckbox");
+    const loopedCheckbox = $("loopedCheckbox");
     if (loopedCheckbox) {
         loopedCheckbox.onclick = () => {
             currentAnimation.looped = !currentAnimation.looped;
@@ -7385,7 +7825,7 @@ window.addEventListener("load", async () => {
             saveSession(); if (connections.length) broadcastTabs();
         };
     }
-    const continousCheckbox = document.getElementById("continousCheckbox");
+    const continousCheckbox = $("continousCheckbox");
     if (continousCheckbox) {
         continousCheckbox.onclick = () => {
             currentAnimation.continous = !currentAnimation.continous;
@@ -7393,11 +7833,11 @@ window.addEventListener("load", async () => {
             saveSession();
         };
     }
-    document.getElementById("nextAni").onchange = (e) => {
+    $("nextAni").onchange = (e) => {
         currentAnimation.nextAni = e.target.value;
         saveSession();
     };
-    document.getElementById("btnAddSound").onclick = () => {
+    $("btnAddSound").onclick = () => {
         const frame = currentAnimation.getFrame(currentFrame);
         if (frame) {
             const oldState = serializeAnimationState();
@@ -7419,7 +7859,7 @@ window.addEventListener("load", async () => {
             saveSession();
         }
     };
-    document.getElementById("btnDeleteSound").onclick = () => {
+    $("btnDeleteSound").onclick = () => {
         const frame = currentAnimation.getFrame(currentFrame);
         if (!frame || frame.sounds.length === 0) return;
         const oldState = serializeAnimationState();
@@ -7436,7 +7876,7 @@ window.addEventListener("load", async () => {
         redraw();
         saveSession();
     };
-    document.getElementById("btnLoadSounds").onclick = () => {
+    $("btnLoadSounds").onclick = () => {
         const input = document.createElement("input");
         input.type = "file";
         input.accept = ".wav,.mp3,.ogg,.m4a";
@@ -7481,23 +7921,23 @@ window.addEventListener("load", async () => {
         };
         input.click();
     };
-    document.getElementById("btnWorkingDir").onclick = async () => {
+    $("btnWorkingDir").onclick = async () => {
         if (_isTauri) {
             const selected = await tauriOpenDialog({ directory: true, multiple: false, title: "Select Working Directory" });
             if (selected) await loadWorkspaceFromDisk(selected);
             return;
         }
-        const folderInput = document.getElementById("folderInput");
+        const folderInput = $("folderInput");
         folderInput.click();
     };
-    document.getElementById("imageInput").onchange = async (e) => {
+    $("imageInput").onchange = async (e) => {
         for (const file of Array.from(e.target.files)) {
             await loadImage(file);
         }
         redraw();
         drawSpritePreview();
     };
-    document.getElementById("folderInput").onchange = async (e) => {
+    $("folderInput").onchange = async (e) => {
         const files = Array.from(e.target.files);
         if (files.length === 0) return;
         const firstFile = files[0];
@@ -7537,7 +7977,7 @@ window.addEventListener("load", async () => {
         saveSession();
         redraw();
     };
-    document.getElementById("btnImportSprites").onclick = async () => {
+    $("btnImportSprites").onclick = async () => {
         if (_isTauri) {
             const selected = await tauriOpenDialog({ multiple: false, filters: [{ name: 'Gani Files', extensions: ['gani'] }] });
             if (!selected) return;
@@ -7634,7 +8074,7 @@ window.addEventListener("load", async () => {
                 showAlertDialog("Failed to import sprites: " + err.message);
             }
     }
-    document.getElementById("btnCopySprite").onclick = () => {
+    $("btnCopySprite").onclick = () => {
         if (!editingSprite) return;
         const data = {
             type: "sprite",
@@ -7654,7 +8094,7 @@ window.addEventListener("load", async () => {
         _spriteClipboard = data;
         if (navigator.clipboard) navigator.clipboard.writeText(JSON.stringify(data)).catch(() => {});
     };
-    document.getElementById("btnPasteSprite").onclick = async () => {
+    $("btnPasteSprite").onclick = async () => {
         try {
             let data = _spriteClipboard;
             if (!data && navigator.clipboard) { try { data = JSON.parse(await navigator.clipboard.readText()); } catch {} }
@@ -7693,7 +8133,7 @@ window.addEventListener("load", async () => {
             console.error("Failed to paste sprite:", e);
         }
     };
-    document.getElementById("btnDeleteSprite").onclick = () => {
+    $("btnDeleteSprite").onclick = () => {
         if (selectedSpritesForDeletion.size > 0) {
             showConfirmDialog(`Delete ${selectedSpritesForDeletion.size} sprite${selectedSpritesForDeletion.size > 1 ? 's' : ''}?`, (confirmed) => {
                 if (confirmed) {
@@ -7779,13 +8219,15 @@ window.addEventListener("load", async () => {
             });
         }
     };
-    document.getElementById("btnBrowseWorkspace").onclick = () => showWorkspaceBrowserDialog();
-    const tabCont = document.getElementById("tabsContainer");
-    document.getElementById("tabScrollLeft").onclick = () => { tabCont.scrollLeft -= tabCont.clientWidth * 0.8; };
-    document.getElementById("tabScrollRight").onclick = () => { tabCont.scrollLeft += tabCont.clientWidth * 0.8; };
-    tabCont.addEventListener("scroll", updateTabScrollButtons);
-    new ResizeObserver(updateTabScrollButtons).observe(tabCont);
-    const btnDuplicateSprite = document.getElementById("btnDuplicateSprite");
+    $("btnBrowseWorkspace").onclick = () => showWorkspaceBrowserDialog();
+    const tabCont = $("tabsContainer");
+    if (tabCont) {
+        $("tabScrollLeft").onclick = () => { tabCont.scrollLeft -= tabCont.clientWidth * 0.8; };
+        $("tabScrollRight").onclick = () => { tabCont.scrollLeft += tabCont.clientWidth * 0.8; };
+        tabCont.addEventListener("scroll", updateTabScrollButtons);
+        new ResizeObserver(updateTabScrollButtons).observe(tabCont);
+    }
+    const btnDuplicateSprite = $("btnDuplicateSprite");
     if (btnDuplicateSprite) {
         btnDuplicateSprite.onclick = () => {
             if (!editingSprite) return;
@@ -7816,14 +8258,14 @@ window.addEventListener("load", async () => {
     };
     function applyColorScheme(scheme) {
         if (scheme === "default") {
-            const oldStyle = document.getElementById("colorSchemeStyle");
+            const oldStyle = $("colorSchemeStyle");
             if (oldStyle) oldStyle.remove();
             document.body.style.background = "";
             document.body.style.color = "";
-            const _tb = document.getElementById('tauriBar'); if (_tb) { _tb.style.background = ''; _tb.style.borderColor = ''; }
+            const _tb = $('tauriBar'); if (_tb) { _tb.style.background = ''; _tb.style.borderColor = ''; }
             ["--timeline-frame-bg","--timeline-frame-selected-bg","--timeline-frame-multi-bg","--quadrant-divider","--timeline-ruler-bg","--timeline-ruler-tick","--timeline-ruler-text"].forEach(v => document.documentElement.style.removeProperty(v));
-            const settingsDialog = document.getElementById("settingsDialog");
-            const aboutDialog = document.getElementById("infoDialog");
+            const settingsDialog = $("settingsDialog");
+            const aboutDialog = $("infoDialog");
             if (settingsDialog) {
                 const settingsContent = settingsDialog.querySelector(".dialog-content");
                 if (settingsContent) {
@@ -7892,7 +8334,7 @@ window.addEventListener("load", async () => {
                     });
                 }
             }
-            const colorSchemeDropdown = document.getElementById("colorSchemeDropdown");
+            const colorSchemeDropdown = $("colorSchemeDropdown");
             if (colorSchemeDropdown) {
                 colorSchemeDropdown.style.background = "#2b2b2b";
                 colorSchemeDropdown.style.borderColor = "#0a0a0a";
@@ -7902,7 +8344,7 @@ window.addEventListener("load", async () => {
                     item.style.borderColor = "#0a0a0a";
                 });
             }
-            const timelineCanvas = document.getElementById("timelineCanvas");
+            const timelineCanvas = $("timelineCanvas");
             if (timelineCanvas) {
                 timelineCanvas.style.background = "";
             }
@@ -7959,7 +8401,7 @@ window.addEventListener("load", async () => {
         document.body.style.color = colors.text;
         const style = document.createElement("style");
         style.id = "colorSchemeStyle";
-        const oldStyle = document.getElementById("colorSchemeStyle");
+        const oldStyle = $("colorSchemeStyle");
         if (oldStyle) oldStyle.remove();
         const buttonBg = colors.button || colors.panel;
         const buttonText = colors.buttonText || colors.text;
@@ -7970,7 +8412,7 @@ window.addEventListener("load", async () => {
             :root { --timeline-frame-bg: ${colors.frameBg}; --timeline-frame-selected-bg: ${colors.frameSelected}; --timeline-frame-multi-bg: ${colors.frameMulti}; --quadrant-divider: ${colors.divider}; --timeline-ruler-bg: ${colors.border}; --timeline-ruler-tick: ${colors.text}; --timeline-ruler-text: ${colors.text}; }
             .toolbar, .sprite-toolbar, .playback-controls { background: ${colors.panel} !important; }
             .left-panel, .right-panel, .sprite-edit-panel, .timeline-container, .settings-group { background: ${colors.panel} !important; }
-            .sprite-item, .sprite-preview, .timeline-view { background: ${colors.panel} !important; }
+            .sprite-item, .sprite-preview, .timeline-view { background: ${colors.bg} !important; }
             .timeline-header { background: ${colors.panel} !important; }
             #timelineCanvas { background: ${colors.panel} !important; }
             .timeline-header label, .timeline-header span { color: ${colors.text} !important; }
@@ -8010,25 +8452,34 @@ window.addEventListener("load", async () => {
             .direction-selector .custom-dropdown { background: ${colors.panel} !important; border-color: ${colors.border} !important; }
             .direction-selector .custom-dropdown-item { color: ${colors.text} !important; border-color: ${colors.border} !important; }
             .direction-selector .custom-dropdown-item:hover { background: ${colors.hover} !important; }
-            .sprite-item > div, label, h3, span { color: ${colors.text} !important; }
+            .sprite-item > div, label, h3 { color: ${colors.text} !important; }
             input, select, textarea { background: ${inputBg} !important; color: ${colors.text} !important; border-color: ${colors.border} !important; }
             #colorSchemeDropdown { background: ${colors.panel} !important; border-color: ${colors.border} !important; }
             .color-scheme-item { color: ${colors.text} !important; border-color: ${colors.border} !important; }
             .color-scheme-item:hover { background: ${colors.hover} !important; }
             .tabs { background: ${colors.panel} !important; }
-            .tab { background: transparent !important; color: ${colors.text} !important; opacity: 0.6; }
+            .tab { background: transparent !important; color: ${colors.text} !important; opacity: 0.55; }
             .tab:hover { background: ${colors.hover} !important; opacity: 0.8; }
-            .tab.active { background: ${tabActive} !important; color: ${colors.text} !important; border-color: ${colors.border} !important; border-bottom: none !important; opacity: 1; }
+            .tab.active { background: ${colors.bg} !important; color: ${colors.text} !important; border-top: 2px solid #4a9eff !important; border-bottom: none !important; opacity: 1; }
             .splitter-handle { background: ${colors.border} !important; }
             .defaults-table th { background: ${buttonBg} !important; color: ${buttonText} !important; }
             .defaults-table td { background: ${colors.panel} !important; color: ${colors.text} !important; }
             #historyList { background: ${colors.bg} !important; color: ${colors.text} !important; }
-            .sprite-item { background: ${colors.panel} !important; border-color: ${colors.border} !important; }
-            .sprite-item.selected { border-color: ${buttonBg} !important; }
+            .sprite-item { background: ${colors.bg} !important; border-color: ${colors.border} !important; opacity: 0.85; }
+            .sprite-item:hover { opacity: 1; background: ${colors.hover} !important; }
+            .sprite-item.selected { border: 2px solid #4a9eff !important; opacity: 1; }
             .dialog-content { background: ${colors.panel} !important; border-color: ${colors.border} !important; color: ${colors.text} !important; }
             .dialog-content h3 { color: ${colors.text} !important; border-color: ${colors.border} !important; }
             .dialog-content label { color: ${colors.text} !important; }
-            .dialog-content p, .dialog-content span, .dialog-content div { color: ${colors.text} !important; }
+            .dialog-content p, .dialog-content div { color: ${colors.text} !important; }
+            .monaco-editor, .monaco-editor-background, .monaco-editor .margin { background: ${colors.bg} !important; }
+            .dialog-titlebar { background: ${colors.bg} !important; border-color: ${colors.border} !important; }
+            .dialog-titlebar span { color: ${colors.text} !important; }
+            .info-tab-btn, .settings-tab-btn, .defaultOpen-tab-btn { color: ${colors.text} !important; opacity: 0.6; border-color: ${colors.border} !important; }
+            .info-tab-btn.active, .settings-tab-btn.active, .defaultOpen-tab-btn.active { color: #4a9eff !important; opacity: 1; background: ${colors.panel} !important; }
+            .info-tab-btn:hover, .settings-tab-btn:hover, .defaultOpen-tab-btn:hover { background: ${colors.hover} !important; opacity: 0.8; }
+            #defaultOpenContent { background: ${colors.bg} !important; }
+            #defaultOpenCancel, #infoClose { background: ${buttonBg} !important; color: ${buttonText} !important; border-color: ${colors.border} !important; }
             .dialog-content a { color: ${scheme === "fusion-light" || scheme === "light-style" ? "#0066cc" : scheme === "default" ? "#4a9eff" : scheme === "dark-orange" ? "#ffaa55" : scheme === "aqua" ? "#55ffff" : scheme === "ayu-mirage" ? "#5ccfe6" : scheme === "dracula" ? "#bd93f9" : "#4a9eff"} !important; }
             .dialog-content button { background: ${buttonBg} !important; color: ${buttonText} !important; border-color: ${colors.border} !important; }
             .dialog-content button:hover { background: ${buttonHover} !important; }
@@ -8043,11 +8494,15 @@ window.addEventListener("load", async () => {
             .dialog-overlay > div[style*="background: #2b2b2b"] > div[style*="display: flex"] > div[style*="border: 1px solid #0a0a0a"] { border-color: ${colors.border} !important; background: ${colors.panel} !important; }
             .dialog-overlay > div[style*="background: #2b2b2b"] > div[style*="display: flex"] > div[style*="background: #353535"] { background: ${colors.panel} !important; border-color: ${colors.border} !important; }
             .dialog-overlay > div[style*="background: #2b2b2b"] > div[style*="display: flex"] > div[style*="background: #1a1a1a"] { background: ${inputBg} !important; border-color: ${colors.border} !important; }
-            #collabDropdown { background: ${colors.panel} !important; border-color: ${colors.border} !important; color: ${colors.text} !important; }
-            #collabDropdown > div { color: ${colors.text} !important; }
-            #collabPeers { background: ${colors.bg} !important; border-color: ${colors.border} !important; }
-            #collabCopy, #collabJoin { background: ${buttonBg} !important; color: ${buttonText} !important; border-color: ${colors.border} !important; }
-            #collabCopy:hover, #collabJoin:hover { background: ${buttonHover} !important; }
+            #gani-collabDropdown { background: ${colors.panel} !important; border-color: ${colors.border} !important; color: ${colors.text} !important; }
+            #gani-collabDropdown div { color: ${colors.text} !important; }
+            #gani-collabPeers { background: ${colors.bg} !important; border-color: ${colors.border} !important; }
+            #gani-collabDisconnect { border-color: #804040 !important; }
+            #gani-collabToggleTrack { border-color: ${colors.border} !important; background: ${colors.bg} !important; }
+            #gani-collabCopy, #gani-collabJoin { background: ${buttonBg} !important; color: ${buttonText} !important; border-color: ${colors.border} !important; }
+            #gani-collabCopy:hover, #gani-collabJoin:hover { background: ${buttonHover} !important; }
+            #gani-collabMyCode, #gani-collabJoinCode { background: ${colors.bg} !important; border-color: ${colors.border} !important; }
+            #level-levelCollabDropdown { background: ${colors.panel} !important; border-color: ${colors.border} !important; color: ${colors.text} !important; }
             #infoClose, #aboutClose { background: ${buttonBg} !important; color: ${buttonText} !important; border-color: ${colors.border} !important; }
             #infoClose:hover, #aboutClose:hover { background: ${buttonHover} !important; }
             .info-tab-btn { color: ${colors.text} !important; border-color: ${colors.border} !important; }
@@ -8058,10 +8513,122 @@ window.addEventListener("load", async () => {
             #tauriBar .tb-title span { color: ${colors.text} !important; }
             .tool-button.active { background: #4a9eff !important; color: #fff !important; border-color: #2a7eff !important; }
             .tool-button.active:hover { background: #5aaeff !important; }
+            .dialog-titlebar { background: ${colors.panel} !important; border-color: ${colors.border} !important; }
+            .dialog-titlebar span { color: ${colors.text} !important; }
+            .custom-checkbox { background: ${inputBg} !important; border-color: ${colors.border} !important; color: ${colors.text} !important; }
+            #historyList { background: ${colors.bg} !important; border-color: ${colors.border} !important; color: ${colors.text} !important; }
+            .splitter-grip { background: ${colors.text} !important; opacity: 0.25; }
+            .info-tab-btn, .settings-tab-btn, .defaultOpen-tab-btn { color: ${colors.text} !important; border-color: ${colors.border} !important; }
+            .info-tab-btn.active, .settings-tab-btn.active, .defaultOpen-tab-btn.active { background: ${tabActive} !important; color: ${colors.text} !important; }
+            .info-tab-btn:hover, .settings-tab-btn:hover, .defaultOpen-tab-btn:hover { background: ${buttonHover} !important; }
+            #infoContent, #defaultOpenContent { background: ${colors.panel} !important; color: ${colors.text} !important; }
+            #infoClose, #settingsDefaults, #settingsReset, #settingsCancel, #settingsOK, #defaultOpenCancel { background: ${buttonBg} !important; color: ${buttonText} !important; border-color: ${colors.border} !important; }
+            #infoClose:hover, #settingsDefaults:hover, #settingsReset:hover, #settingsCancel:hover, #settingsOK:hover, #defaultOpenCancel:hover { background: ${buttonHover} !important; }
+            .playback-sep, .tb-sep { background: ${colors.border} !important; }
+            #gani-collabStatus { color: ${colors.text} !important; }
+            .level-toolbar, .tileset-toolbar, .tile-selection-toolbar, .canvas-controls-bar { background: ${colors.panel} !important; border-color: ${colors.border} !important; }
+            .level-toolbar button, .tileset-toolbar button, .tile-selection-toolbar button, .canvas-controls-bar button:not(.active) { background: ${buttonBg} !important; color: ${buttonText} !important; border-color: ${colors.border} !important; }
+            .level-toolbar button:hover, .tileset-toolbar button:hover, .tile-selection-toolbar button:hover, .canvas-controls-bar button:hover { background: ${buttonHover} !important; }
+            .status-bar, .status-info { background: ${colors.panel} !important; border-color: ${colors.border} !important; color: ${colors.text} !important; }
+            .status-info span { color: ${colors.text} !important; }
+            .object-library-panel { background: ${colors.bg} !important; border-color: ${colors.border} !important; }
+            .object-library-header { background: ${colors.panel} !important; border-color: ${colors.border} !important; color: ${colors.text} !important; }
+            .object-library-header label { color: ${colors.text} !important; }
+            .object-library-header button { background: ${buttonBg} !important; color: ${buttonText} !important; border-color: ${colors.border} !important; }
+            .object-library-header button:hover { background: ${buttonHover} !important; }
+            .object-library-header input { background: ${inputBg} !important; color: ${colors.text} !important; border-color: ${colors.border} !important; }
+            .object-library-content { background: ${colors.bg} !important; }
+            .right-tabs { background: ${colors.panel} !important; border-color: ${colors.border} !important; }
+            .right-tabs .tab-bar { background: ${colors.panel} !important; border-color: ${colors.border} !important; }
+            .tool-dropdown-menu { background: ${colors.panel} !important; border-color: ${colors.border} !important; }
+            .tool-dropdown-menu label { color: ${colors.text} !important; }
+            .tool-dropdown-menu label:hover { background: ${colors.hover} !important; }
+            .left-panel-tabs { background: ${colors.bg} !important; border-color: ${colors.border} !important; }
+            .left-tab { background: transparent !important; color: ${colors.text} !important; border-color: ${colors.border} !important; opacity: 0.55; }
+            .left-tab:hover { background: ${colors.hover} !important; opacity: 0.8; }
+            .left-tab.active { background: ${colors.bg} !important; color: #4a9eff !important; opacity: 1; border-bottom: 2px solid #4a9eff !important; }
+            .tileset-display, .tiles-list { background: ${colors.bg} !important; border-color: ${colors.border} !important; }
+            .tile-item { background: ${colors.panel} !important; border-color: ${colors.border} !important; color: ${colors.text} !important; }
+            .tile-item:hover { background: ${colors.hover} !important; }
+            .object-button { background: ${colors.panel} !important; color: ${colors.text} !important; border-color: ${colors.border} !important; }
+            .object-button:hover { background: ${colors.hover} !important; }
+            .panel-tabs { background: ${colors.panel} !important; border-color: ${colors.border} !important; }
+            .panel-tab { background: ${colors.hover} !important; color: ${colors.text} !important; border-color: ${colors.border} !important; opacity: 0.7; }
+            .panel-tab.active { background: ${colors.bg} !important; color: #4a9eff !important; border-bottom: 2px solid #4a9eff !important; opacity: 1; }
+            .panel-content { background: ${colors.bg} !important; }
+            .panel-section { color: ${colors.text} !important; }
+            .layer-selector { background: ${colors.panel} !important; color: ${colors.text} !important; }
+            #objectTree { background: ${colors.bg} !important; border-color: ${colors.border} !important; color: ${colors.text} !important; }
+            #objectsList > div { background: ${colors.panel} !important; border-color: ${colors.border} !important; color: ${colors.text} !important; }
+            #objectsList > div:hover { background: ${colors.hover} !important; }
+            .ed-dialog-box { background: ${colors.panel} !important; border-color: ${colors.border} !important; color: ${colors.text} !important; }
+            .ed-dialog-box input, .ed-dialog-box select, .ed-dialog-box textarea { background: ${colors.bg} !important; color: ${colors.text} !important; border-color: ${colors.border} !important; }
+            .ed-dialog-box button:not(#npcSave) { background: ${buttonBg} !important; color: ${buttonText} !important; border-color: ${colors.border} !important; }
+            .ed-dialog-box button:not(#npcSave):hover { background: ${buttonHover} !important; }
+            .ed-dialog-box div[style*="background:#353535"], .ed-dialog-box div[style*="background: #353535"] { background: ${colors.hover} !important; color: ${colors.text} !important; }
+            .ed-dlg-title, ._udlg-title { background: ${colors.hover} !important; color: ${colors.text} !important; }
+            .ed-dialog-box td, .ed-dialog-box th { border-color: ${colors.border} !important; color: ${colors.text} !important; }
+            .ed-dialog-box table { border-color: ${colors.border} !important; }
+            .ed-dialog-box thead tr { background: ${colors.hover} !important; }
+            .ed-dialog-box thead th { background: ${colors.hover} !important; color: ${colors.text} !important; border-color: ${colors.border} !important; }
+            .ed-dialog-box tbody tr:nth-child(even) { background: ${colors.bg} !important; }
+            .ed-dialog-box tbody tr:nth-child(odd) { background: ${colors.panel} !important; }
+            .ed-dialog-box tbody td { background: transparent !important; }
+            #npcTitlebar { background: ${colors.hover} !important; }
+            #npcTitlebar > span { color: ${colors.text} !important; }
+            #npcListBody tr:hover td { background: ${colors.hover} !important; }
+            #npcListBody td { border-color: ${colors.border} !important; color: ${colors.text} !important; }
+            #npcImgDropdown { background: ${colors.panel} !important; border-color: ${colors.border} !important; }
+            #npcImgDropdown div { color: ${colors.text} !important; }
+            #npcImgDropdown div:hover { background: ${colors.hover} !important; }
+            #layers-tab > div:first-child { background: ${colors.hover} !important; border-color: ${colors.border} !important; }
+            #btnAddLayer, #btnDeleteLayer { background: ${buttonBg} !important; color: ${buttonText} !important; border-color: ${colors.border} !important; }
+            #btnAddLayer:hover, #btnDeleteLayer:hover { background: ${buttonHover} !important; }
+            #npcTestOutput { background: ${colors.bg} !important; border-color: ${colors.border} !important; }
+            #elTitlebar, #esTitlebar, #signTitlebar, #lkTitlebar, #chTitlebar, #bdTitlebar { background: ${colors.hover} !important; color: ${colors.text} !important; }
+            #btnNewTileObjectGroup, #btnDeleteTileObjectGroup, #btnNewTileObject, #btnDeleteTileObject, #btnExportTileObjects, #btnImportTileObjects { background: ${buttonBg} !important; color: ${buttonText} !important; border-color: ${colors.border} !important; }
+            #btnNewTileObjectGroup:hover, #btnDeleteTileObjectGroup:hover, #btnNewTileObject:hover, #btnDeleteTileObject:hover, #btnExportTileObjects:hover, #btnImportTileObjects:hover { background: ${buttonHover} !important; }
+            #ganiRoot * { scrollbar-color: ${colors.border} ${colors.bg} !important; }
+            #ganiRoot *::-webkit-scrollbar-track { background: ${colors.bg} !important; }
+            #ganiRoot *::-webkit-scrollbar-thumb { background: ${colors.border} !important; border-color: ${colors.bg} !important; }
+            #ganiRoot *::-webkit-scrollbar-thumb:hover { background: ${buttonHover} !important; }
+            #ganiRoot *::-webkit-scrollbar-corner { background: ${colors.bg} !important; }
+            #levelRoot * { scrollbar-color: ${colors.border} ${colors.bg} !important; }
+            #levelRoot *::-webkit-scrollbar-track { background: ${colors.bg} !important; }
+            #levelRoot *::-webkit-scrollbar-thumb { background: ${colors.border} !important; border-color: ${colors.bg} !important; }
+            #levelRoot *::-webkit-scrollbar-thumb:hover { background: ${buttonHover} !important; }
+            #levelRoot *::-webkit-scrollbar-corner { background: ${colors.bg} !important; }
         `;
         document.head.appendChild(style);
-        const settingsDialog = document.getElementById("settingsDialog");
-        const aboutDialog = document.getElementById("aboutDialog");
+        if (monacoReady) {
+            monacoReady.then(mc => {
+                if (!mc) return;
+                mc.editor.defineTheme('graal-active', {
+                    base: 'vs-dark', inherit: true,
+                    rules: [
+                        { token: 'comment', foreground: '75715e', fontStyle: 'italic' },
+                        { token: 'string', foreground: 'e6db74' },
+                        { token: 'number', foreground: 'be84ff' },
+                        { token: 'keyword', foreground: 'f92672' },
+                        { token: 'keyword.builtin', foreground: 'be84ff' },
+                        { token: 'function.call', foreground: 'a6e22b' },
+                    ],
+                    colors: {
+                        'editor.background': colors.bg, 'editor.foreground': colors.text,
+                        'editorSuggestWidget.background': colors.panel, 'editorSuggestWidget.border': colors.border,
+                        'editorSuggestWidget.foreground': colors.text, 'editorSuggestWidget.selectedBackground': colors.hover,
+                        'editorSuggestWidget.highlightForeground': '#4a9eff',
+                        'editorHoverWidget.background': colors.panel, 'editorHoverWidget.border': colors.border,
+                        'editorWidget.background': colors.panel, 'editorWidget.border': colors.border,
+                        'list.hoverBackground': colors.hover, 'list.activeSelectionBackground': colors.hover,
+                        'list.activeSelectionForeground': colors.text, 'list.focusBackground': colors.hover
+                    }
+                });
+                mc.editor.setTheme('graal-active');
+            });
+        }
+        const settingsDialog = $("settingsDialog");
+        const aboutDialog = $("aboutDialog");
         if (settingsDialog) {
             const settingsContent = settingsDialog.querySelector(".dialog-content");
             if (settingsContent) {
@@ -8130,7 +8697,7 @@ window.addEventListener("load", async () => {
                 });
             }
         }
-        const colorSchemeDropdown = document.getElementById("colorSchemeDropdown");
+        const colorSchemeDropdown = $("colorSchemeDropdown");
         if (colorSchemeDropdown) {
             colorSchemeDropdown.style.background = colors.panel;
             colorSchemeDropdown.style.borderColor = colors.border;
@@ -8146,14 +8713,14 @@ window.addEventListener("load", async () => {
                 }
             });
         }
-        const timelineCanvas = document.getElementById("timelineCanvas");
+        const timelineCanvas = $("timelineCanvas");
         if (timelineCanvas) {
             timelineCanvas.style.background = colors.panel;
         }
         localStorage.setItem("editorColorScheme", scheme);
     }
-    const btnColorScheme = document.getElementById("btnColorScheme");
-    const colorSchemeDropdown = document.getElementById("colorSchemeDropdown");
+    const btnColorScheme = $("btnColorScheme");
+    const colorSchemeDropdown = $("colorSchemeDropdown");
     if (btnColorScheme && colorSchemeDropdown) {
         const savedScheme = localStorage.getItem("editorColorScheme") || "default";
         applyColorScheme(savedScheme);
@@ -8176,9 +8743,9 @@ window.addEventListener("load", async () => {
             item.onclick = (e) => {
                 e.stopPropagation();
                 const scheme = item.getAttribute("data-scheme");
-                const customTag = document.getElementById("customUserCSS");
+                const customTag = $("customUserCSS");
                 if (customTag) customTag.textContent = "";
-                localStorage.removeItem("graalsuite_customCSS");
+                localStorage.removeItem("gsuite_customCSS");
                 applyColorScheme(scheme);
                 const schemes = {
                     "fusion-light": { hover: "#e8e8e8" },
@@ -8207,7 +8774,7 @@ window.addEventListener("load", async () => {
                 colorSchemeDropdown.style.display = "none";
             }
         });
-        const btnCustomCSS = document.getElementById("btnCustomCSS");
+        const btnCustomCSS = $("btnCustomCSS");
         if (btnCustomCSS) {
             btnCustomCSS.onmouseenter = () => { btnCustomCSS.style.background = "#252525"; };
             btnCustomCSS.onmouseleave = () => { btnCustomCSS.style.background = ""; };
@@ -8222,15 +8789,15 @@ window.addEventListener("load", async () => {
         const cssBg = getComputedStyle(document.documentElement).getPropertyValue('--canvas-bg').trim();
         if (cssBg) {
             backgroundColor = cssBg;
-            const picker = document.getElementById("bgColorInput");
+            const picker = $("bgColorInput");
             if (picker) picker.value = cssBg;
             redraw();
         }
     }
     (function initCustomCSS() {
-        const saved = localStorage.getItem("graalsuite_customCSS");
+        const saved = localStorage.getItem("gsuite_customCSS");
         if (saved) {
-            let tag = document.getElementById("customUserCSS");
+            let tag = $("customUserCSS");
             if (!tag) { tag = document.createElement("style"); tag.id = "customUserCSS"; document.head.appendChild(tag); }
             tag.textContent = saved;
             requestAnimationFrame(syncCanvasBgFromCSS);
@@ -8238,7 +8805,7 @@ window.addEventListener("load", async () => {
     })();
     function openCustomCSSDialog() {
         const fontFamily = getFontFamily(localStorage.getItem("editorFont") || "chevyray");
-        const current = (document.getElementById("customUserCSS") || {}).textContent || "";
+        const current = ($("customUserCSS") || {}).textContent || "";
         const overlay = document.createElement("div");
         overlay.className = "dialog-overlay";
         overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;display:flex;justify-content:center;align-items:center;";
@@ -8278,10 +8845,10 @@ window.addEventListener("load", async () => {
         });
         const applyCSS = () => {
             const css = getValue();
-            let tag = document.getElementById("customUserCSS");
+            let tag = $("customUserCSS");
             if (!tag) { tag = document.createElement("style"); tag.id = "customUserCSS"; document.head.appendChild(tag); }
             tag.textContent = css;
-            localStorage.setItem("graalsuite_customCSS", css);
+            localStorage.setItem("gsuite_customCSS", css);
             requestAnimationFrame(syncCanvasBgFromCSS);
         };
         overlay.querySelector("#cssApply").onclick = applyCSS;
@@ -8289,9 +8856,9 @@ window.addEventListener("load", async () => {
         overlay.onclick = (e) => { if (e.target === overlay) { if (editorInstance) editorInstance.dispose(); document.body.removeChild(overlay); } };
         overlay.querySelector("#cssClear").onclick = () => {
             setValue("");
-            const tag = document.getElementById("customUserCSS");
+            const tag = $("customUserCSS");
             if (tag) tag.textContent = "";
-            localStorage.removeItem("graalsuite_customCSS");
+            localStorage.removeItem("gsuite_customCSS");
         };
         overlay.querySelector("#cssImport").onclick = () => {
             const input = document.createElement("input");
@@ -8469,29 +9036,30 @@ window.addEventListener("load", async () => {
             });
         });
     }
-    const btnSettings = document.getElementById("btnSettings");
-    const settingsDialog = document.getElementById("settingsDialog");
-    const settingsPixelRendering = document.getElementById("settingsPixelRenderingCheckbox");
-    const settingsAutoSave = document.getElementById("settingsAutoSaveCheckbox");
-    const settingsShowGrid = document.getElementById("settingsShowGridCheckbox");
-    const settingsGifAnimations = document.getElementById("settingsGifAnimationsCheckbox");
-        const settingsLightEffects = document.getElementById("settingsLightEffectsCheckbox");
-        const settingsSelectionBorderColor = document.getElementById("settingsSelectionBorderColor");
-        const settingsSelectionBorderThickness = document.getElementById("settingsSelectionBorderThickness");
-        const settingsSelectionBorderThicknessNumber = document.getElementById("settingsSelectionBorderThicknessNumber");
-        const settingsSelectionBorderOpacity = document.getElementById("settingsSelectionBorderOpacity");
-        const settingsSelectionBorderOpacityLabel = document.getElementById("settingsSelectionBorderOpacityLabel");
+    const btnSettings = $("btnSettings");
+    const settingsDialog = $("settingsDialog");
+    const settingsSwapKeys = $("settingsSwapKeysCheckbox");
+    const settingsPixelRendering = $("settingsPixelRenderingCheckbox");
+    const settingsAutoSave = $("settingsAutoSaveCheckbox");
+    const settingsShowGrid = $("settingsShowGridCheckbox");
+    const settingsGifAnimations = $("settingsGifAnimationsCheckbox");
+    const settingsLightEffects = $("settingsLightEffectsCheckbox");
+    const settingsSelectionBorderColor = $("settingsSelectionBorderColor");
+    const settingsSelectionBorderThickness = $("settingsSelectionBorderThickness");
+    const settingsSelectionBorderThicknessNumber = $("settingsSelectionBorderThicknessNumber");
+    const settingsSelectionBorderOpacity = $("settingsSelectionBorderOpacity");
+    const settingsSelectionBorderOpacityLabel = $("settingsSelectionBorderOpacityLabel");
     if (btnSettings && settingsDialog) {
-        const settingsFont = document.getElementById("settingsFont");
-        const settingsFontSize = document.getElementById("settingsFontSize");
-        const settingsFontStyle = document.getElementById("settingsFontStyle");
-        const settingsUIScale = document.getElementById("settingsUIScale");
-        const settingsUIScaleNumber = document.getElementById("settingsUIScaleNumber");
-        const settingsUIScaleValue = document.getElementById("settingsUIScaleValue");
-        const settingsOK = document.getElementById("settingsOK");
-        const settingsCancel = document.getElementById("settingsCancel");
-        const settingsDefaults = document.getElementById("settingsDefaults");
-        const settingsReset = document.getElementById("settingsReset");
+        const settingsFont = $("settingsFont");
+        const settingsFontSize = $("settingsFontSize");
+        const settingsFontStyle = $("settingsFontStyle");
+        const settingsUIScale = $("settingsUIScale");
+        const settingsUIScaleNumber = $("settingsUIScaleNumber");
+        const settingsUIScaleValue = $("settingsUIScaleValue");
+        const settingsOK = $("settingsOK");
+        const settingsCancel = $("settingsCancel");
+        const settingsDefaults = $("settingsDefaults");
+        const settingsReset = $("settingsReset");
         const _builtinFonts = ["chevyray", "chevyrayOeuf", "MesloLGS NF", "PressStart2P", "Silkscreen"];
         const _fallbackFonts = ["Arial", "Comic Sans MS", "Courier New", "Georgia", "Helvetica", "Impact", "monospace", "Tahoma", "Tempus Sans ITC", "Times New Roman", "Trebuchet MS", "Verdana"];
         const _populateFontList = (fonts) => {
@@ -8549,7 +9117,7 @@ window.addEventListener("load", async () => {
     });
     dropdownObserver.observe(document.body, { childList: true, subtree: true });
     if (btnSettings && settingsDialog) {
-        const settingsFont = document.getElementById("settingsFont");
+        const settingsFont = $("settingsFont");
         const savedFont = localStorage.getItem("editorFont") || "chevyray";
         const savedFontSize = localStorage.getItem("editorFontSize") || "12";
         const savedFontStyle = localStorage.getItem("editorFontStyle") || "normal";
@@ -8567,7 +9135,7 @@ window.addEventListener("load", async () => {
             document.body.style.fontFamily = fontFamily;
             const style = document.createElement("style");
             style.id = "fontStyle";
-            const existing = document.getElementById("fontStyle");
+            const existing = $("fontStyle");
             if (existing) existing.remove();
             style.textContent = `* { font-family: ${fontFamily} !important; }`;
             document.head.appendChild(style);
@@ -8586,7 +9154,7 @@ window.addEventListener("load", async () => {
             document.querySelectorAll(".color-scheme-item").forEach(item => {
                 item.style.fontFamily = fontFamily;
             });
-            const aboutDialog = document.getElementById("infoDialog");
+            const aboutDialog = $("infoDialog");
             if (aboutDialog) {
                 const aboutContent = aboutDialog.querySelector(".dialog-content");
                 if (aboutContent) {
@@ -8598,7 +9166,7 @@ window.addEventListener("load", async () => {
                     });
                 }
             }
-            const historyList = document.getElementById("historyList");
+            const historyList = $("historyList");
             if (historyList) {
                 historyList.style.fontFamily = fontFamily;
                 historyList.querySelectorAll("div").forEach(item => {
@@ -8608,7 +9176,7 @@ window.addEventListener("load", async () => {
             document.querySelectorAll("h3").forEach(h3 => {
                 h3.style.fontFamily = fontFamily;
             });
-            const settingsDialog = document.getElementById("settingsDialog");
+            const settingsDialog = $("settingsDialog");
             if (settingsDialog) {
                 const settingsContent = settingsDialog.querySelector(".dialog-content");
                 if (settingsContent) {
@@ -8622,7 +9190,7 @@ window.addEventListener("load", async () => {
             document.body.style.fontSize = size + "px";
             const style = document.createElement("style");
             style.id = "fontSizeStyle";
-            const existing = document.getElementById("fontSizeStyle");
+            const existing = $("fontSizeStyle");
             if (existing) existing.remove();
             style.textContent = `body { font-size: ${size}px !important; } button, input, select, label, span, .tab { font-size: ${size}px !important; }`;
             document.head.appendChild(style);
@@ -8631,7 +9199,7 @@ window.addEventListener("load", async () => {
         function applyFontStyle(style, save = true) {
             const styleElement = document.createElement("style");
             styleElement.id = "fontStyleStyle";
-            const existing = document.getElementById("fontStyleStyle");
+            const existing = $("fontStyleStyle");
             if (existing) existing.remove();
             let fontStyle = "normal";
             let fontWeight = "normal";
@@ -8645,7 +9213,7 @@ window.addEventListener("load", async () => {
         function applyUIScale(scale, save = true) {
             const style = document.createElement("style");
             style.id = "uiScaleStyle";
-            const existing = document.getElementById("uiScaleStyle");
+            const existing = $("uiScaleStyle");
             if (existing) existing.remove();
             const baseFontSize = parseFloat(localStorage.getItem("editorFontSize") || "12");
             style.textContent = `
@@ -8665,7 +9233,7 @@ window.addEventListener("load", async () => {
         function applyPixelRendering(enabled, save = true) {
             const style = document.createElement("style");
             style.id = "pixelRenderingStyle";
-            const existing = document.getElementById("pixelRenderingStyle");
+            const existing = $("pixelRenderingStyle");
             if (existing) existing.remove();
             if (enabled) {
                 style.textContent = `* { image-rendering: pixelated !important; image-rendering: -moz-crisp-edges !important; image-rendering: crisp-edges !important; }`;
@@ -8719,6 +9287,7 @@ window.addEventListener("load", async () => {
             const currentFontSize = localStorage.getItem("editorFontSize") || "12";
             const currentFontStyle = localStorage.getItem("editorFontStyle") || "normal";
             const currentUIScale = parseFloat(localStorage.getItem("editorUIScale") || "1");
+            const currentSwapKeys = localStorage.getItem("editorSwapKeys") === "true";
             const currentPixelRendering = localStorage.getItem("editorPixelRendering") !== "false";
             const currentAutoSave = localStorage.getItem("editorAutoSave") !== "false";
             const currentShowGrid = localStorage.getItem("editorShowGrid") !== "false";
@@ -8733,6 +9302,7 @@ window.addEventListener("load", async () => {
                 fontSize: currentFontSize,
                 fontStyle: currentFontStyle,
                 uiScale: currentUIScale,
+                swapKeys: currentSwapKeys,
                 pixelRendering: currentPixelRendering,
                 autoSave: currentAutoSave,
                 showGrid: currentShowGrid,
@@ -8749,6 +9319,7 @@ window.addEventListener("load", async () => {
                 settingsUIScale.value = currentUIScale;
                 updateUIScaleDisplay(currentUIScale);
             }
+            if (settingsSwapKeys) settingsSwapKeys.textContent = currentSwapKeys ? "✓" : " ";
             if (settingsPixelRendering) settingsPixelRendering.textContent = currentPixelRendering ? "✓" : " ";
             if (settingsAutoSave) settingsAutoSave.textContent = currentAutoSave ? "✓" : " ";
             if (settingsShowGrid) settingsShowGrid.textContent = currentShowGrid ? "✓" : " ";
@@ -8793,6 +9364,15 @@ window.addEventListener("load", async () => {
                     updateUIScaleDisplay(value);
                     applyUIScale(value, false);
                 }
+            };
+        }
+        if (settingsSwapKeys) {
+            settingsSwapKeys.onclick = () => {
+                const newValue = settingsSwapKeys.textContent.trim() !== "✓";
+                settingsSwapKeys.textContent = newValue ? "✓" : " ";
+                keysSwapped = newValue;
+                localStorage.setItem("editorSwapKeys", newValue);
+                updateSwapKeysUI();
             };
         }
         if (settingsPixelRendering) {
@@ -8877,6 +9457,12 @@ window.addEventListener("load", async () => {
                 if (settingsFontSize) applyFontSize(settingsFontSize.value, true);
                 if (settingsFontStyle) applyFontStyle(settingsFontStyle.value, true);
                 if (settingsUIScale) applyUIScale(parseFloat(settingsUIScale.value), true);
+                if (settingsSwapKeys) {
+                    const newValue = settingsSwapKeys.textContent.trim() === "✓";
+                    keysSwapped = newValue;
+                    localStorage.setItem("editorSwapKeys", newValue);
+                    updateSwapKeysUI();
+                }
                 if (settingsPixelRendering) applyPixelRendering(settingsPixelRendering.textContent.trim() === "✓", true);
                 if (settingsAutoSave) localStorage.setItem("editorAutoSave", settingsAutoSave.textContent.trim() === "✓");
                 if (settingsShowGrid) applyShowGrid(settingsShowGrid.textContent.trim() === "✓", true);
@@ -8892,6 +9478,11 @@ window.addEventListener("load", async () => {
             applyFont(originalSettings.font, false);
             applyFontSize(originalSettings.fontSize, false);
             applyUIScale(originalSettings.uiScale, false);
+            if (settingsSwapKeys) {
+                keysSwapped = originalSettings.swapKeys;
+                localStorage.setItem("editorSwapKeys", keysSwapped);
+                updateSwapKeysUI();
+            }
             applyPixelRendering(originalSettings.pixelRendering, false);
             applyShowGrid(originalSettings.showGrid, false);
             applyGifAnimations(originalSettings.gifAnimations, false);
@@ -9057,10 +9648,10 @@ window.addEventListener("load", async () => {
             const rightPanel = document.querySelector(".right-panel");
             const timelineContainer = document.querySelector(".timeline-container");
             const timelineView = document.querySelector(".timeline-view");
-            const canvasTimelineSplitter = document.getElementById("canvasTimelineSplitter");
+            const canvasTimelineSplitter = $("canvasTimelineSplitter");
             const toolbar = document.querySelector(".toolbar");
             const spriteList = document.querySelector(".sprite-list");
-            const mainSplitter = document.getElementById("mainSplitter");
+            const mainSplitter = $("mainSplitter");
             if (toolbar) {
                 toolbar.style.display = "flex";
                 toolbar.style.visibility = "visible";
@@ -9123,9 +9714,9 @@ window.addEventListener("load", async () => {
             applyGifAnimations(true, true);
             applyLightEffects(true, true);
             applyColorScheme("default");
-            const _customTag = document.getElementById("customUserCSS");
+            const _customTag = $("customUserCSS");
             if (_customTag) _customTag.textContent = "";
-            localStorage.removeItem("graalsuite_customCSS");
+            localStorage.removeItem("gsuite_customCSS");
             applySelectionBorderColor("#00ff00", true);
             applySelectionBorderThickness(2, true);
             if (settingsFont) {
@@ -9193,8 +9784,8 @@ window.addEventListener("load", async () => {
                 localStorage.setItem("timelineVisible", "true");
                 const timelineContainer = document.querySelector(".timeline-container");
                 const timelineView = document.querySelector(".timeline-view");
-                const canvasTimelineSplitter = document.getElementById("canvasTimelineSplitter");
-                const mainSplitter = document.getElementById("mainSplitter");
+                const canvasTimelineSplitter = $("canvasTimelineSplitter");
+                const mainSplitter = $("mainSplitter");
                 if (timelineContainer) {
                     timelineContainer.style.setProperty("display", "flex", "important");
                     timelineContainer.style.setProperty("visibility", "visible", "important");
@@ -9275,6 +9866,8 @@ window.addEventListener("load", async () => {
         const numberInputs = document.querySelectorAll('input[type="number"]');
         numberInputs.forEach(input => {
             if (input.parentElement.classList.contains('number-input-wrapper')) return;
+            if (input.hasAttribute('data-no-spinner')) return;
+            if (document.getElementById('levelRoot')?.contains(input)) return;
             const wrapper = document.createElement('div');
             wrapper.className = 'number-input-wrapper';
             input.parentNode.insertBefore(wrapper, input);
@@ -9371,36 +9964,21 @@ window.addEventListener("load", async () => {
         applyLabelShadows();
     });
     labelObserver.observe(document.body, { childList: true, subtree: true });
-    const btnSwapKeys = document.getElementById("btnSwapKeys");
-    const updateSwapTooltip = () => {
-        const tip = keysSwapped ? "Arrows=Direction, WASD=Move — click to restore" : "WASD=Direction, Arrows=Move — click to swap";
-        if (btnSwapKeys.hasAttribute("data-title")) btnSwapKeys.dataset.title = tip;
-        else btnSwapKeys.title = tip;
-    };
-    updateSwapTooltip();
-    btnSwapKeys.onclick = () => {
-        keysSwapped = !keysSwapped;
-        btnSwapKeys.classList.toggle("active", keysSwapped);
-        updateSwapTooltip();
-        if (_tooltipTarget === btnSwapKeys) _tooltipEl.textContent = btnSwapKeys.dataset.title;
-        saveSession();
-    };
     const APP_VERSION = "2.1.3";
-    const _infoDialog = document.getElementById("infoDialog");
-    const _infoClose = document.getElementById("infoClose");
-    const _infoContent = document.getElementById("infoContent");
+    const _infoDialog = $("infoDialog");
+    const _infoClose = $("infoClose");
+    const _infoContent = $("infoContent");
     let _changelogData = null;
     function _getInfoTabHTML(tab) {
         const fontFamily = getFontFamily(localStorage.getItem("editorFont") || "chevyray");
         if (tab === "about") return `
-            <p style="margin:0 0 12px 0;"><strong>GraalSuite</strong> <span style="color:#888; font-size:10px;">(alpha) v${APP_VERSION}</span></p>
             <p style="margin:0 0 12px 0;">A web-based suite of tools for Graal Online development — includes a .gani animation editor, .nw/.graal/.zelda level editor, Gmap Generator, and Setshape2 editor.</p>
             <p style="margin:0 0 12px 0;">Part of Preagonal/OpenGraal &mdash; preserving Graal for future generations.</p>
             <p style="margin:0 0 12px 0; border-top:1px solid #0a0a0a; padding-top:12px; font-size:11px; color:#888;">
                 <strong>Credits:</strong><br>
                 Original C++ TilesEditor by <a href="https://www.xing.com/profile/Stefan_Knorr9" target="_blank" style="color:#4a9eff; text-decoration:none;">Stefan Knorr</a><br>
                 Modern C++ TilesEditor by <a href="https://github.com/lukegrahamSydney/TilesEditor" target="_blank" style="color:#4a9eff; text-decoration:none;">39ster/luke graham</a><br>
-                GraalSuite by <a href="https://github.com/denveous" target="_blank" style="color:#4a9eff; text-decoration:none;">denveous</a>
+                GSuite by <a href="https://github.com/denveous" target="_blank" style="color:#4a9eff; text-decoration:none;">denveous</a>
             </p>`;
         if (tab === "keybinds") {
             const editableActions = [
@@ -9444,7 +10022,7 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
     function _renderChangelog() {
         if (!_changelogData || !_infoContent) return;
         _infoContent.style.fontFamily = getFontFamily(localStorage.getItem("editorFont") || "chevyray");
-        const _tagColors = { 'GraalSuite':'#c792ea','Level Editor':'#4a9eff','Gani Editor':'#56d364','Gmap Generator':'#ffa657','Setshape2':'#ff7b72' };
+        const _tagColors = { 'GSuite':'#c792ea','Level Editor':'#4a9eff','Gani Editor':'#56d364','Gmap Generator':'#ffa657','Setshape2':'#ff7b72' };
         _infoContent.innerHTML = _changelogData.map(entry => {
             const tc = _tagColors[entry.tag] || '#888';
             return `<div style="margin-bottom:20px;">
@@ -9457,9 +10035,7 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
         if (!_infoContent) return;
         _infoContent.style.fontFamily = getFontFamily(localStorage.getItem("editorFont") || "chevyray");
         document.querySelectorAll(".info-tab-btn").forEach(btn => {
-            const active = btn.dataset.tab === tab;
-            btn.style.color = active ? "#4a9eff" : "#888";
-            btn.style.background = active ? "#252525" : "transparent";
+            btn.classList.toggle("active", btn.dataset.tab === tab);
         });
         if (tab === "changelog") {
             if (_changelogData) { _renderChangelog(); return; }
@@ -9505,14 +10081,12 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
         switchInfoTab(tab);
     }
     function switchSettingsTab(tab) {
-        const generalPanel = document.getElementById("settingsGeneralPanel");
-        const canvasPanel = document.getElementById("settingsCanvasPanel");
-        const keybindsPanel = document.getElementById("settingsKeybindsPanel");
+        const generalPanel = $("settingsGeneralPanel");
+        const canvasPanel = $("settingsCanvasPanel");
+        const keybindsPanel = $("settingsKeybindsPanel");
         const footer = keybindsPanel?.nextElementSibling;
         document.querySelectorAll(".settings-tab-btn").forEach(btn => {
-            const active = btn.dataset.tab === tab;
-            btn.style.color = active ? "#4a9eff" : "#888";
-            btn.style.background = active ? "#252525" : "transparent";
+            btn.classList.toggle("active", btn.dataset.tab === tab);
         });
         if (generalPanel) generalPanel.style.display = tab === "general" ? "" : "none";
         if (canvasPanel) canvasPanel.style.display = tab === "canvas" ? "" : "none";
@@ -9557,13 +10131,16 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
         _infoClose.onclick = () => { _infoDialog.style.display = "none"; };
         _infoDialog.onclick = (e) => { if (e.target === _infoDialog) _infoDialog.style.display = "none"; };
         document.querySelectorAll(".info-tab-btn").forEach(btn => { btn.onclick = () => switchInfoTab(btn.dataset.tab); });
-        const btnAbout = document.getElementById("btnAbout");
-        if (btnAbout) btnAbout.onclick = () => window.openInfoDialog?.("about");
+        const btnAbout = $("btnAbout");
+        if (btnAbout) {
+            btnAbout.onclick = () => window.openInfoDialog?.("about");
+            if (_isTauri) btnAbout.style.display = 'none';
+        }
     }
     document.querySelectorAll(".settings-tab-btn").forEach(btn => { btn.onclick = () => switchSettingsTab(btn.dataset.tab); });
     const updateHistoryFont = () => {
         const fontFamily = getFontFamily(localStorage.getItem("editorFont") || "chevyray");
-        const historyList = document.getElementById("historyList");
+        const historyList = $("historyList");
         if (historyList) {
             historyList.style.fontFamily = fontFamily;
             historyList.querySelectorAll("div").forEach(item => { item.style.fontFamily = fontFamily; });
@@ -9571,9 +10148,9 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
     };
     updateHistoryFont();
     document.querySelectorAll("h3").forEach(h3 => { h3.style.fontFamily = getFontFamily(localStorage.getItem("editorFont") || "chevyray"); });
-    document.getElementById("btnDefaults").onclick = () => {
-        const table = document.getElementById("defaultsTable");
-        const btn = document.getElementById("btnDefaults");
+    $("btnDefaults").onclick = () => {
+        const table = $("defaultsTable");
+        const btn = $("btnDefaults");
         if (table.style.visibility === "hidden" || table.style.visibility === "") {
             table.style.visibility = "visible";
             table.style.display = "table";
@@ -9584,7 +10161,7 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
             btn.textContent = "Defaults ▶";
         }
     };
-    document.getElementById("btnEditScript").onclick = () => {
+    $("btnEditScript").onclick = () => {
         const currentFont = localStorage.getItem("editorFont") || "chevyray";
         const fontFamily = getFontFamily(currentFont);
         const dialog = document.createElement("div");
@@ -9663,7 +10240,7 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
         };
         dialog.onclick = (e) => { if (e.target === dialog) { if (scriptEditorInstance) scriptEditorInstance.dispose(); document.body.removeChild(dialog); } };
     };
-    document.getElementById("btnAttachmentBack").onclick = () => {
+    $("btnAttachmentBack").onclick = () => {
         if (!editingSprite) return;
         if (selectedAttachedSprite >= 0 && selectedAttachedSprite < editingSprite.attachedSprites.length) {
             const oldState = serializeAnimationState();
@@ -9687,7 +10264,7 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
             drawSpritePreview();
         }
     };
-    document.getElementById("btnAttachmentForward").onclick = () => {
+    $("btnAttachmentForward").onclick = () => {
         if (!editingSprite) return;
         if (selectedAttachedSprite >= 0 && selectedAttachedSprite < editingSprite.attachedSprites.length) {
             const oldState = serializeAnimationState();
@@ -9889,68 +10466,68 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
         }
     });
     spritePreviewCanvas.tabIndex = 0;
-    document.getElementById("btnItemUp").onclick = () => {
+    $("btnItemUp").onclick = () => {
         const frame = currentAnimation.getFrame(currentFrame);
         if (!frame) return;
         const actualDir = getDirIndex(currentDir);
         const pieces = frame.pieces[actualDir] || [];
-        const pieceId = document.getElementById("itemsCombo").value;
+        const pieceId = $("itemsCombo").value;
         const piece = pieces.find(p => p.id === pieceId);
         if (piece) {
             piece.yoffset -= 1;
-            document.getElementById("itemY").value = piece.yoffset;
+            $("itemY").value = piece.yoffset;
             redraw();
             saveSession();
         }
     };
-    document.getElementById("btnItemDown").onclick = () => {
+    $("btnItemDown").onclick = () => {
         const frame = currentAnimation.getFrame(currentFrame);
         if (!frame) return;
         const actualDir = getDirIndex(currentDir);
         const pieces = frame.pieces[actualDir] || [];
-        const pieceId = document.getElementById("itemsCombo").value;
+        const pieceId = $("itemsCombo").value;
         const piece = pieces.find(p => p.id === pieceId);
         if (piece) {
             piece.yoffset += 1;
-            document.getElementById("itemY").value = piece.yoffset;
+            $("itemY").value = piece.yoffset;
             redraw();
             saveSession();
         }
     };
-    document.getElementById("btnItemLeft").onclick = () => {
+    $("btnItemLeft").onclick = () => {
         const frame = currentAnimation.getFrame(currentFrame);
         if (!frame) return;
         const actualDir = getDirIndex(currentDir);
         const pieces = frame.pieces[actualDir] || [];
-        const pieceId = document.getElementById("itemsCombo").value;
+        const pieceId = $("itemsCombo").value;
         const piece = pieces.find(p => p.id === pieceId);
         if (piece) {
             piece.xoffset -= 1;
-            document.getElementById("itemX").value = piece.xoffset;
+            $("itemX").value = piece.xoffset;
             redraw();
             saveSession();
         }
     };
-    document.getElementById("btnItemRight").onclick = () => {
+    $("btnItemRight").onclick = () => {
         const frame = currentAnimation.getFrame(currentFrame);
         if (!frame) return;
         const actualDir = getDirIndex(currentDir);
         const pieces = frame.pieces[actualDir] || [];
-        const pieceId = document.getElementById("itemsCombo").value;
+        const pieceId = $("itemsCombo").value;
         const piece = pieces.find(p => p.id === pieceId);
         if (piece) {
             piece.xoffset += 1;
-            document.getElementById("itemX").value = piece.xoffset;
+            $("itemX").value = piece.xoffset;
             redraw();
             saveSession();
         }
     };
-    document.getElementById("btnItemLayerUp").onclick = () => {
+    $("btnItemLayerUp").onclick = () => {
         const frame = currentAnimation.getFrame(currentFrame);
         if (!frame) return;
         const actualDir = getDirIndex(currentDir);
         const pieces = frame.pieces[actualDir] || [];
-        const pieceId = document.getElementById("itemsCombo").value;
+        const pieceId = $("itemsCombo").value;
         const pieceIndex = pieces.findIndex(p => p.id === pieceId);
         if (pieceIndex >= 0 && pieceIndex < pieces.length - 1) {
             const piece = pieces[pieceIndex];
@@ -9962,12 +10539,12 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
             saveSession();
         }
     };
-    document.getElementById("btnItemLayerDown").onclick = () => {
+    $("btnItemLayerDown").onclick = () => {
         const frame = currentAnimation.getFrame(currentFrame);
         if (!frame) return;
         const actualDir = getDirIndex(currentDir);
         const pieces = frame.pieces[actualDir] || [];
-        const pieceId = document.getElementById("itemsCombo").value;
+        const pieceId = $("itemsCombo").value;
         const pieceIndex = pieces.findIndex(p => p.id === pieceId);
         if (pieceIndex > 0) {
             const piece = pieces[pieceIndex];
@@ -9979,8 +10556,8 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
             saveSession();
         }
     };
-    document.getElementById("itemSpriteID").onchange = (e) => {
-        const pieceId = document.getElementById("itemsCombo").value;
+    $("itemSpriteID").onchange = (e) => {
+        const pieceId = $("itemsCombo").value;
         const frame = currentAnimation.getFrame(currentFrame);
         if (!frame || !pieceId) return;
         const actualDir = getDirIndex(currentDir);
@@ -10004,47 +10581,36 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
         if (isPanning) return;
         e.preventDefault();
         e.stopPropagation();
+        const mx = e.offsetX;
+        const my = e.offsetY;
         const width = mainCanvas.width / dpr;
-        const height = mainCanvas.height / (window.devicePixelRatio || 1);
+        const height = mainCanvas.height / dpr;
         const oldZoom = zoomFactors[zoomLevel] || 1.0;
-        const rect = mainCanvas.getBoundingClientRect();
-        const adjustedMouseX = adjustCoordinateForUIScale(e.clientX, rect.left, rect, false);
-        const adjustedMouseY = adjustCoordinateForUIScale(e.clientY, rect.top, rect, true);
-        let oldWorldX, oldWorldY;
-        if (splitViewEnabled && !currentAnimation.singleDir) {
-            const quadWidth = width / 2;
-            const quadHeight = height / 2;
-            const quadIndex = Math.floor(adjustedMouseY / quadHeight) * 2 + Math.floor(adjustedMouseX / quadWidth);
-            const quadX = (quadIndex % 2) * quadWidth;
-            const quadY = Math.floor(quadIndex / 2) * quadHeight;
-            oldWorldX = (adjustedMouseX - quadX - quadWidth / 2 - panX) / oldZoom;
-            oldWorldY = (adjustedMouseY - quadY - quadHeight / 2 - panY) / oldZoom;
+        let newZoomLevel = zoomLevel;
+        if (e.deltaY > 0) newZoomLevel = Math.max(0, zoomLevel - 1);
+        else newZoomLevel = Math.min(zoomFactors.length - 1, zoomLevel + 1);
+        if (newZoomLevel === zoomLevel) return;
+        const newZoom = zoomFactors[newZoomLevel] || 1.0;
+        const zoomRatio = newZoom / oldZoom;
+        let centerX, centerY;
+        if (splitViewEnabled && !currentAnimation?.singleDir) {
+            const quadW = width / 2;
+            const quadH = height / 2;
+            const quadX = Math.floor(mx / quadW) * quadW;
+            const quadY = Math.floor(my / quadH) * quadH;
+            centerX = quadX + quadW / 2;
+            centerY = quadY + quadH / 2;
         } else {
-            oldWorldX = (adjustedMouseX - width / 2 - panX) / oldZoom;
-            oldWorldY = (adjustedMouseY - height / 2 - panY) / oldZoom;
+            centerX = width / 2;
+            centerY = height / 2;
         }
-        const delta = e.deltaY > 0 ? -1 : 1;
-        zoomLevel = Math.max(0, Math.min(zoomFactors.length - 1, zoomLevel + delta));
+        const mouseCanvasX = mx - centerX;
+        const mouseCanvasY = my - centerY;
+        panX = mouseCanvasX - (mouseCanvasX - panX) * zoomRatio;
+        panY = mouseCanvasY - (mouseCanvasY - panY) * zoomRatio;
+        zoomLevel = newZoomLevel;
         localStorage.setItem("mainCanvasZoom", zoomLevel);
         updateMainCanvasZoomDisplay();
-        const newZoom = zoomFactors[zoomLevel] || 1.0;
-        let newWorldX, newWorldY;
-        if (splitViewEnabled && !currentAnimation.singleDir) {
-            const quadWidth = width / 2;
-            const quadHeight = height / 2;
-            const quadIndex = Math.floor(adjustedMouseY / quadHeight) * 2 + Math.floor(adjustedMouseX / quadWidth);
-            const quadX = (quadIndex % 2) * quadWidth;
-            const quadY = Math.floor(quadIndex / 2) * quadHeight;
-            newWorldX = (adjustedMouseX - quadX - quadWidth / 2 - panX) / newZoom;
-            newWorldY = (adjustedMouseY - quadY - quadHeight / 2 - panY) / newZoom;
-        } else {
-            newWorldX = (adjustedMouseX - width / 2 - panX) / newZoom;
-            newWorldY = (adjustedMouseY - height / 2 - panY) / newZoom;
-        }
-        const deltaX = newWorldX - oldWorldX;
-        const deltaY = newWorldY - oldWorldY;
-        panX -= deltaX * newZoom;
-        panY -= deltaY * newZoom;
         redraw();
     }, { passive: false });
 
@@ -10168,27 +10734,123 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
             if (onChange) onChange({target: el});
         }, {passive: false});
     }
-    addWheelHandler("#xScale", (e) => document.getElementById("xScale").onchange(e));
-    addWheelHandler("#yScale", (e) => document.getElementById("yScale").onchange(e));
-    addWheelHandler("#rotation", (e) => document.getElementById("rotation").onchange(e));
-    addWheelHandler("#itemXScale", (e) => document.getElementById("itemXScale").onchange(e));
-    addWheelHandler("#itemYScale", (e) => document.getElementById("itemYScale").onchange(e));
-    addWheelHandler("#itemRotation", (e) => document.getElementById("itemRotation").onchange(e));
-    addWheelHandler("#itemX", (e) => document.getElementById("itemX").onchange(e), 0.1);
-    addWheelHandler("#itemY", (e) => document.getElementById("itemY").onchange(e), 0.1);
-    addWheelHandler("#duration", (e) => document.getElementById("duration").onchange(e), 10);
-    addWheelHandler("#spriteLeft", (e) => document.getElementById("spriteLeft").onchange(e));
-    addWheelHandler("#spriteTop", (e) => document.getElementById("spriteTop").onchange(e));
-    addWheelHandler("#spriteWidth", (e) => document.getElementById("spriteWidth").onchange(e));
-    addWheelHandler("#spriteHeight", (e) => document.getElementById("spriteHeight").onchange(e));
-    addWheelHandler("#xScaleSlider", (e) => document.getElementById("xScaleSlider").oninput(e), 0.1);
-    addWheelHandler("#yScaleSlider", (e) => document.getElementById("yScaleSlider").oninput(e), 0.1);
-    addWheelHandler("#rotationSlider", (e) => document.getElementById("rotationSlider").oninput(e), 1);
-    addWheelHandler("#itemXScaleSlider", (e) => document.getElementById("itemXScaleSlider").oninput(e), 0.1);
-    addWheelHandler("#itemYScaleSlider", (e) => document.getElementById("itemYScaleSlider").oninput(e), 0.1);
-    addWheelHandler("#itemRotationSlider", (e) => document.getElementById("itemRotationSlider").oninput(e), 1);
-    addWheelHandler("#itemLayer", (e) => document.getElementById("itemLayer").onchange(e));
-    let isPanning = false;
+    addWheelHandler("#xScale", (e) => $("xScale").onchange(e));
+    addWheelHandler("#yScale", (e) => $("yScale").onchange(e));
+    addWheelHandler("#rotation", (e) => $("rotation").onchange(e));
+    addWheelHandler("#itemXScale", (e) => $("itemXScale").onchange(e));
+    addWheelHandler("#itemYScale", (e) => $("itemYScale").onchange(e));
+    addWheelHandler("#itemRotation", (e) => $("itemRotation").onchange(e));
+    addWheelHandler("#itemX", (e) => $("itemX").onchange(e), 0.1);
+    addWheelHandler("#itemY", (e) => $("itemY").onchange(e), 0.1);
+    addWheelHandler("#duration", (e) => $("duration").onchange(e), 10);
+    addWheelHandler("#spriteLeft", (e) => $("spriteLeft").onchange(e));
+    addWheelHandler("#spriteTop", (e) => $("spriteTop").onchange(e));
+    addWheelHandler("#spriteWidth", (e) => $("spriteWidth").onchange(e));
+    addWheelHandler("#spriteHeight", (e) => $("spriteHeight").onchange(e));
+    addWheelHandler("#xScaleSlider", (e) => $("xScaleSlider").oninput(e), 0.1);
+    addWheelHandler("#yScaleSlider", (e) => $("yScaleSlider").oninput(e), 0.1);
+    addWheelHandler("#rotationSlider", (e) => $("rotationSlider").oninput(e), 1);
+    addWheelHandler("#itemXScaleSlider", (e) => $("itemXScaleSlider").oninput(e), 0.1);
+    addWheelHandler("#itemYScaleSlider", (e) => $("itemYScaleSlider").oninput(e), 0.1);
+    addWheelHandler("#itemRotationSlider", (e) => $("itemRotationSlider").oninput(e), 1);
+    addWheelHandler("#itemLayer", (e) => $("itemLayer").onchange(e));
+    syncSelectedPieceRotationDisplay = () => {
+        if (selectedPieces.size !== 1 || !editingSprite) return;
+        const piece = Array.from(selectedPieces)[0];
+        if (!piece || piece.type !== "sprite") return;
+        const sprite = currentAnimation?.getAniSprite(piece.spriteIndex, piece.spriteName || "");
+        if (!sprite || sprite !== editingSprite) return;
+        const rotationValue = normalizeRotationDegrees(sprite.rotation || 0);
+        const rotationInput = $("rotation");
+        const rotationSlider = $("rotationSlider");
+        if (rotationInput) rotationInput.value = rotationValue;
+        if (rotationSlider) rotationSlider.value = rotationValue;
+    };
+    const syncRotationControls = () => {
+        if (selectedPieces.size !== 1) return;
+        const piece = Array.from(selectedPieces)[0];
+        if (!piece || piece.type !== "sprite") return;
+        const sprite = currentAnimation?.getAniSprite(piece.spriteIndex, piece.spriteName || "");
+        if (!sprite) return;
+        const itemRotation = $("itemRotation");
+        const itemRotationSlider = $("itemRotationSlider");
+        const rotationValue = normalizeRotationDegrees(sprite.rotation || 0);
+        if (itemRotation) itemRotation.value = rotationValue;
+        if (itemRotationSlider) itemRotationSlider.value = rotationValue;
+        syncSelectedPieceRotationDisplay();
+    };
+    const syncScaleControls = () => {
+        if (selectedPieces.size !== 1) return;
+        const piece = Array.from(selectedPieces)[0];
+        if (!piece || piece.type !== "sprite") return;
+        const sprite = currentAnimation?.getAniSprite(piece.spriteIndex, piece.spriteName || "");
+        if (!sprite) return;
+        const xscale = sprite.xscale ?? 1.0;
+        const yscale = sprite.yscale ?? 1.0;
+        const xScaleInput = $("xScale");
+        const yScaleInput = $("yScale");
+        const xScaleSlider = $("xScaleSlider");
+        const yScaleSlider = $("yScaleSlider");
+        if (xScaleInput) xScaleInput.value = parseFloat(xscale.toFixed(4));
+        if (yScaleInput) yScaleInput.value = parseFloat(yscale.toFixed(4));
+        if (xScaleSlider) xScaleSlider.value = xscale;
+        if (yScaleSlider) yScaleSlider.value = yscale;
+    };
+    const finishScalingSelection = () => {
+        isScalingSelection = false;
+        mainCanvas.style.cursor = "default";
+        if (scaleStartState) {
+            const newState = serializeAnimationState();
+            const _stripSel = s => { const {selectedPieceIds, selectedPieceDir, ...r} = s; return r; };
+            if (JSON.stringify(_stripSel(scaleStartState)) !== JSON.stringify(_stripSel(newState))) {
+                const scaledPieces = Array.from(scaleStartScales.keys()).map(sprite => {
+                    return sprite?.comment ? `"${sprite.comment}"` : `Sprite ${sprite?.index ?? "?"}`;
+                }).join(", ");
+                addUndoCommand({
+                    description: `Scale Sprite${scaleStartScales.size > 1 ? 's' : ''} (${scaledPieces})`,
+                    oldState: scaleStartState,
+                    newState: newState,
+                    undo: () => restoreAnimationState(scaleStartState),
+                    redo: () => restoreAnimationState(newState)
+                });
+            }
+        }
+        scaleReferenceHandle = null;
+        scaleStartScales.clear();
+        scaleStartState = null;
+        syncScaleControls();
+        redraw();
+        updateItemSettings();
+        saveSession();
+    };
+    const finishRotationSelection = () => {
+        isRotatingSelection = false;
+        mainCanvas.style.cursor = "default";
+        if (rotationStartState) {
+            const newState = serializeAnimationState();
+            const _stripSel = s => { const {selectedPieceIds, selectedPieceDir, ...r} = s; return r; };
+            if (JSON.stringify(_stripSel(rotationStartState)) !== JSON.stringify(_stripSel(newState))) {
+                const rotatedPieces = Array.from(rotationStartAngles.keys()).map(sprite => {
+                    return sprite?.comment ? `"${sprite.comment}"` : `Sprite ${sprite?.index ?? "?"}`;
+                }).join(", ");
+                addUndoCommand({
+                    description: `Rotate Sprite${rotationStartAngles.size > 1 ? 's' : ''} (${rotatedPieces})`,
+                    oldState: rotationStartState,
+                    newState: newState,
+                    undo: () => restoreAnimationState(rotationStartState),
+                    redo: () => restoreAnimationState(newState)
+                });
+            }
+        }
+        rotationReferenceHandle = null;
+        rotationStartAngles.clear();
+        rotationStartState = null;
+        syncRotationControls();
+        redraw();
+        updateItemSettings();
+        updateSpritesList();
+        saveSession();
+    };
     let panStartX = 0, panStartY = 0;
     const getUIScale = () => {
         return parseFloat(localStorage.getItem("editorUIScale") || "1");
@@ -10199,7 +10861,30 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
         const visualSize = isY ? rect.height : rect.width;
         return visualCoord * (logicalSize / visualSize);
     };
-    const _updateBoxSelection = (x, y) => {
+    const _getCanvasWorldPosition = (clientX, clientY, preferredQuadrant = null) => {
+        const rect = mainCanvas.getBoundingClientRect();
+        const logicalWidth = mainCanvas.width / (window.devicePixelRatio || 1);
+        const logicalHeight = mainCanvas.height / (window.devicePixelRatio || 1);
+        const zoom = zoomFactors[zoomLevel] || 1.0;
+        const adjustedX = adjustCoordinateForUIScale(clientX, rect.left, rect, false);
+        const adjustedY = adjustCoordinateForUIScale(clientY, rect.top, rect, true);
+        if (splitViewEnabled && !currentAnimation.singleDir) {
+            const quadWidth = logicalWidth / 2;
+            const quadHeight = logicalHeight / 2;
+            const quadIndex = preferredQuadrant ?? (Math.floor(adjustedY / quadHeight) * 2 + Math.floor(adjustedX / quadWidth));
+            const quadX = (quadIndex % 2) * quadWidth;
+            const quadY = Math.floor(quadIndex / 2) * quadHeight;
+            return {
+                x: (adjustedX - quadX - quadWidth / 2 - panX) / zoom,
+                y: (adjustedY - quadY - quadHeight / 2 - panY) / zoom
+            };
+        }
+        return {
+            x: (adjustedX - logicalWidth / 2 - panX) / zoom,
+            y: (adjustedY - logicalHeight / 2 - panY) / zoom
+        };
+    };
+    const _updateBoxSelection = (x, y, updateUI = false) => {
         if (!boxSelectStart || !currentAnimation) return;
         const frame = currentAnimation.getFrame(currentFrame);
         if (!frame) return;
@@ -10218,8 +10903,68 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
         if (frame.sounds) for (const sound of frame.sounds) {
             if (sound.xoffset >= minX && sound.xoffset <= maxX && sound.yoffset >= minY && sound.yoffset <= maxY) selectedPieces.add(sound);
         }
-        updateItemsCombo();
+        if (updateUI) {
+            updateItemsCombo();
+            updateItemSettings();
+        }
+    };
+    const _clearBoxSelectionState = () => {
+        isBoxSelecting = false;
+        boxSelectStart = null;
+        boxSelectEnd = null;
+        boxSelectQuadrant = -1;
+    };
+    const _releaseLeftMouse = () => {
+        leftMouseHeld = false;
+    };
+    const _finishBoxSelection = (clientX, clientY, shiftKey = false) => {
+        if (!isBoxSelecting || !boxSelectStart) return false;
+        const finalPos = _getCanvasWorldPosition(clientX, clientY, boxSelectQuadrant >= 0 ? boxSelectQuadrant : null);
+        const x = finalPos.x;
+        const y = finalPos.y;
+        boxSelectEnd = {x, y};
+        const boxWidth = Math.abs(boxSelectStart.x - x);
+        const boxHeight = Math.abs(boxSelectStart.y - y);
+        const dist = Math.sqrt(Math.pow(boxSelectStart.x - x, 2) + Math.pow(boxSelectStart.y - y, 2));
+        if (boxWidth < 5 && boxHeight < 5 && dist < 5) {
+            // Synchronously compute the actual selection — don't rely on the
+            // RAF-throttled preview which may not have fired before mouse release.
+            _updateBoxSelection(x, y);
+            const hasSelection = selectedPieces.size > 0;
+            if (!shiftKey && !hasSelection) {
+                selectedPieces.clear();
+                selectedPieceDir = null;
+                const combo = $("itemsCombo");
+                if (combo) {
+                    combo.value = "";
+                    const wrapper = combo.closest("div");
+                    const button = wrapper?.querySelector(".custom-dropdown-button span");
+                    if (button) button.textContent = "(none)";
+                }
+                updateItemsCombo();
+                updateItemSettings();
+            } else {
+                updateItemsCombo();
+                updateItemSettings();
+            }
+        } else {
+            if (!shiftKey) {
+                selectedPieces.clear();
+                const combo = $("itemsCombo");
+                if (combo) {
+                    combo.value = "";
+                    const wrapper = combo.closest("div");
+                    const button = wrapper?.querySelector(".custom-dropdown-button span");
+                    if (button) button.textContent = "(none)";
+                }
+            }
+            _updateBoxSelection(x, y, true);
+        }
+        _clearBoxSelectionState();
+        redraw();
         updateItemSettings();
+        saveSession();
+        return true;
     };
     let _hitCanvas = null, _hitCtx = null;
     function pieceHitsPoint(piece, wx, wy) {
@@ -10248,6 +10993,9 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
         return _hitCtx.getImageData(0, 0, 1, 1).data[3] > 10;
     }
     mainCanvas.onmousedown = (e) => {
+        if (e.button === 0) {
+            leftMouseHeld = true;
+        }
         const rect = mainCanvas.getBoundingClientRect();
         const uiScale = getUIScale();
         const logicalWidth = mainCanvas.width / (window.devicePixelRatio || 1);
@@ -10318,6 +11066,7 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
             panStartX = e.clientX - panX;
             panStartY = e.clientY - panY;
             mainCanvas.style.cursor = "grabbing";
+            document.body.style.cursor = "grabbing";
         } else if (e.button === 0) {
             if (insertPiece) {
                 const frame = currentAnimation.getFrame(currentFrame);
@@ -10358,7 +11107,7 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
                     if (splitViewEnabled && !currentAnimation.singleDir) {
                         selectedPieceDir = actualDir;
                         const dirNames = ["UP", "LEFT", "DOWN", "RIGHT"];
-                        const dirCombo = document.getElementById("directionCombo");
+                        const dirCombo = $("directionCombo");
                         if (dirCombo && dirNames[actualDir]) {
                             const oldHandler = dirCombo.onchange;
                             dirCombo.onchange = null;
@@ -10380,6 +11129,59 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
             }
             const frame = currentAnimation.getFrame(currentFrame);
             if (frame) {
+                const scaleHandle = findScaleHandleAt(x, y);
+                if (scaleHandle) {
+                    isScalingSelection = true;
+                    scaleReferenceHandle = scaleHandle;
+                    const cos = Math.cos(scaleHandle.angle), sin = Math.sin(scaleHandle.angle);
+                    const dx = scaleHandle.x - scaleHandle.centerX, dy = scaleHandle.y - scaleHandle.centerY;
+                    scaleStartLX = dx * cos + dy * sin;
+                    scaleStartLY = -dx * sin + dy * cos;
+                    scaleStartScales = new Map();
+                    for (const piece of selectedPieces) {
+                        if (piece?.type === "sprite") {
+                            const spr = currentAnimation?.getAniSprite(piece.spriteIndex, piece.spriteName || "");
+                            if (spr && !scaleStartScales.has(spr)) {
+                                scaleStartScales.set(spr, {
+                                    xscale: spr.xscale ?? 1.0,
+                                    yscale: spr.yscale ?? 1.0,
+                                    zoom: spr._zoom ?? 1.0
+                                });
+                            }
+                        }
+                    }
+                    scaleStartState = serializeAnimationState();
+                    dragButton = null; dragOffset = null; dragStartMousePos = null; isDragging = false;
+                    pieceInitialPositions.clear(); _dragMoveIndicator = null;
+                    mainCanvas.style.cursor = scaleHandle.cursor;
+                    redraw();
+                    return;
+                }
+                const rotationHandle = findRotationHandleAt(x, y);
+                if (rotationHandle) {
+                    isRotatingSelection = true;
+                    rotationReferenceHandle = rotationHandle;
+                    rotationStartMouseAngle = Math.atan2(y - rotationHandle.centerY, x - rotationHandle.centerX);
+                    rotationStartAngles = new Map();
+                    for (const piece of selectedPieces) {
+                        if (piece?.type === "sprite") {
+                            const spr = currentAnimation?.getAniSprite(piece.spriteIndex, piece.spriteName || "");
+                            if (spr && !rotationStartAngles.has(spr)) {
+                                rotationStartAngles.set(spr, spr.rotation || 0);
+                            }
+                        }
+                    }
+                    rotationStartState = serializeAnimationState();
+                    dragButton = null;
+                    dragOffset = null;
+                    dragStartMousePos = null;
+                    isDragging = false;
+                    pieceInitialPositions.clear();
+                    _dragMoveIndicator = null;
+                    mainCanvas.style.cursor = "grabbing";
+                    redraw();
+                    return;
+                }
                 let dirToUse = currentDir;
                 if (splitViewEnabled && !currentAnimation.singleDir) {
                     const quadWidth = logicalWidth / 2;
@@ -10423,11 +11225,13 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
                             pieceInitialPositions.set(p, {x: p.xoffset, y: p.yoffset});
                         }
                         _dragMoveIndicator = { startPositions: new Map(pieceInitialPositions), pieces: Array.from(selectedPieces) };
+                        mainCanvas.style.cursor = "grabbing";
+                        document.body.style.cursor = "grabbing";
                         found = true;
                         if (splitViewEnabled && !currentAnimation.singleDir) {
                             selectedPieceDir = actualDir;
                             const dirNames = ["UP", "LEFT", "DOWN", "RIGHT"];
-                            const dirCombo = document.getElementById("directionCombo");
+                            const dirCombo = $("directionCombo");
                             if (dirCombo && dirNames[actualDir]) {
                                 const oldHandler = dirCombo.onchange;
                                 dirCombo.onchange = null;
@@ -10477,11 +11281,12 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
                                 pieceInitialPositions.set(p, {x: p.xoffset, y: p.yoffset});
                             }
                             _dragMoveIndicator = { startPositions: new Map(pieceInitialPositions), pieces: Array.from(selectedPieces) };
+                            mainCanvas.style.cursor = "grabbing";
                             found = true;
                             if (splitViewEnabled && !currentAnimation.singleDir) {
                                 selectedPieceDir = actualDir;
                                 const dirNames = ["UP", "LEFT", "DOWN", "RIGHT"];
-                                const dirCombo = document.getElementById("directionCombo");
+                                const dirCombo = $("directionCombo");
                                 if (dirCombo && dirNames[actualDir]) {
                                     const oldHandler = dirCombo.onchange;
                                     dirCombo.onchange = null;
@@ -10504,12 +11309,13 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
                     boxSelectStart = {x, y};
                     boxSelectEnd = {x, y};
                     isBoxSelecting = true;
+                    mainCanvas.style.cursor = "grabbing";
                     if (splitViewEnabled && !currentAnimation.singleDir) {
                         const quadWidth = logicalWidth / 2;
                         const quadHeight = logicalHeight / 2;
                         boxSelectQuadrant = Math.floor(adjustedY / quadHeight) * 2 + Math.floor(adjustedX / quadWidth);
                         const dirNames = ["UP", "LEFT", "DOWN", "RIGHT"];
-                        const dirCombo = document.getElementById("directionCombo");
+                        const dirCombo = $("directionCombo");
                         if (dirCombo && dirNames[boxSelectQuadrant]) {
                             const oldHandler = dirCombo.onchange;
                             dirCombo.onchange = null;
@@ -10526,7 +11332,7 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
                     if (!e.shiftKey) {
                         selectedPieces.clear();
                         selectedPieceDir = null;
-                        const combo = document.getElementById("itemsCombo");
+                        const combo = $("itemsCombo");
                         if (combo) combo.value = "";
                         updateItemsCombo();
                         updateItemSettings();
@@ -10570,6 +11376,7 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
                 rightClickPanStartPanX = panX;
                 rightClickPanStartPanY = panY;
                 mainCanvas.style.cursor = "grabbing";
+                document.body.style.cursor = "grabbing";
                 e.preventDefault();
             }
         }
@@ -10582,6 +11389,14 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
         if (mouseMoveThrottle) return;
         mouseMoveThrottle = requestAnimationFrame(() => {
             mouseMoveThrottle = null;
+            if (isBoxSelecting && !leftMouseHeld) {
+                _clearBoxSelectionState();
+                redraw();
+                updateItemsCombo();
+                updateItemSettings();
+                saveSession();
+                return;
+            }
         const rect = mainCanvas.getBoundingClientRect();
             const uiScale = getUIScale();
             const logicalWidth = mainCanvas.width / (window.devicePixelRatio || 1);
@@ -10610,6 +11425,7 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
                 y = (adjustedY - logicalHeight / 2 - panY) / zoom;
             }
         if (isRightClickPanning) {
+            mainCanvas.style.cursor = "grabbing";
             const deltaX = Math.abs(e.clientX - rightClickPanStartX);
             const deltaY = Math.abs(e.clientY - rightClickPanStartY);
             if (deltaX > dragThreshold || deltaY > dragThreshold) {
@@ -10618,11 +11434,41 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
                 panX = rightClickPanStartPanX + (e.clientX - rightClickPanStartX) / uiScale;
                 panY = rightClickPanStartPanY + (e.clientY - rightClickPanStartY) / uiScale;
             redraw();
+        } else if (isScalingSelection && scaleReferenceHandle) {
+            const cos = Math.cos(scaleReferenceHandle.angle), sin = Math.sin(scaleReferenceHandle.angle);
+            const cx = scaleReferenceHandle.centerX, cy = scaleReferenceHandle.centerY;
+            const dmx = x - cx, dmy = y - cy;
+            const curLX = dmx * cos + dmy * sin;
+            const curLY = -dmx * sin + dmy * cos;
+            if (Math.abs(scaleStartLX) > 0.001 && Math.abs(scaleStartLY) > 0.001) {
+                const ratioX = curLX / scaleStartLX;
+                const ratioY = curLY / scaleStartLY;
+                for (const [sprite, start] of scaleStartScales) {
+                    sprite.xscale = start.xscale * ratioX;
+                    sprite.yscale = start.yscale * ratioY;
+                    sprite.updateBoundingBox();
+                }
+                syncScaleControls();
+                redraw();
+                updateItemSettings();
+            }
+        } else if (isRotatingSelection && rotationReferenceHandle) {
+            const currentAngle = Math.atan2(y - rotationReferenceHandle.centerY, x - rotationReferenceHandle.centerX);
+            const deltaDegrees = (currentAngle - rotationStartMouseAngle) * 180 / Math.PI;
+            for (const [sprite, startAngle] of rotationStartAngles) {
+                sprite.rotation = normalizeRotationDegrees(startAngle + deltaDegrees);
+                sprite.updateBoundingBox();
+            }
+            syncRotationControls();
+            redraw();
+            updateItemSettings();
         } else if (isPanning) {
+                mainCanvas.style.cursor = "grabbing";
                 panX = (e.clientX - panStartX) / uiScale;
                 panY = (e.clientY - panStartY) / uiScale;
             redraw();
         } else if (isDragging && dragButton === "left" && dragOffset && dragStartMousePos) {
+            mainCanvas.style.cursor = "grabbing";
             const deltaX = x - dragStartMousePos.x;
             const deltaY = y - dragStartMousePos.y;
             for (const piece of selectedPieces) {
@@ -10638,15 +11484,31 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
             redraw();
             updateItemSettings();
         } else if (isBoxSelecting && boxSelectStart) {
+            mainCanvas.style.cursor = "grabbing";
             boxSelectEnd = {x, y};
             _updateBoxSelection(x, y);
             redraw();
         } else if (insertPiece) {
             redraw();
+        } else {
+            const sh = findScaleHandleAt(x, y);
+            if (sh) { mainCanvas.style.cursor = sh.cursor; }
+            else {
+                const handle = findRotationHandleAt(x, y);
+                mainCanvas.style.cursor = handle ? "alias" : "default";
+            }
+        }
+        if (isDragging || isPanning || isRightClickPanning || isRotatingSelection || isScalingSelection) {
+            document.body.style.cursor = mainCanvas.style.cursor;
+        } else {
+            document.body.style.cursor = "";
         }
         });
     };
     mainCanvas.onmouseup = (e) => {
+        if (e.button === 0) {
+            _releaseLeftMouse();
+        }
         if (e.button === 2 && isRightClickPanning) {
             if (rightClickPanMoved) {
                 rightClickJustDragged = true;
@@ -10660,10 +11522,18 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
             isRightClickPanning = false;
             rightClickPanMoved = false;
             mainCanvas.style.cursor = "default";
+            document.body.style.cursor = "";
         }
         if (isPanning && (e.button === 1 || e.button === 0)) {
             isPanning = false;
             mainCanvas.style.cursor = "default";
+            document.body.style.cursor = "";
+        }
+        if (isScalingSelection && e.button === 0) {
+            finishScalingSelection();
+        }
+        if (isRotatingSelection && e.button === 0) {
+            finishRotationSelection();
         }
         if (isDragging && e.button === 0) {
             isDragging = false;
@@ -10696,72 +11566,87 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
             dragStartState = null;
             pieceInitialPositions.clear();
             _dragMoveIndicator = null;
+            mainCanvas.style.cursor = "default";
+            document.body.style.cursor = "";
             redraw();
             saveSession();
         }
-        if (isBoxSelecting && boxSelectStart && e.button === 0) {
-            const rect = mainCanvas.getBoundingClientRect();
-            const logicalWidth = mainCanvas.width / (window.devicePixelRatio || 1);
-            const logicalHeight = mainCanvas.height / (window.devicePixelRatio || 1);
-            const visualWidth = rect.width;
-            const visualHeight = rect.height;
-            const zoomFactors = [0.25, 0.5, 0.75, 1.0, 2, 3, 4, 8];
-            const zoom = zoomFactors[zoomLevel] || 1.0;
-            const adjustedX = adjustCoordinateForUIScale(e.clientX, rect.left, rect, false);
-            const adjustedY = adjustCoordinateForUIScale(e.clientY, rect.top, rect, true);
-            let x, y;
-            if (splitViewEnabled && !currentAnimation.singleDir) {
-                const quadWidth = logicalWidth / 2;
-                const quadHeight = logicalHeight / 2;
-                const quadIndex = boxSelectQuadrant >= 0 ? boxSelectQuadrant : (Math.floor(adjustedY / quadHeight) * 2 + Math.floor(adjustedX / quadWidth));
-                const quadX = (quadIndex % 2) * quadWidth;
-                const quadY = Math.floor(quadIndex / 2) * quadHeight;
-                x = (adjustedX - quadX - quadWidth / 2 - panX) / zoom;
-                y = (adjustedY - quadY - quadHeight / 2 - panY) / zoom;
-            } else {
-                x = (adjustedX - logicalWidth / 2 - panX) / zoom;
-                y = (adjustedY - logicalHeight / 2 - panY) / zoom;
-            }
-            const boxWidth = Math.abs(boxSelectStart.x - x);
-            const boxHeight = Math.abs(boxSelectStart.y - y);
-            const dist = Math.sqrt(Math.pow(boxSelectStart.x - x, 2) + Math.pow(boxSelectStart.y - y, 2));
-            if (boxWidth < 5 && boxHeight < 5 && dist < 5) {
-                if (!e.shiftKey) {
-                    selectedPieces.clear();
-                    selectedPieceDir = null;
-                    const _combo = document.getElementById("itemsCombo");
-                    if (_combo) { _combo.value = ""; const _w = _combo.closest("div"); const _b = _w?.querySelector(".custom-dropdown-button span"); if (_b) _b.textContent = "(none)"; }
-                    updateItemSettings();
-                    redraw();
-                }
-            } else {
-                if (!e.shiftKey) {
-                    selectedPieces.clear();
-                    const _c = document.getElementById("itemsCombo");
-                    if (_c) { _c.value = ""; const _w = _c.closest("div"); const _b = _w?.querySelector(".custom-dropdown-button span"); if (_b) _b.textContent = "(none)"; }
-                }
-                const _fx = boxSelectEnd ? boxSelectEnd.x : x, _fy = boxSelectEnd ? boxSelectEnd.y : y;
-                _updateBoxSelection(_fx, _fy);
-            }
-            isBoxSelecting = false;
-            boxSelectStart = null;
-            boxSelectEnd = null;
-            redraw();
-            saveSession();
+        if (e.button === 0 && isBoxSelecting && boxSelectStart) {
+            _finishBoxSelection(e.clientX, e.clientY, e.shiftKey);
         }
     };
-    mainCanvas.onmouseleave = () => {
-        isPanning = false;
-        isDragging = false;
-        _dragMoveIndicator = null;
-        mainCanvas.style.cursor = "default";
+    mainCanvas.onmouseleave = (e) => {
+        if (isBoxSelecting && !leftMouseHeld) {
+            _finishBoxSelection(e.clientX, e.clientY, e.shiftKey);
+        }
+        if ((e.buttons & 4) === 0) isPanning = false;
+        if ((e.buttons & 1) === 0) {
+            isDragging = false;
+            _dragMoveIndicator = null;
+        }
+        if (!isRotatingSelection && !isScalingSelection && !isDragging && !isPanning && !isRightClickPanning) {
+            mainCanvas.style.cursor = "default";
+            document.body.style.cursor = "";
+        }
         redraw();
     };
+    document.addEventListener("mousemove", (e) => {
+        if ((e.buttons & 1) === 0) {
+            _releaseLeftMouse();
+        } else if ((e.buttons & 1) !== 0) {
+            leftMouseHeld = true;
+        }
+        if ((e.buttons & 1) !== 0) return;
+        if (isDragging) {
+            isDragging = false;
+            _dragMoveIndicator = null;
+            dragButton = null;
+            dragOffset = null;
+            dragStartMousePos = null;
+            dragStartState = null;
+            pieceInitialPositions.clear();
+            mainCanvas.style.cursor = "default";
+            document.body.style.cursor = "";
+            redraw();
+        }
+    });
     document.addEventListener("mouseup", (e) => {
+        if (e.button === 0) {
+            _releaseLeftMouse();
+        }
+        if (e.button === 0 && isScalingSelection) {
+            finishScalingSelection();
+        }
+        if (e.button === 0 && isRotatingSelection) {
+            finishRotationSelection();
+        }
         if (e.button === 0 && isDragging) {
             isDragging = false;
             _dragMoveIndicator = null;
             dragButton = null; dragOffset = null; dragStartMousePos = null; dragStartState = null; pieceInitialPositions.clear();
+            document.body.style.cursor = "";
+            redraw();
+        }
+        if (e.button === 0 && isBoxSelecting && boxSelectStart) {
+            _finishBoxSelection(e.clientX, e.clientY, e.shiftKey);
+        }
+    });
+    document.addEventListener("pointerup", (e) => {
+        if (e.button === 0) {
+            _releaseLeftMouse();
+        }
+        if (e.button === 0 && isBoxSelecting && boxSelectStart) {
+            _finishBoxSelection(e.clientX, e.clientY, e.shiftKey);
+        } else if (e.button === 0 && isBoxSelecting) {
+            _clearBoxSelectionState();
+            redraw();
+        }
+    });
+    window.addEventListener("blur", () => {
+        _releaseLeftMouse();
+        if (isBoxSelecting) {
+            _clearBoxSelectionState();
+            mainCanvas.style.cursor = "default";
             redraw();
         }
     });
@@ -10904,7 +11789,7 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
             }
             if (!found) {
                 selectedPieces.clear();
-                const combo = document.getElementById("itemsCombo");
+                const combo = $("itemsCombo");
                 if (combo) combo.value = "";
                 updateItemsCombo();
                 updateItemSettings();
@@ -11087,7 +11972,7 @@ function playAnimation() {
     for (const frame of currentAnimation.frames) totalDuration += frame.duration;
     if (totalDuration === 0) {
         isPlaying = false;
-        document.getElementById("btnPlay").innerHTML = '<i class="fas fa-play"></i>';
+        $("btnPlay").innerHTML = '<i class="fas fa-play"></i>';
         return;
     }
     if (playPosition >= totalDuration) {
@@ -11096,7 +11981,7 @@ function playAnimation() {
         } else {
             isPlaying = false;
             playPosition = 0;
-            document.getElementById("btnPlay").innerHTML = '<i class="fas fa-play"></i>';
+            $("btnPlay").innerHTML = '<i class="fas fa-play"></i>';
             redraw();
             return;
         }
@@ -11228,7 +12113,7 @@ function showSpriteContextMenu(e, sprite) {
     const deleteCount = selectedSpritesForDeletion.size > 1 ? selectedSpritesForDeletion.size : 0;
     const items = [
         {text: "Edit Sprite", action: () => editSprite(sprite)},
-        {text: "Copy Sprite", action: () => document.getElementById("btnCopySprite").click()},
+        {text: "Copy Sprite", action: () => $("btnCopySprite").click()},
         {text: "Duplicate Sprite", action: () => {
             const newSprite = sprite.duplicate(currentAnimation.nextSpriteIndex++);
             currentAnimation.addSprite(newSprite);
@@ -11248,7 +12133,7 @@ function showSpriteContextMenu(e, sprite) {
                 addUndoCommand({ description: `Delete ${count} Sprites`, oldState, newState, undo: () => restoreAnimationState(oldState), redo: () => restoreAnimationState(newState) });
                 updateSpritesList(); updateSpriteEditor(); redraw(); saveSession();
             } else {
-                document.getElementById("btnDeleteSprite").click();
+                $("btnDeleteSprite").click();
             }
         }}
     ];
@@ -11435,7 +12320,7 @@ function showCanvasContextMenu(e) {
         }});
     }
     items.push(
-        {text: "Add Sprite", action: () => document.getElementById("btnAddSprite").click()},
+        {text: "Add Sprite", action: () => $("btnAddSprite").click()},
         ...(clipboardPieces ? [{text: `Paste Sprite${clipboardPieces.length > 1 ? "s" : ""}`, action: () => {
             const frame = currentAnimation.getFrame(currentFrame);
             if (frame) {
@@ -11452,7 +12337,7 @@ function showCanvasContextMenu(e) {
                 addUndoCommand({ description: `Paste ${pasteNames}`, oldState, newState, undo: () => restoreAnimationState(oldState), redo: () => restoreAnimationState(newState) });
                 updateItemsCombo(); updateItemSettings(); redraw(); saveSession();
             }
-        }}] : [{text: "Paste Sprite", action: () => document.getElementById("btnPasteSprite").click()}]),
+        }}] : [{text: "Paste Sprite", action: () => $("btnPasteSprite").click()}]),
         {text: "Center View", action: () => {
             panX = panY = 0;
             redraw();
@@ -11508,8 +12393,8 @@ function showSpritesListContextMenu(e) {
     menu.style.minWidth = "150px";
     activeContextMenu = menu;
     const items = [
-        {text: "Add Sprite", action: () => document.getElementById("btnAddSprite").click()},
-        {text: "Paste Sprite", action: () => document.getElementById("btnPasteSprite").click()},
+        {text: "Add Sprite", action: () => $("btnAddSprite").click()},
+        {text: "Paste Sprite", action: () => $("btnPasteSprite").click()},
         ...(selectedSpritesForDeletion.size > 0 ? [{text: `Delete ${selectedSpritesForDeletion.size} Selected`, action: () => {
             if (selectedSpritesForDeletion.size > 0) {
                 const oldState = serializeAnimationState();
@@ -12180,13 +13065,13 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
     content.appendChild(buttonBar);
     dialog.appendChild(content);
     document.body.appendChild(dialog);
-    const addButton = document.getElementById("addSpriteAdd");
-    const cancelButton = document.getElementById("addSpriteCancel");
-    const browseButton = document.getElementById("addSpriteBrowse");
-    const centerButton = document.getElementById("addSpriteCenter");
-    const zoomOutButton = document.getElementById("addSpriteZoomOut");
-    const zoomInButton = document.getElementById("addSpriteZoomIn");
-    const autoDetectButton = document.getElementById("addSpriteAutoDetect");
+    const addButton = $("addSpriteAdd");
+    const cancelButton = $("addSpriteCancel");
+    const browseButton = $("addSpriteBrowse");
+    const centerButton = $("addSpriteCenter");
+    const zoomOutButton = $("addSpriteZoomOut");
+    const zoomInButton = $("addSpriteZoomIn");
+    const autoDetectButton = $("addSpriteAutoDetect");
     const addHoverEffect = (btn) => {
         btn.onmouseover = () => {
             btn.style.background = dialogColors.buttonHover;
@@ -12305,17 +13190,17 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
         const _psi = imageLibrary.get(preSelectImage.toLowerCase());
         if (_psi) {
             previewImg = _psi;
-            const _psf = document.getElementById("addSpriteImageFile");
-            if (_psf) { _psf.value = preSelectImage; document.getElementById("addSpriteSource").value = "CUSTOM"; }
+            const _psf = $("addSpriteImageFile");
+            if (_psf) { _psf.value = preSelectImage; $("addSpriteSource").value = "CUSTOM"; }
             setTimeout(() => updateAddSpritePreview(), 0);
         }
     }
-    document.getElementById("addSpriteBrowse").onclick = async () => {
+    $("addSpriteBrowse").onclick = async () => {
         if (_isTauri) {
             const selected = await tauriOpenDialog({ multiple: false, filters: [{ name: 'Images', extensions: ['png', 'gif', 'jpg', 'jpeg', 'webp', 'bmp', 'mng'] }] });
             if (selected) {
                 const name = selected.split(/[\\/]/).pop();
-                document.getElementById("addSpriteImageFile").value = name;
+                $("addSpriteImageFile").value = name;
                 previewImg = await loadImageFromPath(selected, name);
                 if (selectionBox.w === 0 || selectionBox.h === 0) { selectionBox.w = 32; selectionBox.h = 32; }
                 updateAddSpritePreview();
@@ -12325,7 +13210,7 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
         fileInput.onchange = async (e) => {
             const file = e.target.files[0];
             if (file) {
-                document.getElementById("addSpriteImageFile").value = file.name;
+                $("addSpriteImageFile").value = file.name;
                 previewImg = await loadImage(file);
                 if (selectionBox.w === 0 || selectionBox.h === 0) {
                     selectionBox.w = 32;
@@ -12336,10 +13221,10 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
         };
         fileInput.click();
     };
-    document.getElementById("addSpriteSource").onchange = async () => {
-        const sourceType = document.getElementById("addSpriteSource").value;
+    $("addSpriteSource").onchange = async () => {
+        const sourceType = $("addSpriteSource").value;
         if (sourceType === "CUSTOM") {
-            document.getElementById("addSpriteImageFile").value = "";
+            $("addSpriteImageFile").value = "";
             previewImg = null;
             updateAddSpritePreview();
             return;
@@ -12367,7 +13252,7 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
             defaultName = fallbackNames[sourceType] || "";
         }
         if (defaultName) {
-            document.getElementById("addSpriteImageFile").value = defaultName;
+            $("addSpriteImageFile").value = defaultName;
             const imgKey = defaultName.toLowerCase();
             if (imageLibrary.has(imgKey)) {
                 previewImg = imageLibrary.get(imgKey);
@@ -12391,7 +13276,7 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
                 }
             }
         } else {
-            document.getElementById("addSpriteImageFile").value = "";
+            $("addSpriteImageFile").value = "";
             previewImg = null;
             updateAddSpritePreview();
         }
@@ -12399,7 +13284,7 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
     let previewZoom = 1.0;
     let previewPanX = 0;
     let previewPanY = 0;
-    document.getElementById("addSpriteZoomLevel").textContent = "100%";
+    $("addSpriteZoomLevel").textContent = "100%";
     let selectionBox = {x: 0, y: 0, w: 32, h: 32};
     let isSelecting = false;
     let isMoving = false;
@@ -12462,10 +13347,10 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
         ctx.fillStyle = dialogColors.inputBg;
         ctx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
         if (previewImg) {
-            const cols = parseInt(document.getElementById("addSpriteCols").value) || 1;
-            const rows = parseInt(document.getElementById("addSpriteRows").value) || 1;
-            const colSep = parseInt(document.getElementById("addSpriteColSep").value) || 0;
-            const rowSep = parseInt(document.getElementById("addSpriteRowSep").value) || 0;
+            const cols = parseInt($("addSpriteCols").value) || 1;
+            const rows = parseInt($("addSpriteRows").value) || 1;
+            const colSep = parseInt($("addSpriteColSep").value) || 0;
+            const rowSep = parseInt($("addSpriteRowSep").value) || 0;
             const spriteW = Math.floor((previewImg.width - (cols - 1) * colSep) / cols);
             const spriteH = Math.floor((previewImg.height - (rows - 1) * rowSep) / rows);
             const {scale, offsetX, offsetY} = getImageToCanvas();
@@ -12600,12 +13485,12 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
                     selectionBox.y = rect.top;
                     selectionBox.w = rect.right - rect.left + 1;
                     selectionBox.h = rect.bottom - rect.top + 1;
-                    document.getElementById("addSpriteLeft").value = selectionBox.x;
-                    document.getElementById("addSpriteTop").value = selectionBox.y;
-                    document.getElementById("addSpriteWidth").value = selectionBox.w;
-                    document.getElementById("addSpriteHeight").value = selectionBox.h;
-                    document.getElementById("addSpriteCols").value = 1;
-                    document.getElementById("addSpriteRows").value = 1;
+                    $("addSpriteLeft").value = selectionBox.x;
+                    $("addSpriteTop").value = selectionBox.y;
+                    $("addSpriteWidth").value = selectionBox.w;
+                    $("addSpriteHeight").value = selectionBox.h;
+                    $("addSpriteCols").value = 1;
+                    $("addSpriteRows").value = 1;
                     updateAddSpritePreview();
                 }
             }
@@ -12712,10 +13597,10 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
             selectionBox.y = newY;
             selectionBox.w = Math.max(1, newW);
             selectionBox.h = Math.max(1, newH);
-            document.getElementById("addSpriteLeft").value = selectionBox.x;
-            document.getElementById("addSpriteTop").value = selectionBox.y;
-            document.getElementById("addSpriteWidth").value = selectionBox.w;
-            document.getElementById("addSpriteHeight").value = selectionBox.h;
+            $("addSpriteLeft").value = selectionBox.x;
+            $("addSpriteTop").value = selectionBox.y;
+            $("addSpriteWidth").value = selectionBox.w;
+            $("addSpriteHeight").value = selectionBox.h;
             updateAddSpritePreview();
         }
     };
@@ -12727,10 +13612,10 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
             return;
         }
         if (isMoving || isResizing) {
-            document.getElementById("addSpriteLeft").value = selectionBox.x;
-            document.getElementById("addSpriteTop").value = selectionBox.y;
-            document.getElementById("addSpriteWidth").value = selectionBox.w;
-            document.getElementById("addSpriteHeight").value = selectionBox.h;
+            $("addSpriteLeft").value = selectionBox.x;
+            $("addSpriteTop").value = selectionBox.y;
+            $("addSpriteWidth").value = selectionBox.w;
+            $("addSpriteHeight").value = selectionBox.h;
         }
         isSelecting = false;
         isMoving = false;
@@ -12750,28 +13635,28 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
     previewCanvas.oncontextmenu = (e) => {
         e.preventDefault();
     };
-    document.getElementById("addSpriteCenter").onclick = () => {
+    $("addSpriteCenter").onclick = () => {
         previewZoom = 1.0;
         previewPanX = 0;
         previewPanY = 0;
-        document.getElementById("addSpriteZoomLevel").textContent = "100%";
+        $("addSpriteZoomLevel").textContent = "100%";
         updateAddSpritePreview();
     };
-    document.getElementById("addSpriteZoomIn").onclick = () => {
+    $("addSpriteZoomIn").onclick = () => {
         previewZoom = Math.min(8, previewZoom * 1.5);
-        document.getElementById("addSpriteZoomLevel").textContent = Math.round(previewZoom * 100) + "%";
+        $("addSpriteZoomLevel").textContent = Math.round(previewZoom * 100) + "%";
         updateAddSpritePreview();
     };
-    document.getElementById("addSpriteZoomOut").onclick = () => {
+    $("addSpriteZoomOut").onclick = () => {
         previewZoom = Math.max(0.25, previewZoom / 1.5);
-        document.getElementById("addSpriteZoomLevel").textContent = Math.round(previewZoom * 100) + "%";
+        $("addSpriteZoomLevel").textContent = Math.round(previewZoom * 100) + "%";
         updateAddSpritePreview();
     };
     previewCanvas.onwheel = (e) => {
         e.preventDefault();
         const delta = e.deltaY > 0 ? 0.9 : 1.1;
         previewZoom = Math.max(0.25, Math.min(8, previewZoom * delta));
-        document.getElementById("addSpriteZoomLevel").textContent = Math.round(previewZoom * 100) + "%";
+        $("addSpriteZoomLevel").textContent = Math.round(previewZoom * 100) + "%";
         updateAddSpritePreview();
     };
     let previewInitialPinchDistance = null;
@@ -12799,7 +13684,7 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
             const currentDistance = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);
             const zoomRatio = currentDistance / previewInitialPinchDistance;
             previewZoom = Math.max(0.25, Math.min(8, previewInitialZoom * zoomRatio));
-            document.getElementById("addSpriteZoomLevel").textContent = Math.round(previewZoom * 100) + "%";
+            $("addSpriteZoomLevel").textContent = Math.round(previewZoom * 100) + "%";
             const rect = previewCanvas.getBoundingClientRect();
             const centerX = (touch1.clientX + touch2.clientX) / 2 - rect.left;
             const centerY = (touch1.clientY + touch2.clientY) / 2 - rect.top;
@@ -12832,7 +13717,7 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
     }, { passive: false });
 
     const addWheelHandler = (id, onChange, step = 1, min = null, max = null) => {
-        const el = document.getElementById(id);
+        const el = $(id);
         if (!el) return;
         el.addEventListener("wheel", (e) => {
             if (document.activeElement === el && !el.disabled) {
@@ -12847,52 +13732,52 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
             }
         }, { passive: false });
     };
-    document.getElementById("addSpriteCols").onchange = updateAddSpritePreview;
+    $("addSpriteCols").onchange = updateAddSpritePreview;
     addWheelHandler("addSpriteCols", updateAddSpritePreview, 1, 1);
-    document.getElementById("addSpriteRows").onchange = updateAddSpritePreview;
+    $("addSpriteRows").onchange = updateAddSpritePreview;
     addWheelHandler("addSpriteRows", updateAddSpritePreview, 1, 1);
-    document.getElementById("addSpriteColSep").onchange = updateAddSpritePreview;
+    $("addSpriteColSep").onchange = updateAddSpritePreview;
     addWheelHandler("addSpriteColSep", updateAddSpritePreview);
-    document.getElementById("addSpriteRowSep").onchange = updateAddSpritePreview;
+    $("addSpriteRowSep").onchange = updateAddSpritePreview;
     addWheelHandler("addSpriteRowSep", updateAddSpritePreview);
-    document.getElementById("addSpriteLeft").onchange = () => {
-        selectionBox.x = parseInt(document.getElementById("addSpriteLeft").value) || 0;
+    $("addSpriteLeft").onchange = () => {
+        selectionBox.x = parseInt($("addSpriteLeft").value) || 0;
         updateAddSpritePreview();
     };
     addWheelHandler("addSpriteLeft", () => {
-        selectionBox.x = parseInt(document.getElementById("addSpriteLeft").value) || 0;
+        selectionBox.x = parseInt($("addSpriteLeft").value) || 0;
         updateAddSpritePreview();
     });
-    document.getElementById("addSpriteTop").onchange = () => {
-        selectionBox.y = parseInt(document.getElementById("addSpriteTop").value) || 0;
+    $("addSpriteTop").onchange = () => {
+        selectionBox.y = parseInt($("addSpriteTop").value) || 0;
         updateAddSpritePreview();
     };
     addWheelHandler("addSpriteTop", () => {
-        selectionBox.y = parseInt(document.getElementById("addSpriteTop").value) || 0;
+        selectionBox.y = parseInt($("addSpriteTop").value) || 0;
         updateAddSpritePreview();
     });
-    document.getElementById("addSpriteWidth").onchange = () => {
-        selectionBox.w = parseInt(document.getElementById("addSpriteWidth").value) || 32;
+    $("addSpriteWidth").onchange = () => {
+        selectionBox.w = parseInt($("addSpriteWidth").value) || 32;
         updateAddSpritePreview();
     };
     addWheelHandler("addSpriteWidth", () => {
-        selectionBox.w = parseInt(document.getElementById("addSpriteWidth").value) || 32;
+        selectionBox.w = parseInt($("addSpriteWidth").value) || 32;
         updateAddSpritePreview();
     }, 1, 1);
-    document.getElementById("addSpriteHeight").onchange = () => {
-        selectionBox.h = parseInt(document.getElementById("addSpriteHeight").value) || 32;
+    $("addSpriteHeight").onchange = () => {
+        selectionBox.h = parseInt($("addSpriteHeight").value) || 32;
         updateAddSpritePreview();
     };
     addWheelHandler("addSpriteHeight", () => {
-        selectionBox.h = parseInt(document.getElementById("addSpriteHeight").value) || 32;
+        selectionBox.h = parseInt($("addSpriteHeight").value) || 32;
         updateAddSpritePreview();
     }, 1, 1);
     addWheelHandler("addSpriteIndex", () => {}, 1, 0);
     const syncAddSpriteColorSwatch = () => {
-        const colorSwatch = document.getElementById("addSpriteColorSwatch");
-        const colorR = document.getElementById("addSpriteColorR");
-        const colorG = document.getElementById("addSpriteColorG");
-        const colorB = document.getElementById("addSpriteColorB");
+        const colorSwatch = $("addSpriteColorSwatch");
+        const colorR = $("addSpriteColorR");
+        const colorG = $("addSpriteColorG");
+        const colorB = $("addSpriteColorB");
         if (!colorSwatch || !colorR || !colorG || !colorB) return;
         const r = Math.max(0, Math.min(255, parseInt(colorR.value) || 255));
         const g = Math.max(0, Math.min(255, parseInt(colorG.value) || 255));
@@ -12901,10 +13786,10 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
         colorSwatch.value = hex;
     };
     const syncAddSpriteColorRGB = () => {
-        const colorSwatch = document.getElementById("addSpriteColorSwatch");
-        const colorR = document.getElementById("addSpriteColorR");
-        const colorG = document.getElementById("addSpriteColorG");
-        const colorB = document.getElementById("addSpriteColorB");
+        const colorSwatch = $("addSpriteColorSwatch");
+        const colorR = $("addSpriteColorR");
+        const colorG = $("addSpriteColorG");
+        const colorB = $("addSpriteColorB");
         if (!colorSwatch || !colorR || !colorG || !colorB) return;
         const hex = colorSwatch.value;
         const r = parseInt(hex.substr(1, 2), 16);
@@ -12914,24 +13799,24 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
         colorG.value = g;
         colorB.value = b;
     };
-    const addSpriteColorSwatch = document.getElementById("addSpriteColorSwatch");
-    const addSpriteColorR = document.getElementById("addSpriteColorR");
-    const addSpriteColorG = document.getElementById("addSpriteColorG");
-    const addSpriteColorB = document.getElementById("addSpriteColorB");
+    const addSpriteColorSwatch = $("addSpriteColorSwatch");
+    const addSpriteColorR = $("addSpriteColorR");
+    const addSpriteColorG = $("addSpriteColorG");
+    const addSpriteColorB = $("addSpriteColorB");
     if (addSpriteColorSwatch) addSpriteColorSwatch.onchange = syncAddSpriteColorRGB;
     if (addSpriteColorR) addSpriteColorR.onchange = syncAddSpriteColorSwatch;
     if (addSpriteColorG) addSpriteColorG.onchange = syncAddSpriteColorSwatch;
     if (addSpriteColorB) addSpriteColorB.onchange = syncAddSpriteColorSwatch;
-    const addSpriteColorEnabledCheckbox = document.getElementById("addSpriteColorEnabledCheckbox");
+    const addSpriteColorEnabledCheckbox = $("addSpriteColorEnabledCheckbox");
     if (addSpriteColorEnabledCheckbox) {
         addSpriteColorEnabledCheckbox.onclick = () => {
             const newValue = addSpriteColorEnabledCheckbox.textContent.trim() !== "✓";
             addSpriteColorEnabledCheckbox.textContent = newValue ? "✓" : " ";
         };
     }
-    document.getElementById("addSpriteAutoDetect").onclick = () => {
+    $("addSpriteAutoDetect").onclick = () => {
         autoDetectActive = !autoDetectActive;
-        const btn = document.getElementById("addSpriteAutoDetect");
+        const btn = $("addSpriteAutoDetect");
         if (autoDetectActive) {
             btn.style.background = "#4a9eff";
             btn.style.borderColor = "#6bb0ff";
@@ -12942,40 +13827,40 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
             previewCanvas.style.cursor = "default";
         }
     };
-    document.getElementById("addSpriteCancel").onclick = () => {
+    $("addSpriteCancel").onclick = () => {
         document.body.removeChild(dialog);
         document.body.removeChild(fileInput);
     };
-    document.getElementById("addSpriteAdd").onclick = () => {
+    $("addSpriteAdd").onclick = () => {
         if (editSprite) {
             const oldState = serializeAnimationState();
-            editSprite.type = document.getElementById("addSpriteSource").value;
+            editSprite.type = $("addSpriteSource").value;
             if (editSprite.type === "CUSTOM" && fileInput.files[0]) {
                 editSprite.customImageName = fileInput.files[0].name;
             }
-            editSprite.comment = document.getElementById("addSpriteComment").value;
-            editSprite.left = parseInt(document.getElementById("addSpriteLeft").value) || 0;
-            editSprite.top = parseInt(document.getElementById("addSpriteTop").value) || 0;
-            editSprite.width = parseInt(document.getElementById("addSpriteWidth").value) || 32;
-            editSprite.height = parseInt(document.getElementById("addSpriteHeight").value) || 32;
-            const colorEnabledCheckbox = document.getElementById("addSpriteColorEnabledCheckbox");
+            editSprite.comment = $("addSpriteComment").value;
+            editSprite.left = parseInt($("addSpriteLeft").value) || 0;
+            editSprite.top = parseInt($("addSpriteTop").value) || 0;
+            editSprite.width = parseInt($("addSpriteWidth").value) || 32;
+            editSprite.height = parseInt($("addSpriteHeight").value) || 32;
+            const colorEnabledCheckbox = $("addSpriteColorEnabledCheckbox");
             const colorEnabled = colorEnabledCheckbox ? colorEnabledCheckbox.textContent.trim() === "✓" : false;
-            const colorR = parseInt(document.getElementById("addSpriteColorR").value) || 255;
-            const colorG = parseInt(document.getElementById("addSpriteColorG").value) || 255;
-            const colorB = parseInt(document.getElementById("addSpriteColorB").value) || 255;
-            const colorA = parseInt(document.getElementById("addSpriteColorA").value) || 255;
+            const colorR = parseInt($("addSpriteColorR").value) || 255;
+            const colorG = parseInt($("addSpriteColorG").value) || 255;
+            const colorB = parseInt($("addSpriteColorB").value) || 255;
+            const colorA = parseInt($("addSpriteColorA").value) || 255;
             editSprite.colorEffectEnabled = colorEnabled;
             editSprite.colorEffect = {r: colorR, g: colorG, b: colorB, a: colorA};
-            editSprite.rotation = parseFloat(document.getElementById("addSpriteRotate").value) || 0;
-            const modeValue = document.getElementById("addSpriteMode").value;
+            editSprite.rotation = parseFloat($("addSpriteRotate").value) || 0;
+            const modeValue = $("addSpriteMode").value;
             editSprite.mode = modeValue === "" ? undefined : parseInt(modeValue);
-            const stretchX = parseFloat(document.getElementById("addSpriteStretchX").value) || 1;
-            const stretchY = parseFloat(document.getElementById("addSpriteStretchY").value) || 1;
+            const stretchX = parseFloat($("addSpriteStretchX").value) || 1;
+            const stretchY = parseFloat($("addSpriteStretchY").value) || 1;
             if (stretchX !== 1 || stretchY !== 1) {
                 editSprite.xscale = stretchX;
                 editSprite.yscale = stretchY;
             } else {
-                const zoom = parseFloat(document.getElementById("addSpriteZoom").value) || 1;
+                const zoom = parseFloat($("addSpriteZoom").value) || 1;
                 editSprite.xscale = zoom;
                 editSprite.yscale = zoom;
             }
@@ -13001,15 +13886,15 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
             document.body.removeChild(fileInput);
             return;
         }
-        const spriteIndex = parseInt(document.getElementById("addSpriteIndex").value) || currentAnimation.nextSpriteIndex++;
-        const cols = parseInt(document.getElementById("addSpriteCols").value) || 1;
-        const rows = parseInt(document.getElementById("addSpriteRows").value) || 1;
-        const colSep = parseInt(document.getElementById("addSpriteColSep").value) || 0;
-        const rowSep = parseInt(document.getElementById("addSpriteRowSep").value) || 0;
-        const left = parseInt(document.getElementById("addSpriteLeft").value) || 0;
-        const top = parseInt(document.getElementById("addSpriteTop").value) || 0;
-        const width = parseInt(document.getElementById("addSpriteWidth").value) || 32;
-        const height = parseInt(document.getElementById("addSpriteHeight").value) || 32;
+        const spriteIndex = parseInt($("addSpriteIndex").value) || currentAnimation.nextSpriteIndex++;
+        const cols = parseInt($("addSpriteCols").value) || 1;
+        const rows = parseInt($("addSpriteRows").value) || 1;
+        const colSep = parseInt($("addSpriteColSep").value) || 0;
+        const rowSep = parseInt($("addSpriteRowSep").value) || 0;
+        const left = parseInt($("addSpriteLeft").value) || 0;
+        const top = parseInt($("addSpriteTop").value) || 0;
+        const width = parseInt($("addSpriteWidth").value) || 32;
+        const height = parseInt($("addSpriteHeight").value) || 32;
         const spriteW = previewImg ? Math.floor((selectionBox.w - (cols - 1) * colSep) / cols) : width;
         const spriteH = previewImg ? Math.floor((selectionBox.h - (rows - 1) * rowSep) / rows) : height;
         const totalSprites = rows * cols;
@@ -13030,33 +13915,33 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
                 for (let col = 0; col < cols; col++) {
                     const sprite = new AniSprite();
                     sprite.index = index++;
-                    sprite.type = document.getElementById("addSpriteSource").value;
+                    sprite.type = $("addSpriteSource").value;
                     if (sprite.type === "CUSTOM") {
-                        sprite.customImageName = fileInput.files[0] ? fileInput.files[0].name : document.getElementById("addSpriteImageFile").value;
+                        sprite.customImageName = fileInput.files[0] ? fileInput.files[0].name : $("addSpriteImageFile").value;
                     }
-                    sprite.comment = document.getElementById("addSpriteComment").value + (rows * cols > 1 ? ` (${row * cols + col})` : "");
+                    sprite.comment = $("addSpriteComment").value + (rows * cols > 1 ? ` (${row * cols + col})` : "");
                     sprite.left = selectionBox.x + col * (spriteW + colSep);
                     sprite.top = selectionBox.y + row * (spriteH + rowSep);
                     sprite.width = spriteW;
                     sprite.height = spriteH;
-                    const colorEnabledCheckbox = document.getElementById("addSpriteColorEnabledCheckbox");
+                    const colorEnabledCheckbox = $("addSpriteColorEnabledCheckbox");
             const colorEnabled = colorEnabledCheckbox ? colorEnabledCheckbox.textContent.trim() === "✓" : false;
-                    const colorR = parseInt(document.getElementById("addSpriteColorR").value) || 255;
-                    const colorG = parseInt(document.getElementById("addSpriteColorG").value) || 255;
-                    const colorB = parseInt(document.getElementById("addSpriteColorB").value) || 255;
-                    const colorA = parseInt(document.getElementById("addSpriteColorA").value) || 255;
+                    const colorR = parseInt($("addSpriteColorR").value) || 255;
+                    const colorG = parseInt($("addSpriteColorG").value) || 255;
+                    const colorB = parseInt($("addSpriteColorB").value) || 255;
+                    const colorA = parseInt($("addSpriteColorA").value) || 255;
                     sprite.colorEffectEnabled = colorEnabled;
                     sprite.colorEffect = {r: colorR, g: colorG, b: colorB, a: colorA};
-                    sprite.rotation = parseFloat(document.getElementById("addSpriteRotate").value) || 0;
-                    const modeValue = document.getElementById("addSpriteMode").value;
+                    sprite.rotation = parseFloat($("addSpriteRotate").value) || 0;
+                    const modeValue = $("addSpriteMode").value;
                     sprite.mode = modeValue === "" ? undefined : parseInt(modeValue);
-                    const stretchX = parseFloat(document.getElementById("addSpriteStretchX").value) || 1;
-                    const stretchY = parseFloat(document.getElementById("addSpriteStretchY").value) || 1;
+                    const stretchX = parseFloat($("addSpriteStretchX").value) || 1;
+                    const stretchY = parseFloat($("addSpriteStretchY").value) || 1;
                     if (stretchX !== 1 || stretchY !== 1) {
                         sprite.xscale = stretchX;
                         sprite.yscale = stretchY;
                     } else {
-                        const zoom = parseFloat(document.getElementById("addSpriteZoom").value) || 1;
+                        const zoom = parseFloat($("addSpriteZoom").value) || 1;
                         sprite.xscale = zoom;
                         sprite.yscale = zoom;
                     }
@@ -13082,45 +13967,45 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
             updateSpritesList();
             redraw();
             saveSession();
-            document.getElementById("addSpriteIndex").value = spriteIndex + totalSprites;
+            $("addSpriteIndex").value = spriteIndex + totalSprites;
         }
     };
     if (editSprite) {
-        document.getElementById("addSpriteSource").value = editSprite.type;
-        document.getElementById("addSpriteImageFile").value = editSprite.customImageName || "";
-        document.getElementById("addSpriteComment").value = editSprite.comment;
-        document.getElementById("addSpriteIndex").value = editSprite.index;
-        document.getElementById("addSpriteLeft").value = editSprite.left;
-        document.getElementById("addSpriteTop").value = editSprite.top;
-        document.getElementById("addSpriteWidth").value = editSprite.width;
-        document.getElementById("addSpriteHeight").value = editSprite.height;
-        const addSpriteColorEnabledCheckbox = document.getElementById("addSpriteColorEnabledCheckbox");
+        $("addSpriteSource").value = editSprite.type;
+        $("addSpriteImageFile").value = editSprite.customImageName || "";
+        $("addSpriteComment").value = editSprite.comment;
+        $("addSpriteIndex").value = editSprite.index;
+        $("addSpriteLeft").value = editSprite.left;
+        $("addSpriteTop").value = editSprite.top;
+        $("addSpriteWidth").value = editSprite.width;
+        $("addSpriteHeight").value = editSprite.height;
+        const addSpriteColorEnabledCheckbox = $("addSpriteColorEnabledCheckbox");
         if (addSpriteColorEnabledCheckbox) addSpriteColorEnabledCheckbox.textContent = editSprite.colorEffectEnabled ? "✓" : " ";
         const r = editSprite.colorEffect ? editSprite.colorEffect.r : 255;
         const g = editSprite.colorEffect ? editSprite.colorEffect.g : 255;
         const b = editSprite.colorEffect ? editSprite.colorEffect.b : 255;
-        document.getElementById("addSpriteColorR").value = r;
-        document.getElementById("addSpriteColorG").value = g;
-        document.getElementById("addSpriteColorB").value = b;
-        document.getElementById("addSpriteColorA").value = editSprite.colorEffect ? editSprite.colorEffect.a : 255;
-        const addSpriteColorSwatch = document.getElementById("addSpriteColorSwatch");
+        $("addSpriteColorR").value = r;
+        $("addSpriteColorG").value = g;
+        $("addSpriteColorB").value = b;
+        $("addSpriteColorA").value = editSprite.colorEffect ? editSprite.colorEffect.a : 255;
+        const addSpriteColorSwatch = $("addSpriteColorSwatch");
         if (addSpriteColorSwatch) {
             const hex = `#${[r, g, b].map(x => x.toString(16).padStart(2, '0')).join('')}`;
             addSpriteColorSwatch.value = hex;
         }
-        document.getElementById("addSpriteRotate").value = editSprite.rotation || 0;
-        const addSpriteModeEl = document.getElementById("addSpriteMode");
+        $("addSpriteRotate").value = editSprite.rotation || 0;
+        const addSpriteModeEl = $("addSpriteMode");
         if (addSpriteModeEl) {
             addSpriteModeEl.value = editSprite.mode !== undefined && editSprite.mode !== null ? editSprite.mode.toString() : "";
         }
         if (editSprite.xscale === editSprite.yscale) {
-            document.getElementById("addSpriteZoom").value = editSprite.xscale || 1;
-            document.getElementById("addSpriteStretchX").value = 1;
-            document.getElementById("addSpriteStretchY").value = 1;
+            $("addSpriteZoom").value = editSprite.xscale || 1;
+            $("addSpriteStretchX").value = 1;
+            $("addSpriteStretchY").value = 1;
         } else {
-            document.getElementById("addSpriteZoom").value = 1;
-            document.getElementById("addSpriteStretchX").value = editSprite.xscale || 1;
-            document.getElementById("addSpriteStretchY").value = editSprite.yscale || 1;
+            $("addSpriteZoom").value = 1;
+            $("addSpriteStretchX").value = editSprite.xscale || 1;
+            $("addSpriteStretchY").value = editSprite.yscale || 1;
         }
         selectionBox.x = editSprite.left;
         selectionBox.y = editSprite.top;
@@ -13134,19 +14019,19 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
             }
         } else if (editSprite.type !== "CUSTOM") {
             const sourceChangeEvent = new Event("change");
-            document.getElementById("addSpriteSource").dispatchEvent(sourceChangeEvent);
+            $("addSpriteSource").dispatchEvent(sourceChangeEvent);
             setTimeout(() => updateAddSpritePreview(), 50);
         }
     } else {
-        const left = parseInt(document.getElementById("addSpriteLeft").value) || 0;
-        const top = parseInt(document.getElementById("addSpriteTop").value) || 0;
-        const width = parseInt(document.getElementById("addSpriteWidth").value) || 32;
-        const height = parseInt(document.getElementById("addSpriteHeight").value) || 32;
+        const left = parseInt($("addSpriteLeft").value) || 0;
+        const top = parseInt($("addSpriteTop").value) || 0;
+        const width = parseInt($("addSpriteWidth").value) || 32;
+        const height = parseInt($("addSpriteHeight").value) || 32;
         selectionBox.x = left;
         selectionBox.y = top;
         selectionBox.w = width;
         selectionBox.h = height;
-        const addSpriteModeEl = document.getElementById("addSpriteMode");
+        const addSpriteModeEl = $("addSpriteMode");
         if (addSpriteModeEl) {
             addSpriteModeEl.value = "";
         }
@@ -13185,7 +14070,7 @@ function showAlertDialog(message, callback) {
     `;
     dialog.appendChild(content);
     document.body.appendChild(dialog);
-    document.getElementById("alertOk").onclick = () => {
+    $("alertOk").onclick = () => {
         document.body.removeChild(dialog);
         if (callback) callback();
     };
@@ -13256,8 +14141,8 @@ function showPromptDialog(message, defaultValue, callback) {
         document.body.removeChild(dialog);
         if (callback) callback(null);
     };
-    document.getElementById("promptOk").onclick = handleOk;
-    document.getElementById("promptCancel").onclick = handleCancel;
+    $("promptOk").onclick = handleOk;
+    $("promptCancel").onclick = handleCancel;
     input.onkeydown = (e) => {
         if (e.key === "Enter") {
             e.preventDefault();
@@ -13375,8 +14260,8 @@ function showColorPickerDialog(currentColor, callback) {
     `;
     dialog.appendChild(content);
     document.body.appendChild(dialog);
-    const gradientCanvas = document.getElementById("colorGradient");
-    const valueSlider = document.getElementById("colorValueSlider");
+    const gradientCanvas = $("colorGradient");
+    const valueSlider = $("colorValueSlider");
     const gradCtx = gradientCanvas.getContext("2d");
     const valCtx = valueSlider.getContext("2d");
     function updateGradient() {
@@ -13400,13 +14285,13 @@ function showColorPickerDialog(currentColor, callback) {
     function updateColor() {
         const rgb = hsvToRgb(h, s / 100, v / 255);
         r = rgb.r; g = rgb.g; b = rgb.b;
-        document.getElementById("colorR").value = r;
-        document.getElementById("colorG").value = g;
-        document.getElementById("colorB").value = b;
-        document.getElementById("colorH").value = Math.round(h);
-        document.getElementById("colorS").value = Math.round(s);
-        document.getElementById("colorV").value = Math.round(v);
-        const hexInput = document.getElementById("colorHTML");
+        $("colorR").value = r;
+        $("colorG").value = g;
+        $("colorB").value = b;
+        $("colorH").value = Math.round(h);
+        $("colorS").value = Math.round(s);
+        $("colorV").value = Math.round(v);
+        const hexInput = $("colorHTML");
         if (hexInput) hexInput.value = `#${[r,g,b].map(x => x.toString(16).padStart(2,'0')).join('')}`;
         updateGradient();
         updateValueSlider();
@@ -13427,24 +14312,24 @@ function showColorPickerDialog(currentColor, callback) {
         v = (1 - y / 200) * 255;
         updateColor();
     };
-    document.getElementById("colorOK").onclick = () => {
+    $("colorOK").onclick = () => {
         callback({r, g, b, a});
         document.body.removeChild(dialog);
     };
-    document.getElementById("colorCancel").onclick = () => {
+    $("colorCancel").onclick = () => {
         callback(null);
         document.body.removeChild(dialog);
     };
     ["colorH","colorS","colorV","colorR","colorG","colorB","colorHTML"].forEach(id => {
-        document.getElementById(id).onchange = () => {
-            if (id === "colorH") h = parseFloat(document.getElementById(id).value) || 0;
-            else if (id === "colorS") s = parseFloat(document.getElementById(id).value) || 0;
-            else if (id === "colorV") v = parseFloat(document.getElementById(id).value) || 0;
-            else if (id === "colorR") r = parseInt(document.getElementById(id).value) || 0;
-            else if (id === "colorG") g = parseInt(document.getElementById(id).value) || 0;
-            else if (id === "colorB") b = parseInt(document.getElementById(id).value) || 0;
+        $(id).onchange = () => {
+            if (id === "colorH") h = parseFloat($(id).value) || 0;
+            else if (id === "colorS") s = parseFloat($(id).value) || 0;
+            else if (id === "colorV") v = parseFloat($(id).value) || 0;
+            else if (id === "colorR") r = parseInt($(id).value) || 0;
+            else if (id === "colorG") g = parseInt($(id).value) || 0;
+            else if (id === "colorB") b = parseInt($(id).value) || 0;
             else if (id === "colorHTML") {
-                const hex = document.getElementById(id).value.replace("#", "");
+                const hex = $(id).value.replace("#", "");
                 if (hex.length === 6) {
                     r = parseInt(hex.substr(0,2), 16);
                     g = parseInt(hex.substr(2,2), 16);
@@ -13560,9 +14445,9 @@ function setupContextMenus() {
         contextMenu.appendChild(rightItem);
         const timelineItem = createMenuItem("Timeline", timelineVisible, () => {
             if (timelineContainer) {
-                const canvasTimelineSplitter = document.getElementById("canvasTimelineSplitter");
+                const canvasTimelineSplitter = $("canvasTimelineSplitter");
                 const newVisible = !timelineVisible;
-                const mainSplitter = document.getElementById("mainSplitter");
+                const mainSplitter = $("mainSplitter");
                 if (newVisible) {
                     timelineContainer.style.display = "flex";
                     timelineContainer.style.visibility = "visible";
@@ -13628,7 +14513,7 @@ function setupContextMenus() {
     const rightPanel = document.querySelector(".right-panel");
     const timelineContainer = document.querySelector(".timeline-container");
     const toolbar = document.querySelector(".toolbar");
-    const tabsContainer = document.getElementById("tabsContainer");
+    const tabsContainer = $("tabsContainer");
     if (leftPanel) {
         leftPanel.addEventListener("contextmenu", (e) => showContextMenu(e, "left"));
     }
@@ -13654,15 +14539,15 @@ function setupContextMenus() {
     }
     document.addEventListener("keydown", (e) => {
         if (e.key === "Escape" || e.key === "Esc") {
-            const settingsDialog = document.getElementById("settingsDialog");
-            const aboutDialog = document.getElementById("infoDialog");
-            const hotkeysDialog = document.getElementById("hotkeysDialog");
-            const defaultGaniDialog = document.getElementById("defaultGaniDialog");
-            const colorSchemeDropdown = document.getElementById("colorSchemeDropdown");
-            const contextMenu = document.getElementById("panelContextMenu");
+            const settingsDialog = $("settingsDialog");
+            const aboutDialog = $("infoDialog");
+            const hotkeysDialog = $("hotkeysDialog");
+            const defaultGaniDialog = document.getElementById('defaultOpenDialog');
+            const colorSchemeDropdown = $("colorSchemeDropdown");
+            const contextMenu = $("panelContextMenu");
             const contextMenus = document.querySelectorAll(".context-menu");
             if (settingsDialog && settingsDialog.style.display === "flex") {
-                const settingsCancel = document.getElementById("settingsCancel");
+                const settingsCancel = $("settingsCancel");
                 if (settingsCancel && settingsCancel.onclick) {
                     settingsCancel.onclick();
                 } else {
@@ -13670,7 +14555,7 @@ function setupContextMenus() {
                 }
             }
             if (aboutDialog && aboutDialog.style.display === "flex") {
-                const aboutOK = document.getElementById("aboutOK");
+                const aboutOK = $("aboutOK");
                 if (aboutOK && aboutOK.onclick) {
                     aboutOK.onclick();
                 } else {
@@ -13678,7 +14563,7 @@ function setupContextMenus() {
                 }
             }
             if (hotkeysDialog && hotkeysDialog.style.display === "flex") {
-                const hotkeysOK = document.getElementById("hotkeysOK");
+                const hotkeysOK = $("hotkeysOK");
                 if (hotkeysOK && hotkeysOK.onclick) {
                     hotkeysOK.onclick();
                 } else {
@@ -13718,19 +14603,19 @@ function setupContextMenus() {
 
 (function initP2PCollab() {
     if (typeof Peer === "undefined") return;
-    const collabBtn = document.getElementById("btnCollab");
-    const collabDropdown = document.getElementById("collabDropdown");
-    const collabMyCode = document.getElementById("collabMyCode");
-    const collabStatus = document.getElementById("collabStatus");
-    const collabPeers = document.getElementById("collabPeers");
-    const collabJoinCode = document.getElementById("collabJoinCode");
-    const collabJoinBtn = document.getElementById("collabJoin");
-    const collabCopyBtn = document.getElementById("collabCopy");
-    const collabDisconnect = document.getElementById("collabDisconnect");
-    const collabToggleTrack = document.getElementById("collabToggleTrack");
-    const collabToggleThumb = document.getElementById("collabToggleThumb");
-    const collabToggleLabel = document.getElementById("collabToggleLabel");
-    const collabCodeSection = document.getElementById("collabCodeSection");
+    const collabBtn = $("btnCollab");
+    const collabDropdown = $("collabDropdown");
+    const collabMyCode = $("collabMyCode");
+    const collabStatus = $("collabStatus");
+    const collabPeers = $("collabPeers");
+    const collabJoinCode = $("collabJoinCode");
+    const collabJoinBtn = $("collabJoin");
+    const collabCopyBtn = $("collabCopy");
+    const collabDisconnect = $("collabDisconnect");
+    const collabToggleTrack = $("collabToggleTrack");
+    const collabToggleThumb = $("collabToggleThumb");
+    const collabToggleLabel = $("collabToggleLabel");
+    const collabCodeSection = $("collabCodeSection");
     if (!collabBtn || !collabDropdown) return;
     let collabEnabled = true;
     function teardownPeer() { connections.forEach(c => c.conn.close()); connections = []; remoteGhosts.clear(); if (peer) { peer.destroy(); peer = null; } hooksInit = false; }
@@ -14133,3 +15018,5 @@ function setupContextMenus() {
 
     if (collabEnabled) createPeer();
 })();
+Object.defineProperty(window, 'ganiAnimations', { get: () => animations, configurable: true });
+Object.defineProperty(window, 'ganiCurrentTabIndex', { get: () => currentTabIndex, configurable: true });

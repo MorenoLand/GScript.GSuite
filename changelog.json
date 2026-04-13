@@ -1,13 +1,30 @@
 [
   {
+    "version": "0.1.41",
+    "date": "2026-04-12",
+    "tag": "GSuite",
+    "changes": [
+      "Merged gani/level editor properly into a single form factor so you don't need to 'switch' to the gani editor and vice versa",
+      "Mousewheel zoom now zooms toward mouse position in both gani and level editors",
+      "Suite tabs can be reordered by drag-and-drop with live movement instead of a drop marker",
+      "Close All now closes actual suite tabs instead of only the current editor's local tab list",
+      "Gani editor grid defaults to on for new users while still respecting saved preference",
+      "Selected gani sprite pieces now have rotation anchors tied to the same rotation value used by the left panel and saved output",
+      "Sprite editor left-panel rotation now applies across multiple selected gani sprites at once",
+      "Gani box-select no longer gets stuck as easily when dragging off-canvas",
+      "Open File from the gani side now shows the shared level formats too for the universal editor flow",
+      "Level editor objects and NPCs now support multi-selection for moving, copying, cutting, pasting, and deleting"
+    ]
+  },
+  {
     "version": "0.1.40",
     "date": "2026-04-07",
-    "tag": "GraalSuite",
+    "tag": "GSuite",
     "changes": [
       "Setshape2 output box no longer overflows its container",
       "Setshape2 output switched to textarea for reliable clamping",
       "Setshape2 GS2 output no longer wraps first argument in quotes",
-      "Gani editor About button now uses the shared GraalSuite info dialog",
+      "Gani/level editor About button now uses the shared GSuite info dialog",
       "Fixed .nw/.gmap files bleeding into gani editor tabs when dropping while in gani mode"
     ]
   },
@@ -24,7 +41,7 @@
   {
     "version": "0.1.39",
     "date": "2026-04-07",
-    "tag": "GraalSuite",
+    "tag": "GSuite",
     "changes": [
       "Mobile play mode controls (iPad/touch): dual analog sticks for movement and sword attack, grab hold button, noclip toggle button",
       "Pinch-to-zoom with snap-to-factor and zoom-to-point for both main canvas and tileset",
@@ -51,7 +68,7 @@
   {
     "version": "0.1.38",
     "date": "2026-04-06",
-    "tag": "GraalSuite",
+    "tag": "GSuite",
     "changes": [
       "Color scheme and custom CSS now shared globally between both editors"
     ]
@@ -69,7 +86,7 @@
   {
     "version": "0.1.37",
     "date": "2026-04-06",
-    "tag": "GraalSuite",
+    "tag": "GSuite",
     "changes": [
       "Auto-update no longer force-installs on launch — prompts with Update Now / Later dialog",
       "\"Skip this version\" checkbox remembers dismissed updates per version"
@@ -89,7 +106,7 @@
   {
     "version": "0.1.35",
     "date": "2026-04-06",
-    "tag": "GraalSuite",
+    "tag": "GSuite",
     "changes": [
       "Setshape2/setimgpart Editor — dialog title renamed to Setshape2/setimgpart Editor",
       "Setshape2/setimgpart Editor — Cut button renamed to Setimgpart",
@@ -112,7 +129,7 @@
   {
     "version": "0.1.33",
     "date": "2026-04-06",
-    "tag": "GraalSuite",
+    "tag": "GSuite",
     "changes": [
       "Auto-updater — checks for updates on launch, downloads and installs silently, restarts automatically",
       "Check for Updates button added to both editor toolbars (Tauri only)",
@@ -142,7 +159,7 @@
     "tag": "Gani Editor",
     "changes": [
       "Tauri: native file dialogs, workspace indexing, lazy image loading from disk (no RAM preload)",
-      "Tauri: FILENAMECACHE.txt — workspace file index persisted to disk (classic Graal format: relative/path,crc32), no rescan on restart",
+      "Tauri: FILENAMECACHE.txt — workspace file index persisted to disk (classic level format: relative/path,crc32), no rescan on restart",
       "Tauri: workspace scan streams results progressively via event-based chunks, UI stays responsive during indexing",
       "PeerJS P2P collaboration — real-time multi-user editing with cursor sync, sprite changes, and frame updates"
     ]
@@ -164,7 +181,7 @@
       "Play mode — edit bypass toggle (key 3) to double-click and edit objects without exiting play mode",
       "Player settings dialog — customize HEAD, BODY, SHIELD, SWORD, HAT, colors, and per-action ganis",
       "Player settings dialog — animated preview canvas with pan/drag, scroll-wheel zoom, +/- buttons, 4-direction d-pad, double-click to recenter",
-      "NW parser fix — level names with spaces (e.g. 'new 2.nw') no longer corrupt link x/y/width fields; binary graal link parser patched to match",
+      "NW parser fix — level names with spaces (e.g. 'new 2.nw') no longer corrupt link x/y/width fields; binary level link parser patched to match",
       "Link serialization — empty nextLevel writes as '-' placeholder to keep token count valid on reload"
     ]
   },
@@ -214,7 +231,7 @@
       ".graal and .zelda binary format support — open, view, and save classic Graal/Zelda Online levels",
       "Zelda format enforces object restrictions — NPC and Chest placement blocked for .zelda tabs",
       "Binary tile RLE decoder with LSB-first bitstream (12-bit V0/V1, 13-bit V2/V3)",
-      "Sign text decoded/encoded using classic Graal character table and control code sequences",
+      "Sign text decoded/encoded using classic character table and control code sequences",
       "Tileset switching now works for all images in fileCache (not just file-picker uploads)",
       "Tileset persists when switching tabs — levels with default tileset inherit the combo selection",
       "Tab bar scrolls horizontally instead of wrapping to multiple rows",
@@ -260,7 +277,7 @@
     "date": "2026-03-26",
     "tag": "Gani Editor",
     "changes": [
-      "Monaco editor (VS Code engine) used for Edit Script and Custom CSS dialogs — Graal script syntax highlighting",
+      "Monaco editor (VS Code engine) used for Edit Script and Custom CSS dialogs — gscript syntax highlighting",
       "GScript autocomplete and hover docs in Edit Script — powered by api.gscript.dev",
       "Custom CSS variables --canvas-bg, --canvas-grid, --timeline-bg, --preview-bg, --monaco-theme and more for full theming",
       "All custom dialogs (Confirm, Alert, Settings, Edit Script, Custom CSS) now have titled headers",
@@ -277,7 +294,7 @@
       "NPC showcharacter renders idle.gani character in the level",
       "setcharani support — GS1 and GS2 both parsed",
       "this.head/body/shield overrides gani defaults if file is in working dir cache",
-      "this.colors[0-4] recolors BODY sprites using Graal palette",
+      "this.colors[0-4] recolors BODY sprites using the standard character palette",
       "Screenshot excludes NPC placeholders, selection highlight, signs, and links",
       "Working dir scan batched (64 parallel) with UI yield between batches",
       "Color scheme palette button added to toolbar"
@@ -359,7 +376,7 @@
       "Initial release — object selection, drag-to-place, right-click cancel, mousewheel zoom",
       "Working dir chest/baddy/npc images shown in level",
       "Multi-tab session persistence — all open tabs restored on page reload",
-      "Monaco NPC script editor with GraalScript LSP",
+      "Monaco NPC script editor with GScript LSP",
       "Flip H/V and rotate tile selection",
       "About dialog with changelog tab"
     ]

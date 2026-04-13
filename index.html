@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Graal Suite</title>
+<title>GSuite</title>
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <script src="vendor/monaco-loader.js"></script>
 <script>
@@ -19,45 +19,69 @@
 </script>
 <script src="vendor/peerjs.min.js"></script>
 <script src="js/tileobjects-default.js"></script>
+<script src="js/tabmanager.js"></script>
 <script src="js/tiletypes.js"></script>
 <script src="js/mnglib.js"></script>
 <link rel="stylesheet" href="css/global.css">
+<style>
+.editor-root { width: 100%; height: 100%; }
+.editor-root.hidden { display: none !important; }
+
+.tab-ctx-menu { position: fixed; background: #2b2b2b; border: 1px solid #404040; box-shadow: 0 2px 8px rgba(0,0,0,0.5); z-index: 100000; min-width: 140px; font-family: 'chevyray',monospace; font-size: 12px; color: #e0e0e0; }
+.tab-ctx-item { padding: 6px 12px; cursor: pointer; }
+.tab-ctx-item:hover { background: #404040; }
+.tab-ctx-item { padding: 6px 12px; color: #e0e0e0; cursor: pointer; }
+.tab-ctx-item:hover { background: #353535; }
+</style>
 </head>
 <body>
 <div id="tauriBar">
   <div class="tb-leading" data-tauri-drag-region></div>
-  <div class="tb-title"><img src="favicon.ico"><span id="tbTitle">GraalSuite</span></div>
+  <div class="tb-title"><img src="favicon.ico"><span id="tbTitle">GSuite</span></div>
   <div class="tb-trailing" data-tauri-drag-region>
-    <button id="tbShapesBtn" title="Setshape2 Editor" onclick="typeof SetshapeEditor!=='undefined'&&SetshapeEditor.open()"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAACbUlEQVQ4y52P20uTcRzGn9972MEdHBvOw1JZZk4dTjyXhGEGUgkWFJH1P3QTQXgVne6UThCEFxVBYWVgWCCBQ6IM0cBkouLxTbc5NJzv67b39/66SG2pQfXcfPnC83y/n4fgP1RZd8JAeJ4nIDH+X8OFpQdyKE2063T6S5QmwgIAVNUdE0yWVCMhAGMbTgYQAjAAK5FwS2Zm5sGhgf6LvCC0rq4s3fBV13Z+HRwAceXuE1PtzisAvAD5/R0BwBisNkfxKbfsGdHcseHRQF35oYbHfW9ePZweH2kTIqEFc15Rme/chTOKOz+/eiMFgDCAEQBsKbzk6H/WQWrNU3pDZUW3v7fnqiJH72mUMmHzGdVojijq8vCrAQAgHoth/EMv0uk3+OfNpMwxnDbrSi9YNJrIwuwk45KJ2bYZi63jXVcXrMHPWLSWYH/jWfi/u+LrTGyKhCQOAITtlTcnpRSTYxNw5XkgGS1objyCGSmMZUXt9fe8OOnM2KPuOJAsjufg8RZCmplDia8IgigCAHhB0ADEQ4vzP327hdkGB8fxyHbnQhBFKLKMdUUBRzh9fVOLbtO7KwHZtklzEtpv3eyU12QZYLA50i+X1tRfH/74XtuVIJkkGo3iwe07jxi0+0Vl5a8bmk+vBr586jNZbW1bBIQQHiA81bQdB1SVQlW1YNXho63dTzuOuwuK07wVNXaAtwOAoFFKOY7kTEwHfRPTwR0UaiIBg8nsefv8ybW9Hm+9McWUPTo0GLLY7IGtunpDSkaK2VL4pyrOrNzzdmeWh+O4OGOANDX2UllbvRtamGUEfyczCDEk7ctgjALAD3gS6nZ20OQgAAAAAElFTkSuQmCC" width="14" height="14" style="vertical-align:middle;"><span class="tb-btn-text"> Setshape2</span></button>
-    <button id="tbGmapBtn" title="Gmap Generator" onclick="typeof GmapGenerator!=='undefined'&&GmapGenerator.open()" style="border-left:none;display:inline-flex;align-items:center;gap:4px;"><img src="icons/gmapgen.ico" width="14" height="14" style="image-rendering:pixelated;vertical-align:middle;"><span class="tb-btn-text"> Gmap</span></button>
-    <button id="tbSwitchBtn" title="Switch Editor"><svg width="12" height="10" viewBox="0 0 12 10" fill="none" stroke="currentColor" stroke-width="1.2"><polyline points="8,1 11,4 8,7"/><line x1="1" y1="4" x2="11" y2="4"/><polyline points="4,3 1,6 4,9"/><line x1="11" y1="6" x2="1" y2="6"/></svg><span class="tb-btn-text"> Switch</span></button>
-    <button id="tbAboutBtn" title="About GraalSuite" style="border-left:none;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path fill="currentColor" fill-rule="evenodd" d="M12 23a11 11 0 1 0 0-22 11 11 0 0 0 0 22Zm-.28-16c-.98 0-1.81.47-2.27 1.14A1 1 0 1 1 7.8 7.01 4.73 4.73 0 0 1 11.72 5c2.5 0 4.65 1.88 4.65 4.38 0 2.1-1.54 3.77-3.52 4.24l.14 1a1 1 0 0 1-1.98.27l-.28-2a1 1 0 0 1 .99-1.14c1.54 0 2.65-1.14 2.65-2.38 0-1.23-1.1-2.37-2.65-2.37ZM13 17.88a1.13 1.13 0 1 1-2.25 0 1.13 1.13 0 0 1 2.25 0Z" clip-rule="evenodd"/></svg></button>
+    <button id="tbShapesBtn" title="Setshape2 Editor" onclick="typeof SetshapeEditor!=='undefined'&&SetshapeEditor.open()"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAACbUlEQVQ4y52P20uTcRzGn9972MEdHBvOw1JZZk4dTjyXhGEGUgkWFJH1P3QTQXgVne6UThCEFxVBYWVgWCCBQ6IM0cBkouLxTbc5NJzv67b39/66SG2pQfXcfPnC83y/n4fgP1RZd8JAeJ4nIDH+X8OFpQdyKE2063T6S5QmwgIAVNUdE0yWVCMhAGMbTgYQAjAAK5FwS2Zm5sGhgf6LvCC0rq4s3fBV13Z+HRwAceXuE1PtzisAvAD5/R0BwBisNkfxKbfsGdHcseHRQF35oYbHfW9ePZweH2kTIqEFc15Rme/chTOKOz+/eiMFgDCAEQBsKbzk6H/WQWrNU3pDZUW3v7fnqiJH72mUMmHzGdVojijq8vCrAQAgHoth/EMv0uk3+OfNpMwxnDbrSi9YNJrIwuwk45KJ2bYZi63jXVcXrMHPWLSWYH/jWfi/u+LrTGyKhCQOAITtlTcnpRSTYxNw5XkgGS1objyCGSmMZUXt9fe8OOnM2KPuOJAsjufg8RZCmplDia8IgigCAHhB0ADEQ4vzP327hdkGB8fxyHbnQhBFKLKMdUUBRzh9fVOLbtO7KwHZtklzEtpv3eyU12QZYLA50i+X1tRfH/74XtuVIJkkGo3iwe07jxi0+0Vl5a8bmk+vBr586jNZbW1bBIQQHiA81bQdB1SVQlW1YNXho63dTzuOuwuK07wVNXaAtwOAoFFKOY7kTEwHfRPTwR0UaiIBg8nsefv8ybW9Hm+9McWUPTo0GLLY7IGtunpDSkaK2VL4pyrOrNzzdmeWh+O4OGOANDX2UllbvRtamGUEfyczCDEk7ctgjALAD3gS6nZ20OQgAAAAAElFTkSuQmCC" width="14" height="14"></button>
+    <button id="tbGmapBtn" title="Gmap Generator" onclick="typeof GmapGenerator!=='undefined'&&GmapGenerator.open()" style="border-left:none;display:inline-flex;align-items:center;gap:4px;"><img src="icons/gmapgen.ico" width="14" height="14" style="image-rendering:pixelated;"></button>
+    <button id="tbAboutBtn" title="About GSuite" style="border-left:none;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path fill="currentColor" fill-rule="evenodd" d="M12 23a11 11 0 1 0 0-22 11 11 0 0 0 0 22Zm-.28-16c-.98 0-1.81.47-2.27 1.14A1 1 0 1 1 7.8 7.01 4.73 4.73 0 0 1 11.72 5c2.5 0 4.65 1.88 4.65 4.38 0 2.1-1.54 3.77-3.52 4.24l.14 1a1 1 0 0 1-1.98.27l-.28-2a1 1 0 0 1 .99-1.14c1.54 0 2.65-1.14 2.65-2.38 0-1.23-1.1-2.37-2.65-2.37ZM13 17.88a1.13 1.13 0 1 1-2.25 0 1.13 1.13 0 0 1 2.25 0Z" clip-rule="evenodd"/></svg></button>
     <button class="tb-winbtn" id="tbMin" title="Minimize"><svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor"/></svg></button>
     <button class="tb-winbtn" id="tbMax" title="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x=".5" y=".5" width="9" height="9" stroke="currentColor"/></svg></button>
     <button class="tb-winbtn tb-close" id="tbClose" title="Close"><svg width="10" height="10" viewBox="0 0 10 10"><line x1="1" y1="1" x2="9" y2="9" stroke="currentColor" stroke-width="1.2"/><line x1="9" y1="1" x2="1" y2="9" stroke="currentColor" stroke-width="1.2"/></svg></button>
   </div>
 </div>
-<div id="editorContainer"></div>
+<div id="editorContainer" style="display:flex;flex-direction:column;">
+    <div id="levelRoot" class="editor-root" style="flex:1;min-height:0;height:0;"></div>
+    <div id="ganiRoot" class="editor-root" style="display:none;flex:1;min-height:0;height:0;"></div>
+</div>
     <div id="infoDialog" class="dialog-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:transparent;z-index:10000;justify-content:center;align-items:center;">
-    <div class="dialog-content" style="background:#2b2b2b;border:2px solid #1a1a1a;width:600px;max-width:92vw;height:420px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 4px 16px rgba(0,0,0,0.9);">
-        <div class="dialog-titlebar" style="background:#1e1e1e;border-bottom:2px solid #0a0a0a;display:flex;align-items:stretch;">
-            <div style="display:flex;align-items:center;padding:10px 14px;gap:8px;flex:1;"><img src="favicon.ico" class="titlebar-logo" style="width:18px;height:18px;image-rendering:pixelated;"><span style="font-family:'chevyray',monospace;font-size:13px;color:#c0c0c0;user-select:none;">GraalSuite</span></div>
+    <div class="dialog-content" style="border:2px solid #1a1a1a;width:600px;max-width:92vw;height:420px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 4px 16px rgba(0,0,0,0.9);">
+        <div class="dialog-titlebar" style="display:flex;align-items:stretch;">
+            <div style="display:flex;align-items:center;padding:10px 14px;gap:8px;flex:1;"><img src="favicon.ico" class="titlebar-logo" style="width:18px;height:18px;image-rendering:pixelated;"><span style="font-family:'chevyray',monospace;font-size:13px;color:#c0c0c0;user-select:none;">GSuite</span></div>
             <div style="display:flex;align-items:stretch;">
-                <button class="info-tab-btn" data-tab="about" style="background:transparent;border:none;border-left:1px solid #0a0a0a;padding:10px 16px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;color:#888;user-select:none;">About</button>
-                <button class="info-tab-btn" data-tab="changelog" style="background:transparent;border:none;border-left:1px solid #0a0a0a;padding:10px 16px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;color:#888;user-select:none;">Changelog</button>
+                <button class="info-tab-btn active" data-tab="about">About</button>
+                <button class="info-tab-btn" data-tab="changelog">Changelog</button>
             </div>
         </div>
         <div id="infoContent" style="flex:1;overflow-y:auto;padding:20px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;line-height:1.6;user-select:none;"></div>
         <div style="border-top:1px solid #0a0a0a;padding:12px 16px;display:flex;justify-content:flex-end;">
-            <button id="infoClose" style="background:#1a1a1a;color:#ffffff;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;padding:8px 16px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;">Close</button>
+            <button id="infoClose" style="padding:8px 16px;">Close</button>
+        </div>
+    </div>
+</div>
+<div id="defaultOpenDialog" class="dialog-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;justify-content:center;align-items:center;">
+    <div class="dialog-content" style="border:2px solid #1a1a1a;width:420px;max-width:90vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 4px 16px rgba(0,0,0,0.9);">
+        <div class="dialog-titlebar" style="display:flex;align-items:stretch;">
+            <div style="flex:1;display:flex;align-items:center;padding:10px 14px;gap:8px;"><i class="fas fa-book"></i><span style="font-family:'chevyray',monospace;font-size:13px;color:#c0c0c0;user-select:none;">Open Default</span></div>
+            <button class="defaultOpen-tab-btn active" data-tab="gani">Ganis</button>
+            <button class="defaultOpen-tab-btn" data-tab="level">Levels</button>
+        </div>
+        <div id="defaultOpenContent" style="flex:1;overflow-y:auto;min-height:300px;max-height:420px;"></div>
+        <div style="border-top:1px solid #0a0a0a;padding:10px 14px;display:flex;justify-content:flex-end;">
+            <button id="defaultOpenCancel" style="padding:6px 16px;">Cancel</button>
         </div>
     </div>
 </div>
 <script>
 (function() {
     const _isTauri = !!window.__TAURI__;
-    const params = new URLSearchParams(location.search);
-    const host = location.hostname;
     let _currentApp = null;
 
     let _changelogData = null;
@@ -70,10 +94,10 @@
         const c = document.getElementById('infoContent');
         if (!c) return;
         if (tab === 'about') {
-            if (!c._aboutLoaded) { c._aboutLoaded = true; c._aboutHTML = '<p style="margin:0 0 12px 0;">A suite of tools for Graal Online development — includes a .gani animation editor, .nw/.graal/.zelda level editor, Gmap Generator, and Setshape2 editor.</p><p style="margin:0 0 12px 0;">Part of Preagonal/OpenGraal &mdash; preserving Graal for future generations.</p><p style="margin:0 0 12px 0;border-top:1px solid #0a0a0a;padding-top:12px;font-size:11px;color:#888;"><strong>Credits:</strong><br>Original C++ TilesEditor by <a href="https://www.xing.com/profile/Stefan_Knorr9" target="_blank" style="color:#4a9eff;text-decoration:none;">Stefan Knorr</a><br>Modern C++ TilesEditor by <a href="https://github.com/lukegrahamSydney/TilesEditor" target="_blank" style="color:#4a9eff;text-decoration:none;">39ster/luke graham</a><br>Icon (+setshape2 concept) by <a href="https://github.com/dustyshouri" target="_blank" style="color:#4a9eff;text-decoration:none;">DustyPorViva</a><br>GraalSuite (+setimgpart editor) by <a href="https://github.com/denveous" target="_blank" style="color:#4a9eff;text-decoration:none;">denveous</a></p>'; }
+            if (!c._aboutLoaded) { c._aboutLoaded = true; c._aboutHTML = '<p style="margin:0 0 12px 0;">A suite of tools for Graal Online development — includes a .gani animation editor, .nw/.graal/.zelda level editor, Gmap Generator, and Setshape2 editor.</p><p style="margin:0 0 12px 0;">Part of Preagonal/OpenGraal &mdash; preserving Graal for future generations.</p><p style="margin:0 0 12px 0;border-top:1px solid #0a0a0a;padding-top:12px;font-size:11px;color:#888;"><strong>Credits:</strong><br>Original C++ TilesEditor by <a href="https://www.xing.com/profile/Stefan_Knorr9" target="_blank" style="color:#4a9eff;text-decoration:none;">Stefan Knorr</a><br>Modern C++ TilesEditor by <a href="https://github.com/lukegrahamSydney/TilesEditor" target="_blank" style="color:#4a9eff;text-decoration:none;">39ster/luke graham</a><br>Icon (+setshape2 concept) by <a href="https://github.com/dustyshouri" target="_blank" style="color:#4a9eff;text-decoration:none;">DustyPorViva</a><br>GSuite (+setimgpart editor) by <a href="https://github.com/denveous" target="_blank" style="color:#4a9eff;text-decoration:none;">denveous</a></p>'; }
             c.innerHTML = c._aboutHTML;
         } else if (tab === 'changelog') {
-            const _tagColors = {'GraalSuite':'#c792ea','Level Editor':'#4a9eff','Gani Editor':'#56d364','Gmap Generator':'#ffa657','Setshape2':'#ff7b72'};
+            const _tagColors = {'GSuite':'#c792ea','Level Editor':'#4a9eff','Gani Editor':'#56d364','Gmap Generator':'#ffa657','Setshape2':'#ff7b72'};
             function _render() { c.innerHTML = _changelogData.map(e => `<div style="margin-bottom:20px;"><div style="font-size:13px;color:#569cd6;margin-bottom:8px;border-bottom:1px solid #3a3a3a;padding-bottom:6px;">v${e.version} <span style="color:${_tagColors[e.tag]||'#888'};font-size:11px;">(${e.tag})</span> <span style="color:#666;font-size:11px;">${e.date}</span></div><ul style="margin:0;padding-left:20px;color:#c0c0c0;">${e.changes.map(ch=>`<li style="margin-bottom:4px;">${ch}</li>`).join("")}</ul></div>`).join(""); }
             if (_changelogData) { _render(); return; }
             c.innerHTML = '<div style="color:#888;">Loading...</div>';
@@ -84,6 +108,38 @@
     _fixVH(); window.addEventListener('resize', _fixVH); window.addEventListener('orientationchange', () => setTimeout(_fixVH, 100));
     document.addEventListener('DOMContentLoaded', () => {
         _fixVH();
+        window.levelEditor = { 
+            activateLevelTab: () => {}, 
+            deactivateLevelTab: () => {},
+            closeLevelTabByData: () => false
+        };
+        if (window.tabManager) {
+            tabManager.init();
+        }
+        window._defaultDialogLoaders = {};
+        window.openDefaultDialog = (tab) => {
+            const dlg = document.getElementById('defaultOpenDialog');
+            const content = document.getElementById('defaultOpenContent');
+            if (!dlg || !content) return;
+            document.querySelectorAll('.defaultOpen-tab-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.tab === tab);
+            });
+            content.innerHTML = '<div style="color:#888;padding:20px;text-align:center;font-family:chevyray,monospace;font-size:12px;">Loading...</div>';
+            dlg.style.display = 'flex';
+            const loader = window._defaultDialogLoaders[tab];
+            if (loader) loader(content);
+        };
+        const _defaultDlg = document.getElementById('defaultOpenDialog');
+        document.getElementById('defaultOpenCancel').onclick = () => { _defaultDlg.style.display = 'none'; };
+        _defaultDlg.onclick = e => { if (e.target === _defaultDlg) _defaultDlg.style.display = 'none'; };
+        document.querySelectorAll('.defaultOpen-tab-btn').forEach(btn => { btn.onclick = () => window.openDefaultDialog(btn.dataset.tab); });
+        document.addEventListener('click', e => {
+            const btn = e.target.closest('#level-btnLevelCollab');
+            const drop = document.getElementById('level-levelCollabDropdown');
+            if (!drop) return;
+            if (btn) { drop.style.display = drop.style.display === 'block' ? 'none' : 'block'; e.stopPropagation(); return; }
+            if (!drop.contains(e.target)) drop.style.display = 'none';
+        });
         const infoClose = document.getElementById('infoClose');
         const infoDialog = document.getElementById('infoDialog');
         if (infoClose) infoClose.onclick = () => { infoDialog.style.display = 'none'; };
@@ -118,21 +174,6 @@
         document.getElementById('tbAboutBtn').onclick = () => window.openInfoDialog('about');
     }
 
-    function detectApp() {
-        if (host === 'gani.gscript.dev') return 'gani';
-        if (host === 'level.gscript.dev') return 'level';
-        if (params.get('app') === 'gani') return 'gani';
-        if (params.get('app') === 'level') return 'level';
-        return 'level';
-    }
-
-    function setURLParam(app) {
-        if (host === 'gani.gscript.dev' || host === 'level.gscript.dev') return;
-        const u = new URL(location.href);
-        u.searchParams.set('app', app);
-        history.replaceState(null, '', u.toString());
-    }
-
     function destroyCurrent() {
         const c = document.getElementById('editorContainer');
         c.innerHTML = '';
@@ -142,13 +183,119 @@
         window._aniEditorInstance = null;
     }
 
+    function switchToTab(type) {
+        const suiteTabs = document.getElementById('suiteTabs');
+        const ganiRoot = document.getElementById('ganiRoot');
+        const levelRoot = document.getElementById('levelRoot');
+        if (type === 'gani') {
+            levelRoot.style.display = 'none';
+            ganiRoot.style.display = '';
+            ganiRoot.style.flex = '1';
+            ganiRoot.style.height = '';
+            const ganiMc = ganiRoot.querySelector('.main-container');
+            const ganiContent = ganiMc?.querySelector('.content-area');
+            if (suiteTabs && ganiMc && ganiContent) ganiMc.insertBefore(suiteTabs, ganiContent);
+            const ms = document.getElementById('gani-mainSplitter');
+            if (ms) { ms.style.height = ''; ms.style.maxHeight = ''; }
+            const lp = ganiRoot.querySelector('.left-panel');
+            const rp = ganiRoot.querySelector('.right-panel');
+            if (lp) { lp.style.width = '270px'; lp.style.flex = '0 0 270px'; }
+            if (rp) { rp.style.width = '250px'; rp.style.flex = '0 0 250px'; }
+            ganiRoot.offsetHeight;
+            const cc = ganiRoot.querySelector('.center-panel');
+            if (cc) cc.offsetHeight;
+            _currentApp = 'gani';
+            if (typeof updateGaniTitle === 'function') updateGaniTitle();
+            requestAnimationFrame(() => { if (typeof resizeCanvas === 'function') { resizeCanvas(); if (typeof redraw === 'function') redraw(); } });
+            setTimeout(() => { if (typeof resizeCanvas === 'function') resizeCanvas(); }, 50);
+            setTimeout(() => { if (typeof resizeCanvas === 'function') resizeCanvas(); }, 200);
+        } else {
+            ganiRoot.style.display = 'none';
+            ganiRoot.style.flex = '';
+            ganiRoot.style.height = '0';
+            levelRoot.style.display = 'flex';
+            levelRoot.style.flex = '1';
+            levelRoot.style.height = '';
+            const levelMc = levelRoot.querySelector('.main-container');
+            const levelToolbar = document.getElementById('levelToolbar');
+            if (suiteTabs && levelMc && levelToolbar) levelMc.insertBefore(suiteTabs, levelToolbar);
+            if (levelMc) {
+                levelMc.style.height = '';
+                levelMc.style.overflow = '';
+                levelMc.querySelectorAll(':scope > .toolbar, :scope > #levelToolbar, :scope > #levelArea, :scope > .status-bar').forEach(el => el.style.display = '');
+            }
+            requestAnimationFrame(() => { if (window.levelEditor && typeof window.levelEditor.resizeCanvas === 'function') { window.levelEditor.resizeCanvas(); } });
+            setTimeout(() => { if (window.levelEditor && typeof window.levelEditor.resizeCanvas === 'function') window.levelEditor.resizeCanvas(); }, 50);
+            setTimeout(() => { if (window.levelEditor && typeof window.levelEditor.resizeCanvas === 'function') window.levelEditor.resizeCanvas(); }, 200);
+            const lp = ganiRoot.querySelector('.left-panel');
+            const rp = ganiRoot.querySelector('.right-panel');
+            if (lp) { lp.style.width = '270px'; lp.style.flex = '0 0 270px'; }
+            if (rp) { rp.style.width = '250px'; rp.style.flex = '0 0 250px'; }
+            _currentApp = 'level';
+        }
+        document.dispatchEvent(new CustomEvent('editorvisible', { detail: { type } }));
+    }
+    window.switchToTab = switchToTab;
+
+    function showEmptyEditorState() {
+        const suiteTabs = document.getElementById('suiteTabs');
+        const ganiRoot = document.getElementById('ganiRoot');
+        const levelRoot = document.getElementById('levelRoot');
+        const keepType = _currentApp === 'gani' ? 'gani' : 'level';
+        if (suiteTabs) suiteTabs.style.display = 'none';
+        if (keepType === 'gani') {
+            if (levelRoot) {
+                levelRoot.style.display = 'none';
+                levelRoot.style.flex = '';
+                levelRoot.style.height = '0';
+            }
+            if (ganiRoot) {
+                ganiRoot.style.display = '';
+                ganiRoot.style.flex = '1';
+                ganiRoot.style.height = '';
+                const ganiMc = ganiRoot.querySelector('.main-container');
+                const ganiToolbar = ganiMc?.querySelector(':scope > .toolbar');
+                const ganiContent = ganiMc?.querySelector('.content-area');
+                if (ganiToolbar) ganiToolbar.style.display = 'flex';
+                if (ganiContent) ganiContent.style.display = 'none';
+            }
+        } else {
+            if (ganiRoot) {
+                ganiRoot.style.display = 'none';
+                ganiRoot.style.flex = '';
+                ganiRoot.style.height = '0';
+            }
+            if (levelRoot) {
+                levelRoot.style.display = 'flex';
+                levelRoot.style.flex = '1';
+                levelRoot.style.height = '';
+                const levelMc = levelRoot.querySelector('.main-container');
+                if (levelMc) {
+                    levelMc.style.height = '';
+                    levelMc.style.overflow = '';
+                    const toolbar = levelMc.querySelector(':scope > .toolbar');
+                    const levelToolbar = document.getElementById('levelToolbar');
+                    const levelArea = document.getElementById('levelArea');
+                    const statusBar = levelMc.querySelector(':scope > .status-bar');
+                    if (toolbar) toolbar.style.display = 'flex';
+                    if (levelToolbar) levelToolbar.style.display = 'none';
+                    if (levelArea) levelArea.style.display = 'none';
+                    if (statusBar) statusBar.style.display = 'none';
+                }
+            }
+        }
+        document.title = 'GSuite';
+        const tbTitle = document.getElementById('tbTitle');
+        if (tbTitle) tbTitle.textContent = 'GSuite';
+        document.dispatchEvent(new CustomEvent('editorvisible', { detail: { type: null } }));
+    }
+    window.showEmptyEditorState = showEmptyEditorState;
+
     function injectGani() {
-        const c = document.getElementById('editorContainer');
-        c.innerHTML = ganiHTML;
-        _currentApp = 'gani';
-        document.title = 'Gani Editor';
-        if (_isTauri) { window.__TAURI__.window.getCurrentWindow().setTitle('Gani Editor'); const t = document.getElementById('tbTitle'); if (t) t.textContent = 'Gani Editor'; }
-        setURLParam('gani');
+        const ganiRoot = document.getElementById('ganiRoot');
+        if (ganiRoot.querySelector('.main-container')) return;
+        ganiRoot.innerHTML = ganiHTML;
+        ganiRoot.style.display = 'none';
         const old = document.getElementById('_aniScript');
         if (old) old.remove();
         const s = document.createElement('script');
@@ -156,56 +303,24 @@
         s.src = 'js/anieditor.js';
         s.onload = () => {
             window.dispatchEvent(new Event('load'));
+            setTimeout(() => {
+                ['tabScrollLeft','tabsContainer','tabScrollRight'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+            }, 300);
             if (!document.querySelector('script[src="js/setshape2editor.js"]')) { const ss2s = document.createElement('script'); ss2s.src = 'js/setshape2editor.js'; document.head.appendChild(ss2s); }
             if (!document.querySelector('script[src="js/gmapgenerator.js"]')) { const gmgs = document.createElement('script'); gmgs.src = 'js/gmapgenerator.js'; document.head.appendChild(gmgs); }
-            if (window._pendingOpenFile && _isTauri) {
-                const fp = window._pendingOpenFile; window._pendingOpenFile = null;
-                setTimeout(async () => {
-                    const text = await window.__TAURI__.fs.readTextFile(fp).catch(() => null);
-                    if (text && typeof parseGani === 'function' && typeof addTab === 'function') { const ani = parseGani(text); if (ani) { ani.fileName = fp.replace(/\\/g,'/').split('/').pop(); addTab(ani, ani.fileName); } }
-                }, 500);
-            }
         };
         document.head.appendChild(s);
     }
 
     function injectLevel() {
-        const c = document.getElementById('editorContainer');
-        c.innerHTML = levelHTML;
+        const levelRoot = document.getElementById('levelRoot');
+        if (levelRoot.querySelector('.main-container')) return;
+        levelRoot.innerHTML = levelHTML;
         _currentApp = 'level';
-        document.title = 'Level Editor';
-        if (_isTauri) { window.__TAURI__.window.getCurrentWindow().setTitle('Level Editor'); const t = document.getElementById('tbTitle'); if (t) t.textContent = 'Level Editor'; }
-        setURLParam('level');
-        const tip = document.getElementById('floatingTooltip');
-        if (tip) {
-            const t2 = document.getElementById('floatingTooltip');
-            if (t2 && t2 !== tip) t2.remove();
-        }
+        document.title = 'GSuite';
+
         (function() {
-            const tip2 = document.getElementById('floatingTooltip');
-            if (!tip2) return;
-            let target = null;
-            function pos(mx, my) {
-                tip2.style.left = '0'; tip2.style.top = '0';
-                const tw = tip2.offsetWidth, th = tip2.offsetHeight, vw = window.innerWidth, vh = window.innerHeight;
-                let x = mx - tw / 2, y = my - th - 14;
-                if (y < 4) y = my + 22;
-                x = Math.max(4, Math.min(x, vw - tw - 4));
-                y = Math.max(4, Math.min(y, vh - th - 4));
-                tip2.style.left = x + 'px'; tip2.style.top = y + 'px';
-            }
-            document.addEventListener('mouseover', e => {
-                const btn = e.target.closest('button[title]');
-                if (btn) { btn.dataset.title = btn.title; btn.removeAttribute('title'); }
-                const t = e.target.closest('button[data-title]');
-                if (t) { target = t; tip2.textContent = t.dataset.title; tip2.style.display = 'block'; }
-            }, true);
-            document.addEventListener('mousemove', e => { if (target) { const txt = target.dataset.title; if (txt && tip2.textContent !== txt) tip2.textContent = txt; pos(e.clientX, e.clientY); } });
-            document.addEventListener('mouseout', e => {
-                const btn = e.target.closest('button[data-title]');
-                if (btn && !btn.hasAttribute('title')) { btn.setAttribute('title', btn.dataset.title); delete btn.dataset.title; }
-                if (target && !target.contains(e.relatedTarget)) { target = null; tip2.style.display = 'none'; }
-            }, true);
+
             const dropdowns = [['selectionFilterMenu','btnSelectionFilter'],['visibilityMenu','btnView'],['functionsMenu','btnFunctions']];
             document.addEventListener('click', e => {
                 dropdowns.forEach(([menuId, btnId]) => {
@@ -227,10 +342,6 @@
             if (!document.querySelector('script[src="js/setshape2editor.js"]')) { const ss2s = document.createElement('script'); ss2s.src = 'js/setshape2editor.js'; document.head.appendChild(ss2s); }
             if (!document.querySelector('script[src="js/gmapgenerator.js"]')) { const gmgs = document.createElement('script'); gmgs.src = 'js/gmapgenerator.js'; document.head.appendChild(gmgs); }
             if (_isTauri) { const ra = document.getElementById('btnRegisterAssoc'); if (ra) ra.style.display = ''; }
-            if (window._pendingOpenFile && _isTauri) {
-                const fp = window._pendingOpenFile; window._pendingOpenFile = null;
-                setTimeout(() => _tauriOpenFile(fp), 800);
-            }
             if (_isTauri) {
                 setTimeout(async () => {
                     try {
@@ -247,57 +358,90 @@
                 window.__TAURI__.event.listen('open-file', e => {
                     const fp = e.payload;
                     if (!fp) return;
-                    if (window.levelEditor) _tauriOpenFile(fp);
-                    else setTimeout(() => _tauriOpenFile(fp), 1000);
+                    _tauriOpenFile(fp);
                 });
                 window.__TAURI__.event.listen('tauri://drag-drop', async e => {
                     const paths = e.payload?.paths || [];
-                    for (const fp of paths) {
-                        const name = fp.replace(/\\/g,'/').split('/').pop();
-                        const ext = name.split('.').pop().toLowerCase();
-                        if (ext === 'gani') {
-                            if (_currentApp !== 'gani') { window._pendingOpenFile = fp; injectGani(); }
-                            else {
-                                const text = await window.__TAURI__.fs.readTextFile(fp).catch(() => null);
-                                if (text && typeof parseGani === 'function' && typeof addTab === 'function') { const ani = parseGani(text); if (ani) { ani.fileName = name; addTab(ani, name); } }
-                            }
-                        } else if (/^(nw|zelda|graal|gmap)$/.test(ext)) {
-                            if (_currentApp !== 'level') { window._pendingOpenFile = fp; injectLevel(); }
-                            else await _tauriOpenFile(fp);
-                        }
-                    }
-        });
+                    for (const fp of paths) _tauriOpenFile(fp);
+                });
             }
         });
         document.head.appendChild(s);
     }
 
-    document.addEventListener('click', function(e) {
-        if (e.target.closest('#switchBtn') || e.target.closest('#tbSwitchBtn')) {
-            const next = _currentApp === 'gani' ? 'level' : 'gani';
-            if (host === 'gani.gscript.dev' || host === 'level.gscript.dev')
-                window.location.href = 'https://' + next + '.gscript.dev';
-            else
-                window.location.href = '?app=' + next;
+    // ── Floating tooltip system ──────────────────────────────────────────────────
+    const _tooltipEl = document.createElement('div');
+    _tooltipEl.id = 'floatingTooltip';
+    document.body.appendChild(_tooltipEl);
+    let _tooltipTarget = null;
+
+    function _positionTooltip(mx, my) {
+        _tooltipEl.style.left = '0';
+        _tooltipEl.style.top = '0';
+        const tw = _tooltipEl.offsetWidth, th = _tooltipEl.offsetHeight;
+        const vw = window.innerWidth, vh = window.innerHeight, gap = 12;
+        let x = mx - tw / 2;
+        let y = my - th - gap;
+        if (y < 4) y = my + gap;
+        x = Math.max(4, Math.min(x, vw - tw - 4));
+        y = Math.max(4, Math.min(y, vh - th - 4));
+        _tooltipEl.style.left = x + 'px';
+        _tooltipEl.style.top = y + 'px';
+    }
+
+    document.addEventListener('mouseover', e => {
+        if (document.getElementById('ganiRoot')?.classList.contains('hidden')) return;
+        const el = e.target.closest('[title]');
+        if (el && !el.hasAttribute('data-title')) {
+            el.setAttribute('data-title', el.getAttribute('title'));
+            el.title = ''; 
+            el.removeAttribute('title');
+        }
+        const target = e.target.closest('[data-title]');
+        if (target) {
+            _tooltipTarget = target;
+            _tooltipEl.textContent = target.getAttribute('data-title');
+            _tooltipEl.style.display = 'block';
+        }
+    }, true);
+
+    document.addEventListener('mousemove', e => {
+        if (document.getElementById('ganiRoot')?.classList.contains('hidden')) return;
+        if (_tooltipTarget) {
+            const tip = _tooltipTarget.dataset.title;
+            if (tip && _tooltipEl.textContent !== tip) _tooltipEl.textContent = tip;
+            _positionTooltip(e.clientX, e.clientY);
         }
     });
+
+    document.addEventListener('mouseout', e => {
+        if (document.getElementById('ganiRoot')?.classList.contains('hidden')) return;
+        const el = e.target.closest('[data-title]');
+        if (el && !el.hasAttribute('title')) { el.setAttribute('title', el.dataset.title); delete el.dataset.title; }
+        if (_tooltipTarget && !_tooltipTarget.contains(e.relatedTarget)) {
+            _tooltipTarget = null;
+            _tooltipEl.style.display = 'none';
+        }
+    }, true);
 
     async function _tauriOpenFile(fp) {
         const name = fp.replace(/\\/g,'/').split('/').pop();
         const ext = name.split('.').pop().toLowerCase();
         if (ext === 'gani') {
-            if (_currentApp !== 'gani') { window._pendingOpenFile = fp; injectGani(); return; }
+            switchToTab('gani');
+            while (typeof parseGani !== 'function' || typeof addTab !== 'function') await new Promise(r => setTimeout(r, 100));
             const text = await window.__TAURI__.fs.readTextFile(fp).catch(() => null);
-            if (text && typeof parseGani === 'function' && typeof addTab === 'function') { const ani = parseGani(text); if (ani) { ani.fileName = name; addTab(ani, name); } }
+            if (text) { const ani = parseGani(text); if (ani) { ani.fileName = name; addTab(ani, name); } }
             return;
         }
-        if (_currentApp !== 'level') { window._pendingOpenFile = fp; injectLevel(); return; }
+        switchToTab('level');
+        while (!window.levelEditor) await new Promise(r => setTimeout(r, 100));
         if (ext === 'graal' || ext === 'zelda') {
             const data = await window.__TAURI__.fs.readFile(fp).catch(() => null);
-            if (data && window.levelEditor) window.levelEditor.openFromBuffer(data.buffer, name, fp);
+            if (data) window.levelEditor.openFromBuffer(data.buffer, name, fp);
         } else {
             const text = await window.__TAURI__.fs.readTextFile(fp).catch(() => null);
-            if (text && window.levelEditor) window.levelEditor.openFromText(text, name, fp);
+            if (text) window.levelEditor.openFromText(text, name, fp);
         }
     }
 
@@ -309,47 +453,69 @@
         const files = [...(e.dataTransfer.files||[])].filter(f => /\.(nw|zelda|graal|gmap|gani)$/i.test(f.name));
         for (const file of files) {
             const ext = file.name.split('.').pop().toLowerCase();
+            switchToTab('level');
             if (ext === 'graal' || ext === 'zelda') {
-                if (!window.levelEditor) { window._pendingOpenFile = file; injectLevel(); continue; }
                 const buf = await file.arrayBuffer();
-                window.levelEditor.openFromBuffer?.(buf, file.name);
-            } else if (ext === 'gani') {
-                const text = await file.text();
-                window._aniEditorInstance?.openFromText?.(text, file.name);
+                window.levelEditor?.openFromBuffer?.(buf, file.name);
             } else {
-                if (!window.levelEditor) { window._pendingOpenFile = file; injectLevel(); continue; }
                 const text = await file.text();
-                window.levelEditor.openFromText?.(text, file.name);
+                window.levelEditor?.openFromText?.(text, file.name);
             }
         }
     }, true);
 
     document.addEventListener('DOMContentLoaded', function() {
-        const app = detectApp();
-        const init = () => { if (app === 'gani') injectGani(); else injectLevel(); };
+        const init = () => {
+            injectLevel();
+            injectGani();
+            switchToTab('level');
+        };
         if (_isTauri) {
             window.__TAURI__?.core?.invoke('get_open_file_arg').then(fa => {
-                if (fa) window._pendingOpenFile = fa;
                 init();
+                if (fa) _tauriOpenFile(fa);
             }).catch(() => init());
         } else { init(); }
+        const waitForLevelEditor = () => {
+            if (window.levelEditor && window.levelEditor.activateLevelTab && window.tabManager) {
+                window.levelEditor.setRestoringTabs = (v) => { window.levelEditor._restoringTabs = v; };
+                window.levelEditor._restoringTabs = false;
+                window.levelEditor.activateLevelTab = (tab) => {
+                    if (!tab || !tab.data) return;
+                    const le = window.levelEditor;
+                    const idx = tab.data.level
+                        ? le.levels.findIndex(e => e.level === tab.data.level)
+                        : (typeof tab.data.index === 'number' ? tab.data.index : -1);
+                    if (idx < 0 || idx >= le.levels.length) return;
+                    if (le._restoringTabs) {
+                        le.currentLevelIndex = idx;
+                        le.level = le.levels[idx].level;
+                        le.updateLevelTabs();
+                        if (le.level) le.updateUI();
+                        le.render();
+                    } else {
+                        le.switchLevel(idx);
+                    }
+                };
+                window.levelEditor.closeLevelTabByData = (tab) => {
+                    if (!tab || !tab.data) return false;
+                    const le = window.levelEditor;
+                    const idx = tab.data.level
+                        ? le.levels.findIndex(e => e.level === tab.data.level)
+                        : (typeof tab.data.index === 'number' ? tab.data.index : -1);
+                    if (idx < 0) return false;
+                    le.closeLevelTab(idx);
+                    return true;
+                };
+                tabManager.restoreState();
+            } else {
+                setTimeout(waitForLevelEditor, 50);
+            }
+        };
+        setTimeout(waitForLevelEditor, 100);
     });
 
-    const ganiHTML = `
-    <div class="main-container">
-        <div class="toolbar">
-            <button title="New — create a blank .gani animation" id="btnNew"><i class="fas fa-file"></i></button>
-            <button title="Open — open a .gani file" id="btnOpen"><i class="fas fa-folder-open"></i></button>
-            <button title="Open Default GANI — load a built-in starter animation" id="btnOpenDefault"><i class="fas fa-book"></i></button>
-            <button title="Save (Ctrl+S)" id="btnSave"><i class="fas fa-save"></i></button>
-            <button title="Save As — save to a new file" id="btnSaveAs"><i class="fas fa-save"></i></button>
-            <button title="Save All — save every open tab" id="btnSaveAll"><i class="fas fa-save-all"></i></button>
-            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
-            <button title="Set Working Directory — loads images from a local folder into the editor cache for use in .gani files. Does not upload anything to a server." id="btnWorkingDir"><i class="fas fa-folder"></i></button>
-            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
-            <div style="position:relative;">
-                <button title="Color Scheme — pick a built-in theme or load custom CSS" id="btnColorScheme"><i class="fas fa-palette"></i></button>
-                <div id="colorSchemeDropdown" style="display:none;position:absolute;top:100%;left:0;background:#2b2b2b;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;z-index:1000;min-width:150px;box-shadow:0 2px 8px rgba(0,0,0,0.5);margin-top:2px;user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;">
+    const _colorSchemeItems = `
                     <div class="color-scheme-item" data-scheme="default" style="background:#404040;">Default</div>
                     <div class="color-scheme-item" data-scheme="fusion-light">Fusion Light</div>
                     <div class="color-scheme-item" data-scheme="fusion-dark">Fusion Dark</div>
@@ -361,65 +527,66 @@
                     <div class="color-scheme-item" data-scheme="light-style">Light Style</div>
                     <div class="color-scheme-item" data-scheme="ayu-mirage">Ayu Mirage</div>
                     <div class="color-scheme-item" data-scheme="dracula">Dracula</div>
-                    <div style="height:1px;background:#404040;margin:4px 0;"></div>
-                    <div id="btnCustomCSS" style="padding:8px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;color:#4a9eff;user-select:none;">Custom CSS...</div>
-                </div>
-            </div>
-            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
-            <button title="WASD=Direction, Arrows=Move — click to swap" id="btnSwapKeys"><i class="fas fa-exchange-alt"></i></button>
-            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
-            <button title="Close All — close every open tab" id="btnCloseAll"><i class="fas fa-times"></i></button>
-            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
-            <button title="Undo (Ctrl+Z)" id="btnUndo"><i class="fas fa-undo"></i></button>
-            <button title="Redo (Ctrl+Y)" id="btnRedo"><i class="fas fa-redo"></i></button>
-            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
-            <button title="Reset Editor — clears all tabs and returns to a blank state" id="btnReset"><i class="fas fa-recycle"></i></button>
-            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
-            <button title="Zoom Out" id="btnZoomOut"><i class="fas fa-minus"></i></button>
-            <span id="mainCanvasZoomLevel" style="font-size:12px;min-width:40px;text-align:center;color:#e0e0e0;user-select:none;padding:0 4px;display:inline-flex;align-items:center;justify-content:center;">1.0x</span>
-            <button title="Zoom In" id="btnZoomIn"><i class="fas fa-plus"></i></button>
-            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
-            <button title="Settings — configure grid, playback, selection, and editor options" id="btnSettings"><i class="fas fa-cog"></i></button>
-            <button title="About / Changelog (F1)" id="btnAbout"><i class="fas fa-info-circle"></i></button>
-            <button class="btn-check-update" title="Check for Updates" style="display:none;"><svg width="12" height="12" viewBox="0 0 512 512" fill="currentColor"><path d="M105.1 202.6c7.7-21.8 20.2-42.3 37.8-59.8c62.5-62.5 163.8-62.5 226.3 0L386.3 160H352c-17.7 0-32 14.3-32 32s14.3 32 32 32H463.5c0 0 0 0 0 0h.4c17.7 0 32-14.3 32-32V80c0-17.7-14.3-32-32-32s-32 14.3-32 32v35.2L414.4 97.6c-87.5-87.5-229.3-87.5-316.8 0C73.2 122 55.6 150.7 44.8 181.4c-5.9 16.7 2.9 34.9 19.5 40.8s34.9-2.9 40.8-19.5zM39 289.3c-5 1.5-9.8 4.2-13.7 8.2c-4 4-6.7 8.8-8.1 14c-.3 1.2-.6 2.5-.8 3.8c-.3 1.7-.4 3.4-.4 5.1V432c0 17.7 14.3 32 32 32s32-14.3 32-32V396.9l17.6 17.5 0 0c87.5 87.4 229.3 87.4 316.7 0c24.4-24.4 42.1-53.1 52.9-83.7c5.9-16.7-2.9-34.9-19.5-40.8s-34.9 2.9-40.8 19.5c-7.7 21.8-20.2 42.3-37.8 59.8c-62.5 62.5-163.8 62.5-226.3 0l-.1-.1L125.6 352H160c17.7 0 32-14.3 32-32s-14.3-32-32-32H48.4c-1.6 0-3.2 .1-4.8 .3s-3.1 .5-4.6 1z"/></svg></button>
-            <button id="switchBtn" title="Switch Editor">⇄<span class="tb-btn-text"> Switch</span></button>
-            <button id="btnSetshape2" title="Setshape2 Editor" onclick="typeof SetshapeEditor!=='undefined'&&SetshapeEditor.open()"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAACbUlEQVQ4y52P20uTcRzGn9972MEdHBvOw1JZZk4dTjyXhGEGUgkWFJH1P3QTQXgVne6UThCEFxVBYWVgWCCBQ6IM0cBkouLxTbc5NJzv67b39/66SG2pQfXcfPnC83y/n4fgP1RZd8JAeJ4nIDH+X8OFpQdyKE2063T6S5QmwgIAVNUdE0yWVCMhAGMbTgYQAjAAK5FwS2Zm5sGhgf6LvCC0rq4s3fBV13Z+HRwAceXuE1PtzisAvAD5/R0BwBisNkfxKbfsGdHcseHRQF35oYbHfW9ePZweH2kTIqEFc15Rme/chTOKOz+/eiMFgDCAEQBsKbzk6H/WQWrNU3pDZUW3v7fnqiJH72mUMmHzGdVojijq8vCrAQAgHoth/EMv0uk3+OfNpMwxnDbrSi9YNJrIwuwk45KJ2bYZi63jXVcXrMHPWLSWYH/jWfi/u+LrTGyKhCQOAITtlTcnpRSTYxNw5XkgGS1objyCGSmMZUXt9fe8OOnM2KPuOJAsjufg8RZCmplDia8IgigCAHhB0ADEQ4vzP327hdkGB8fxyHbnQhBFKLKMdUUBRzh9fVOLbtO7KwHZtklzEtpv3eyU12QZYLA50i+X1tRfH/74XtuVIJkkGo3iwe07jxi0+0Vl5a8bmk+vBr586jNZbW1bBIQQHiA81bQdB1SVQlW1YNXho63dTzuOuwuK07wVNXaAtwOAoFFKOY7kTEwHfRPTwR0UaiIBg8nsefv8ybW9Hm+9McWUPTo0GLLY7IGtunpDSkaK2VL4pyrOrNzzdmeWh+O4OGOANDX2UllbvRtamGUEfyczCDEk7ctgjALAD3gS6nZ20OQgAAAAAElFTkSuQmCC" width="14" height="14" style="vertical-align:middle;image-rendering:pixelated;"><span class="tb-btn-text"> Setshape2</span></button>
-            <button id="btnGmapGen" title="Gmap Generator" onclick="typeof GmapGenerator!=='undefined'&&GmapGenerator.open()"><img src="icons/gmapgen.ico" width="14" height="14" style="image-rendering:pixelated;"><span class="tb-btn-text"> Gmap</span></button>
-            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
+                    <div style="height:1px;background:#404040;margin:4px 0;"></div>`;
+    const _updateSVG = `<svg width="12" height="12" viewBox="0 0 512 512" fill="currentColor"><path d="M105.1 202.6c7.7-21.8 20.2-42.3 37.8-59.8c62.5-62.5 163.8-62.5 226.3 0L386.3 160H352c-17.7 0-32 14.3-32 32s14.3 32 32 32H463.5c0 0 0 0 0 0h.4c17.7 0 32-14.3 32-32V80c0-17.7-14.3-32-32-32s-32 14.3-32 32v35.2L414.4 97.6c-87.5-87.5-229.3-87.5-316.8 0C73.2 122 55.6 150.7 44.8 181.4c-5.9 16.7 2.9 34.9 19.5 40.8s34.9-2.9 40.8-19.5zM39 289.3c-5 1.5-9.8 4.2-13.7 8.2c-4 4-6.7 8.8-8.1 14c-.3 1.2-.6 2.5-.8 3.8c-.3 1.7-.4 3.4-.4 5.1V432c0 17.7 14.3 32 32 32s32-14.3 32-32V396.9l17.6 17.5 0 0c87.5 87.4 229.3 87.4 316.7 0c24.4-24.4 42.1-53.1 52.9-83.7c5.9-16.7-2.9-34.9-19.5-40.8s-34.9 2.9-40.8 19.5c-7.7 21.8-20.2 42.3-37.8 59.8c-62.5 62.5-163.8 62.5-226.3 0l-.1-.1L125.6 352H160c17.7 0 32-14.3 32-32s-14.3-32-32-32H48.4c-1.6 0-3.2 .1-4.8 .3s-3.1 .5-4.6 1z"/></svg>`;
+    function makeToolbarHTML(p) { return `
+        <div class="toolbar">
+            <button title="New — create a blank file" id="${p}btnNew"><i class="fas fa-file"></i></button>
+            <button title="Open file" id="${p}btnOpen"><i class="fas fa-folder-open"></i></button>
+            <button title="Open Default" id="${p}btnOpenDefault"><i class="fas fa-book"></i></button>
+            <button title="Save (Ctrl+S)" id="${p}btnSave"><i class="fas fa-save"></i></button>
+            <button title="Save As" id="${p}btnSaveAs"><i class="fas fa-save-as"></i></button>
+            <button title="Save All" id="${p}btnSaveAll"><i class="fas fa-save-all"></i></button>
+            <div class="tb-sep"></div>
+            <button title="Set Working Directory" id="${p}btnWorkingDir"><i class="fas fa-folder"></i></button>
+            <div class="tb-sep"></div>
             <div style="position:relative;">
-                <button title="Collab — edit together in real time via P2P" id="btnCollab"><i class="fas fa-layer-group"></i></button>
-                <div id="collabDropdown" style="display:none;position:absolute;top:100%;right:0;background:#2b2b2b;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;z-index:1000;width:260px;padding:12px;box-shadow:0 2px 8px rgba(0,0,0,0.5);margin-top:2px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;">
-                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-                        <div style="font-size:11px;color:#888;">P2P Collab (experimental)</div>
-                        <div id="collabToggleTrack" style="width:36px;height:16px;background:#1a1a1a;border:1px solid #4a4;position:relative;cursor:pointer;flex-shrink:0;">
-                            <div id="collabToggleThumb" style="width:14px;height:12px;background:#4a4;position:absolute;top:1px;left:19px;transition:left 0.15s,background 0.15s;"></div>
-                        </div>
-                    </div>
-                    <div id="collabStatus" style="margin-bottom:8px;font-size:11px;color:#4a4;"></div>
-                    <button id="collabDisconnect" style="display:none;width:100%;background:#5a2222;border:1px solid #804040;color:#e0e0e0;padding:4px 10px;cursor:pointer;font-size:11px;margin-bottom:8px;">Disconnect</button>
-                    <div id="collabPeers" style="margin-bottom:8px;display:none;border:1px solid #404040;padding:6px;background:#1a1a1a;max-height:80px;overflow-y:auto;"></div>
-                    <div id="collabCodeSection">
+                <button title="Color Scheme" id="${p}btnColorScheme"><i class="fas fa-palette"></i></button>
+                <div id="${p}colorSchemeDropdown" style="display:none;position:absolute;top:100%;left:0;background:#2b2b2b;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;z-index:1000;min-width:150px;box-shadow:0 2px 8px rgba(0,0,0,0.5);margin-top:2px;user-select:none;-webkit-user-select:none;">${_colorSchemeItems}
+                    <div id="${p}btnCustomCSS" style="padding:8px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;color:#4a9eff;user-select:none;">Custom CSS...</div>
+                </div>
+            </div>
+            <input type="color" id="${p}bgColorInput" class="tb-level-only" title="Canvas Background / Void Color" value="#000000" style="width:60px;height:35px;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;cursor:pointer;flex-shrink:0;padding:0;box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);">
+            <div class="tb-sep"></div>
+            <button title="Close All" id="${p}btnCloseAll"><i class="fas fa-times"></i></button>
+            <button title="Reset Editor" id="${p}btnReset"><i class="fas fa-recycle"></i></button>
+            <div class="tb-sep"></div>
+            <button title="Settings" id="${p}btnSettings"><i class="fas fa-cog"></i></button>
+            <button title="About / Changelog (F1)" id="${p}btnAbout"><i class="fas fa-info-circle"></i></button>
+            <button class="btn-check-update" title="Check for Updates" style="display:none;">${_updateSVG}</button>
+            <div class="tb-sep"></div>
+            <div class="tb-gani-only" style="position:relative;">
+                <button title="Collab — edit together in real time via P2P" id="${p}btnCollab"><i class="fas fa-layer-group"></i></button>
+                <div id="${p}collabDropdown" style="display:none;position:absolute;top:100%;right:0;background:#2b2b2b;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;z-index:1000;width:260px;padding:12px;box-shadow:0 2px 8px rgba(0,0,0,0.5);margin-top:2px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><div style="font-size:11px;color:#888;">P2P Collab (experimental)</div><div id="${p}collabToggleTrack" style="width:36px;height:16px;background:#1a1a1a;border:1px solid #4a4;position:relative;cursor:pointer;flex-shrink:0;"><div id="${p}collabToggleThumb" style="width:14px;height:12px;background:#4a4;position:absolute;top:1px;left:19px;transition:left 0.15s,background 0.15s;"></div></div></div>
+                    <div id="${p}collabStatus" style="margin-bottom:8px;font-size:11px;color:#4a4;"></div>
+                    <button id="${p}collabDisconnect" style="display:none;width:100%;background:#5a2222;border:1px solid #804040;color:#e0e0e0;padding:4px 10px;cursor:pointer;font-size:11px;margin-bottom:8px;">Disconnect</button>
+                    <div id="${p}collabPeers" style="margin-bottom:8px;display:none;border:1px solid #404040;padding:6px;background:#1a1a1a;max-height:80px;overflow-y:auto;"></div>
+                    <div id="${p}collabCodeSection"><div style="margin-bottom:6px;">Your code:</div><div style="display:flex;gap:4px;margin-bottom:10px;"><input id="${p}collabMyCode" readonly style="flex:1;background:#1a1a1a;border:1px solid #404040;color:#4a9eff;padding:4px 8px;font-family:'chevyray',monospace;font-size:12px;outline:none;"><button id="${p}collabCopy" style="background:#353535;border:1px solid #404040;color:#e0e0e0;padding:4px 10px;cursor:pointer;font-size:11px;">Copy</button></div><div style="margin-bottom:6px;">Join session:</div><div style="display:flex;gap:4px;"><input id="${p}collabJoinCode" placeholder="paste code here" style="flex:1;background:#1a1a1a;border:1px solid #404040;color:#e0e0e0;padding:4px 8px;font-family:'chevyray',monospace;font-size:12px;outline:none;"><button id="${p}collabJoin" style="background:#353535;border:1px solid #404040;color:#e0e0e0;padding:4px 10px;cursor:pointer;font-size:11px;">Join</button></div></div>
+                </div>
+            </div>
+            <div class="tb-level-only" style="position:relative;">
+                <button title="Collab — edit together in real time via P2P" id="${p}btnLevelCollab"><i class="fas fa-layer-group"></i></button>
+                <div id="${p}levelCollabDropdown" style="display:none;position:absolute;top:100%;right:0;background:#2b2b2b;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;z-index:1000;width:260px;padding:12px;box-shadow:0 2px 8px rgba(0,0,0,0.5);margin-top:2px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><div style="font-size:11px;color:#888;">P2P Collab (experimental)</div><div style="width:36px;height:16px;background:#1a1a1a;border:1px solid #555;position:relative;flex-shrink:0;opacity:0.4;"><div style="width:14px;height:12px;background:#555;position:absolute;top:1px;left:1px;"></div></div></div>
+                    <div style="margin-bottom:10px;font-size:11px;color:#888;font-style:italic;">Not yet available for the level editor.</div>
+                    <div style="opacity:0.35;pointer-events:none;">
                         <div style="margin-bottom:6px;">Your code:</div>
-                        <div style="display:flex;gap:4px;margin-bottom:10px;">
-                            <input id="collabMyCode" readonly style="flex:1;background:#1a1a1a;border:1px solid #404040;color:#4a9eff;padding:4px 8px;font-family:'chevyray',monospace;font-size:12px;outline:none;">
-                            <button id="collabCopy" style="background:#353535;border:1px solid #404040;color:#e0e0e0;padding:4px 10px;cursor:pointer;font-size:11px;">Copy</button>
-                        </div>
+                        <div style="display:flex;gap:4px;margin-bottom:10px;"><input readonly style="flex:1;background:#1a1a1a;border:1px solid #404040;color:#4a9eff;padding:4px 8px;font-family:'chevyray',monospace;font-size:12px;outline:none;" value="——"><button style="background:#353535;border:1px solid #404040;color:#e0e0e0;padding:4px 10px;font-size:11px;">Copy</button></div>
                         <div style="margin-bottom:6px;">Join session:</div>
-                        <div style="display:flex;gap:4px;">
-                            <input id="collabJoinCode" placeholder="paste code here" style="flex:1;background:#1a1a1a;border:1px solid #404040;color:#e0e0e0;padding:4px 8px;font-family:'chevyray',monospace;font-size:12px;outline:none;">
-                            <button id="collabJoin" style="background:#353535;border:1px solid #404040;color:#e0e0e0;padding:4px 10px;cursor:pointer;font-size:11px;">Join</button>
-                        </div>
+                        <div style="display:flex;gap:4px;"><input placeholder="paste code here" style="flex:1;background:#1a1a1a;border:1px solid #404040;color:#e0e0e0;padding:4px 8px;font-family:'chevyray',monospace;font-size:12px;outline:none;"><button style="background:#353535;border:1px solid #404040;color:#e0e0e0;padding:4px 10px;font-size:11px;">Join</button></div>
                     </div>
                 </div>
             </div>
-        </div>
-        <div id="tabsNav" style="display:flex;align-items:center;overflow:hidden;flex-shrink:0;background:#2b2b2b;border-bottom:1px solid #0a0a0a;">
-            <button id="tabScrollLeft" style="background:none;border:none;color:#ccc;padding:4px 10px;cursor:pointer;font-size:16px;flex-shrink:0;line-height:1;">◀</button>
-            <div class="tabs" id="tabsContainer" style="border-bottom:none;"></div>
-            <button id="tabScrollRight" style="background:none;border:none;color:#ccc;padding:4px 10px;cursor:pointer;font-size:16px;flex-shrink:0;line-height:1;">▶</button>
-        </div>
+            <button ${p === 'level-' ? `id="${p}btnPlayerSetup"` : ''} class="tb-level-only" title="Player Settings" style="margin-left:auto;display:flex;align-items:center;gap:5px;background:#353535;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#fff;padding:4px 10px;cursor:pointer;font-family:chevyray,monospace;font-size:12px;white-space:nowrap;"><i class="fas fa-user"></i> Player</button>
+            <button ${p === 'level-' ? `id="${p}btnPlay"` : ''} class="tb-level-only" title="Play Mode (F4)" style="display:flex;align-items:center;gap:5px;background:#353535;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#e0e0e0;padding:4px 12px;cursor:pointer;font-family:chevyray,monospace;font-size:12px;white-space:nowrap;">&#9654; Play</button>
+        </div>`; }
+
+    const ganiHTML = `
+    <div class="main-container">
+        ${makeToolbarHTML('gani-')}
         <div class="content-area">
-            <div class="splitter horizontal" id="mainSplitter" style="flex:1 1 0;overflow:visible;min-height:0;flex-shrink:1;height:calc(100% - 222px);max-height:calc(100% - 222px);position:relative;">
+            <div class="splitter horizontal" id="gani-mainSplitter" style="flex:1 1 0;overflow:visible;min-height:0;flex-shrink:1;position:relative;">
                 <div class="splitter horizontal" style="flex:1;overflow:visible;min-height:0;">
                     <div class="left-panel">
                         <div class="sprite-toolbar">
@@ -432,8 +599,8 @@
                             <button title="Browse Workspace — browse images and ganis from the loaded workspace" id="btnBrowseWorkspace"><i class="fas fa-folder-open"></i></button>
                         </div>
                         <div class="sprites-list" id="spritesList"></div>
-                        <div class="splitter-handle" id="spriteSplitterHandle" style="width:100%;height:4px;cursor:row-resize;background:#1a1a1a;flex-shrink:0;position:relative;">
-                            <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:40px;height:2px;background:#555;border-radius:1px;"></div>
+                        <div class="splitter-handle" id="spriteSplitterHandle" style="width:100%;height:4px;cursor:row-resize;flex-shrink:0;position:relative;">
+                            <div class="splitter-grip splitter-grip-h"></div>
                         </div>
                         <div class="sprite-edit-panel" id="spriteEditPanel">
                             <div class="sprite-settings">
@@ -464,11 +631,11 @@
                                 </div>
                                 <label>Zoom:</label>
                                 <div class="slider-group">
-                                    <input type="range" id="zoomSlider" min="0.1" max="10" step="0.01" value="1">
+                                    <input type="range" id="gani-zoomSlider" min="0.1" max="10" step="0.01" value="1">
                                     <input type="number" id="zoom" step="0.01" value="1">
                                 </div>
                                 <label>Mode:</label>
-                                <select id="spriteMode" style="width:100%;background:#1a1a1a;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#ffffff;padding:8px;font-family:'chevyray',monospace;font-size:12px;">
+                                <select id="spriteMode" style="width:100%;">
                                     <option value="" selected>Simple (Off)</option>
                                     <option value="0">Lights (0)</option>
                                     <option value="1">Transparency (1)</option>
@@ -483,17 +650,17 @@
                                 </div>
                                 <label style="display:flex;align-items:center;gap:8px;">
                                     Color Enabled:
-                                    <span id="colorEffectCheckbox" style="display:inline-block;width:16px;height:16px;text-align:center;border:1px solid #555;background:#1a1a1a;vertical-align:middle;line-height:14px;font-size:12px;cursor:pointer;user-select:none;"> </span>
+                                    <span id="colorEffectCheckbox" class="custom-checkbox"> </span>
                                 </label>
                                 <label style="display:flex;align-items:center;gap:8px;margin-top:4px;">
                                     Color:
                                     <input type="color" id="colorSwatch" style="flex:1;min-width:0;height:32px;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;cursor:pointer;padding:0;box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);">
                                 </label>
                                 <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 8px;align-items:center;margin-top:4px;">
-                                    <label style="font-size:12px;">R:</label><input type="number" id="colorR" min="0" max="255" value="255" style="width:100%;background:#1a1a1a;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#e0e0e0;padding:4px;font-family:'chevyray',monospace;font-size:12px;">
-                                    <label style="font-size:12px;">G:</label><input type="number" id="colorG" min="0" max="255" value="255" style="width:100%;background:#1a1a1a;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#e0e0e0;padding:4px;font-family:'chevyray',monospace;font-size:12px;">
-                                    <label style="font-size:12px;">B:</label><input type="number" id="colorB" min="0" max="255" value="255" style="width:100%;background:#1a1a1a;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#e0e0e0;padding:4px;font-family:'chevyray',monospace;font-size:12px;">
-                                    <label style="font-size:12px;">A:</label><input type="number" id="colorA" min="0" max="255" value="255" style="width:100%;background:#1a1a1a;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#e0e0e0;padding:4px;font-family:'chevyray',monospace;font-size:12px;">
+                                    <label style="font-size:12px;">R:</label><input type="number" id="colorR" min="0" max="255" value="255" style="width:100%;padding:4px;">
+                                    <label style="font-size:12px;">G:</label><input type="number" id="colorG" min="0" max="255" value="255" style="width:100%;padding:4px;">
+                                    <label style="font-size:12px;">B:</label><input type="number" id="colorB" min="0" max="255" value="255" style="width:100%;padding:4px;">
+                                    <label style="font-size:12px;">A:</label><input type="number" id="colorA" min="0" max="255" value="255" style="width:100%;padding:4px;">
                                 </div>
                                 <div class="item-controls">
                                     <button id="btnAttachmentBack" title="Previous sprite"><i class="fas fa-arrow-left"></i></button>
@@ -505,24 +672,29 @@
                             </div>
                         </div>
                     </div>
-                    <div class="splitter-handle" id="leftCenterSplitter" style="width:4px;cursor:col-resize;background:#1a1a1a;flex-shrink:0;position:relative;">
-                        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:2px;height:40px;background:#555;border-radius:1px;"></div>
+                    <div class="splitter-handle" id="leftCenterSplitter" style="width:4px;cursor:col-resize;flex-shrink:0;position:relative;">
+                        <div class="splitter-grip"></div>
                     </div>
                     <div class="center-panel">
                         <div class="canvas-container">
-                            <canvas id="mainCanvas"></canvas>
+                            <canvas id="gani-mainCanvas"></canvas>
                             <div class="canvas-controls">
                                 <button id="btnOnionSkin" title="Onion Skin (show previous/next frame)"><i class="fas fa-layer-group"></i></button>
-                                <button id="btnCenterView" title="Center View"><i class="fas fa-crosshairs"></i></button>
+                                <button id="gani-btnCenterView" title="Center View"><i class="fas fa-crosshairs"></i></button>
                                 <button id="btnSplitView" title="Split View (4 Directions)"><i class="fas fa-border-all"></i></button>
                                 <button id="btnMirroredActions" title="Multi Select — click pieces to add to selection without Ctrl/Shift"><i class="fas fa-magnet"></i></button>
                                 <button id="btnPixelGrid" title="Toggle Pixel Grid — overlay a tile grid on the canvas for alignment"><i class="fas fa-grid"></i></button>
                             </div>
+                            <div id="canvasZoomControls">
+                                <button title="Zoom Out" id="btnZoomOut"><i class="fas fa-minus"></i></button>
+                                <span id="mainCanvasZoomLevel">1.0x</span>
+                                <button title="Zoom In" id="btnZoomIn"><i class="fas fa-plus"></i></button>
+                            </div>
                         </div>
                     </div>
                 </div>
-                <div class="splitter-handle" id="centerRightSplitter" style="width:4px;cursor:col-resize;background:#1a1a1a;flex-shrink:0;position:relative;">
-                    <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:2px;height:40px;background:#555;border-radius:1px;"></div>
+                <div class="splitter-handle" id="centerRightSplitter" style="width:4px;cursor:col-resize;flex-shrink:0;position:relative;">
+                    <div class="splitter-grip"></div>
                 </div>
                 <div class="right-panel">
                     <div class="direction-selector">
@@ -533,30 +705,30 @@
                     </div>
                     <div class="settings-group">
                         <h3>Ani Settings</h3>
-                        <label style="display:flex;align-items:center;gap:8px;"><span id="singleDirCheckbox" style="display:inline-block;width:16px;height:16px;text-align:center;border:1px solid #555;background:#1a1a1a;vertical-align:middle;line-height:14px;font-size:12px;cursor:pointer;user-select:none;"> </span> Single Dir</label>
-                        <label style="display:flex;align-items:center;gap:8px;"><span id="loopedCheckbox" style="display:inline-block;width:16px;height:16px;text-align:center;border:1px solid #555;background:#1a1a1a;vertical-align:middle;line-height:14px;font-size:12px;cursor:pointer;user-select:none;">✓</span> Looped</label>
-                        <label style="display:flex;align-items:center;gap:8px;"><span id="continousCheckbox" style="display:inline-block;width:16px;height:16px;text-align:center;border:1px solid #555;background:#1a1a1a;vertical-align:middle;line-height:14px;font-size:12px;cursor:pointer;user-select:none;">✓</span> Continuous</label>
+                        <label style="display:flex;align-items:center;gap:8px;"><span id="singleDirCheckbox" class="custom-checkbox"> </span> Single Dir</label>
+                        <label style="display:flex;align-items:center;gap:8px;"><span id="loopedCheckbox" class="custom-checkbox">✓</span> Looped</label>
+                        <label style="display:flex;align-items:center;gap:8px;"><span id="continousCheckbox" class="custom-checkbox">✓</span> Continuous</label>
                         <label>Next Ani:</label>
                         <input type="text" id="nextAni">
-                        <button id="btnDefaults" title="Defaults" style="width:100%;margin-bottom:8px;background:#1a1a1a;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#ffffff;padding:8px;font-family:'chevyray',monospace;font-size:12px;">Defaults ▶</button>
+                        <button id="btnDefaults" title="Defaults" style="width:100%;margin-bottom:8px;">Defaults ▶</button>
                         <table class="defaults-table" id="defaultsTable" style="display:none;visibility:hidden;">
                             <thead><tr><th>Head</th><th>Value</th></tr></thead>
                             <tbody id="defaultsTableBody"></tbody>
                         </table>
-                        <button id="btnEditScript" title="Edit Script" style="width:100%;background:#1a1a1a;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#ffffff;padding:8px;font-family:'chevyray',monospace;font-size:12px;">Edit Script</button>
+                        <button id="btnEditScript" title="Edit Script" style="width:100%;">Edit Script</button>
                     </div>
                     <div class="settings-group" id="historyGroup" style="display:none;">
-                        <h3 style="display:flex;align-items:center;gap:8px;">History <span id="historyLoggingToggleCheckbox" style="display:inline-block;width:16px;height:16px;text-align:center;border:1px solid #555;background:#1a1a1a;vertical-align:middle;line-height:14px;font-size:12px;cursor:pointer;user-select:none;"> </span></h3>
-                        <div id="historyList" style="max-height:300px;overflow-y:auto;background:#1a1a1a;padding:4px;border:1px solid #555;font-size:12px;font-family:'chevyray',monospace;user-select:none;"></div>
+                        <h3 style="display:flex;align-items:center;gap:8px;">History <span id="historyLoggingToggleCheckbox" class="custom-checkbox"> </span></h3>
+                        <div id="historyList" style="max-height:300px;overflow-y:auto;padding:4px;font-size:12px;font-family:'chevyray',monospace;user-select:none;"></div>
                         <div style="display:flex;gap:4px;margin-top:4px;">
-                            <button id="btnHistoryUndo" style="flex:1;background:#1a1a1a;color:#ffffff;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;padding:8px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;" disabled>Undo</button>
-                            <button id="btnHistoryRedo" style="flex:1;background:#1a1a1a;color:#ffffff;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;padding:8px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;" disabled>Redo</button>
-                            <button id="btnHistoryClear" style="flex:1;background:#1a1a1a;color:#ffffff;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;padding:8px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;">Clear</button>
+                            <button id="btnHistoryUndo" style="flex:1;" disabled>Undo</button>
+                            <button id="btnHistoryRedo" style="flex:1;" disabled>Redo</button>
+                            <button id="btnHistoryClear" style="flex:1;">Clear</button>
                         </div>
                     </div>
                     <div class="settings-group">
                         <h3>Item</h3>
-                        <select id="itemsCombo" style="width:100%;margin-bottom:8px;background:#1a1a1a;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#ffffff;padding:8px;font-family:'chevyray',monospace;font-size:12px;">
+                        <select id="itemsCombo" style="width:100%;margin-bottom:8px;">
                             <option value="">(none)</option>
                         </select>
                         <div class="item-settings">
@@ -600,8 +772,8 @@
                     </div>
                 </div>
             </div>
-            <div class="splitter-handle" id="canvasTimelineSplitter" style="width:100%;height:4px;cursor:row-resize;background:#1a1a1a;flex:0 0 4px;position:relative;">
-                <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:40px;height:2px;background:#555;border-radius:1px;"></div>
+            <div class="splitter-handle" id="canvasTimelineSplitter" style="width:100%;height:4px;cursor:row-resize;flex:0 0 4px;position:relative;">
+                <div class="splitter-grip splitter-grip-h"></div>
             </div>
             <div class="timeline-wrapper">
                 <div class="timeline-container">
@@ -615,7 +787,7 @@
                         <canvas id="timelineCanvas"></canvas>
                     </div>
                     <div class="playback-controls">
-                        <button id="btnPlay" title="Play"><i class="fas fa-play"></i></button>
+                        <button id="gani-btnPlay" title="Play"><i class="fas fa-play"></i></button>
                         <button id="btnStop" title="Stop"><i class="fas fa-stop"></i></button>
                         <button id="btnNewFrame" title="New Frame"><i class="fas fa-plus"></i></button>
                         <button id="btnDeleteFrame" title="Delete Frame"><i class="fas fa-minus"></i></button>
@@ -623,21 +795,24 @@
                         <button id="btnPasteBefore" title="Paste Before"><i class="fas fa-paste"></i></button>
                         <button id="btnPasteAfter" title="Paste After"><i class="fas fa-paste"></i></button>
                         <button id="btnReverseFrame" title="Reverse Frame"><i class="fas fa-exchange-alt"></i></button>
+                        <div class="playback-sep"></div>
+                        <button id="gani-btnUndo" title="Undo (Ctrl+Z)"><i class="fas fa-undo"></i></button>
+                        <button id="gani-btnRedo" title="Redo (Ctrl+Y)"><i class="fas fa-redo"></i></button>
                     </div>
                 </div>
             </div>
         </div>
-        <input type="file" id="fileInput" accept=".gani" style="display:none;">
-        <input type="file" id="imageInput" multiple accept="image/*" style="display:none;">
-        <input type="file" id="folderInput" webkitdirectory style="display:none;">
+        <input type="file" id="gani-fileInput" accept=".gani,.nw,.gmap,.graal,.zelda" multiple style="display:none;">
+        <input type="file" id="gani-imageInput" multiple accept="image/*" style="display:none;">
+        <input type="file" id="gani-folderInput" webkitdirectory style="display:none;">
         <div id="settingsDialog" class="dialog-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0);z-index:10000;justify-content:center;align-items:center;">
-            <div class="dialog-content" style="background:#2b2b2b;border:2px solid #1a1a1a;padding:0 20px 20px;width:400px;max-width:90vw;max-height:80vh;min-height:300px;display:flex;flex-direction:column;box-shadow:0 4px 12px rgba(0,0,0,0.8);overflow:hidden;">
-                <div class="dialog-titlebar" style="margin:0 -20px 0;display:flex;align-items:stretch;flex-shrink:0;">
+            <div class="dialog-content" style="border:2px solid #1a1a1a;padding:0 20px 20px;width:400px;max-width:90vw;max-height:80vh;min-height:300px;display:flex;flex-direction:column;box-shadow:0 4px 12px rgba(0,0,0,0.8);overflow:hidden;">
+                <div class="dialog-titlebar" style="margin:0 -20px 0;display:flex;align-items:stretch;">
                     <div style="display:flex;align-items:center;padding:10px 14px;gap:8px;flex:1;"><i class="fas fa-cog" style="flex-shrink:0;display:block;"></i><span style="font-family:'chevyray',monospace;font-size:13px;color:#c0c0c0;user-select:none;line-height:16px;">Settings</span></div>
                     <div style="display:flex;align-items:stretch;">
-                        <button class="settings-tab-btn" data-tab="general" style="background:#252525;border:none;border-left:1px solid #0a0a0a;padding:10px 16px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;color:#4a9eff;user-select:none;">General</button>
-                        <button class="settings-tab-btn" data-tab="canvas" style="background:transparent;border:none;border-left:1px solid #0a0a0a;padding:10px 16px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;color:#888;user-select:none;">Canvas</button>
-                        <button class="settings-tab-btn" data-tab="keybinds" style="background:transparent;border:none;border-left:1px solid #0a0a0a;padding:10px 16px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;color:#888;user-select:none;">Keybinds</button>
+                        <button class="settings-tab-btn active" data-tab="general">General</button>
+                        <button class="settings-tab-btn" data-tab="canvas">Canvas</button>
+                        <button class="settings-tab-btn" data-tab="keybinds">Keybinds</button>
                     </div>
                 </div>
                 <div id="settingsGeneralPanel" style="flex:1;overflow-y:auto;padding-right:8px;min-height:0;padding-top:16px;">
@@ -666,11 +841,12 @@
                     </div>
                     <div style="margin-bottom:16px;border-top:1px solid #0a0a0a;padding-top:16px;">
                         <div style="margin-bottom:12px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;">Options:</div>
-                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;cursor:pointer;"><span id="settingsPixelRenderingCheckbox" style="display:inline-block;width:16px;height:16px;text-align:center;border:1px solid #555;background:#1a1a1a;vertical-align:middle;line-height:14px;font-size:12px;cursor:pointer;user-select:none;">✓</span><span>Pixel Perfect Rendering</span></label>
-                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;cursor:pointer;"><span id="settingsAutoSaveCheckbox" style="display:inline-block;width:16px;height:16px;text-align:center;border:1px solid #555;background:#1a1a1a;vertical-align:middle;line-height:14px;font-size:12px;cursor:pointer;user-select:none;">✓</span><span>Auto Save</span></label>
-                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;cursor:pointer;"><span id="settingsShowGridCheckbox" style="display:inline-block;width:16px;height:16px;text-align:center;border:1px solid #555;background:#1a1a1a;vertical-align:middle;line-height:14px;font-size:12px;cursor:pointer;user-select:none;">✓</span><span>Show Grid</span></label>
-                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;cursor:pointer;"><span id="settingsGifAnimationsCheckbox" style="display:inline-block;width:16px;height:16px;text-align:center;border:1px solid #555;background:#1a1a1a;vertical-align:middle;line-height:14px;font-size:12px;cursor:pointer;user-select:none;">✓</span><span>GIF Animations</span></label>
-                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;cursor:pointer;"><span id="settingsLightEffectsCheckbox" style="display:inline-block;width:16px;height:16px;text-align:center;border:1px solid #555;background:#1a1a1a;vertical-align:middle;line-height:14px;font-size:12px;cursor:pointer;user-select:none;">✓</span><span>Light Effects</span></label>
+                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;"><span id="settingsSwapKeysCheckbox" class="custom-checkbox">✓</span><span>Swap WASD/Arrow Keys</span></label>
+                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;"><span id="settingsPixelRenderingCheckbox" class="custom-checkbox">✓</span><span>Pixel Perfect Rendering</span></label>
+                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;"><span id="settingsAutoSaveCheckbox" class="custom-checkbox">✓</span><span>Auto Save</span></label>
+                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;"><span id="settingsShowGridCheckbox" class="custom-checkbox">✓</span><span>Show Grid</span></label>
+                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;"><span id="settingsGifAnimationsCheckbox" class="custom-checkbox">✓</span><span>GIF Animations</span></label>
+                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;"><span id="settingsLightEffectsCheckbox" class="custom-checkbox">✓</span><span>Light Effects</span></label>
                     </div>
                 </div>
                 <div id="settingsCanvasPanel" style="display:none;flex:1;overflow-y:auto;padding-right:8px;min-height:0;padding-top:16px;">
@@ -684,90 +860,47 @@
                 <div id="settingsKeybindsPanel" style="display:none;flex:1;overflow-y:auto;padding:16px 8px 0 0;min-height:0;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;"></div>
                 <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;margin-top:16px;border-top:1px solid #0a0a0a;padding-top:16px;flex-shrink:0;min-width:0;align-items:flex-start;">
                     <div style="display:flex;gap:8px;flex-wrap:wrap;flex:1;min-width:0;align-items:flex-start;">
-                        <button id="settingsDefaults" style="background:#1a1a1a;color:#ffffff;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;padding:8px 16px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;white-space:nowrap;flex:1;min-width:fit-content;align-self:flex-start;">Defaults</button>
-                        <button id="settingsReset" title="Reset Editor" style="background:#1a1a1a;color:#ffffff;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;padding:8px 16px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;white-space:nowrap;flex:1;min-width:fit-content;align-self:flex-start;display:flex;align-items:center;justify-content:center;"><i class="fas fa-recycle"></i></button>
+                        <button id="settingsDefaults" style="white-space:nowrap;flex:1;min-width:fit-content;padding:5px 12px;">Defaults</button>
+                        <button id="settingsReset" title="Reset Editor" style="white-space:nowrap;flex:1;min-width:fit-content;padding:5px 12px;display:flex;align-items:center;justify-content:center;"><i class="fas fa-recycle"></i></button>
                     </div>
                     <div style="display:flex;gap:8px;flex-wrap:wrap;flex:1;min-width:0;align-items:flex-start;">
-                        <button id="settingsCancel" style="background:#1a1a1a;color:#ffffff;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;padding:8px 16px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;white-space:nowrap;flex:1;min-width:fit-content;align-self:flex-start;">Cancel</button>
-                        <button id="settingsOK" style="background:#1a1a1a;color:#ffffff;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;padding:8px 16px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;white-space:nowrap;flex:1;min-width:fit-content;align-self:flex-start;">OK</button>
+                        <button id="settingsCancel" style="white-space:nowrap;flex:1;min-width:fit-content;padding:5px 12px;">Cancel</button>
+                        <button id="settingsOK" style="white-space:nowrap;flex:1;min-width:fit-content;padding:5px 12px;">OK</button>
                     </div>
                 </div>
             </div>
         </div>
 
-        <div id="defaultGaniDialog" class="dialog-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;justify-content:center;align-items:center;">
-            <div style="background:#2b2b2b;border:2px solid #1a1a1a;padding:20px;width:400px;max-width:90vw;max-height:80vh;display:flex;flex-direction:column;">
-                <div style="margin-bottom:16px;color:#e0e0e0;font-size:12px;font-family:'chevyray',monospace;">Select Default GANI</div>
-                <div class="dialog-content" style="flex:1;overflow-y:auto;border:1px solid #1a1a1a;background:#353535;min-height:300px;max-height:400px;"></div>
-                <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
-                    <button id="defaultGaniCancel" style="background:#353535;color:#fff;border:1px solid #1a1a1a;padding:8px 16px;cursor:pointer;font-size:12px;font-family:'chevyray',monospace;">Cancel</button>
-                </div>
-            </div>
-        </div>
     </div>`;
 
     const levelHTML = `
     <div class="main-container">
-        <div class="toolbar">
-            <button title="New Level — create a blank .nw level" id="btnNew"><i class="fas fa-file"></i></button>
-            <button title="Open Level — load a .nw or .gmap file" id="btnOpen"><i class="fas fa-folder-open"></i></button>
-            <button title="Open Default Level — load a built-in example level" id="btnOpenDefault"><i class="fas fa-book"></i></button>
-            <button title="Save Level (Ctrl+S)" id="btnSave"><i class="fas fa-save"></i></button>
-            <button title="Save Level As — save to a new filename" id="btnSaveAs"><i class="fas fa-npc-export"></i></button>
-            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
-            <button title="Close All — close every open tab" id="btnCloseAll"><i class="fas fa-times"></i></button>
-            <button title="Reset Editor — reset layout, zoom, pan, and settings to defaults" id="btnResetEditor"><i class="fas fa-undo"></i></button>
-            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
-            <button title="Add workspace" id="btnWorkingDir"><i class="fas fa-folder-plus"></i></button>
-            <div style="position:relative;">
-                <button title="Color Scheme — pick a built-in theme" id="btnColorScheme"><i class="fas fa-palette"></i></button>
-                <div id="colorSchemeDropdown" style="display:none;position:absolute;top:100%;left:0;background:#2b2b2b;border:1px solid #0a0a0a;border-top:1px solid #404040;z-index:1000;min-width:150px;box-shadow:0 2px 8px rgba(0,0,0,0.5);margin-top:2px;user-select:none;">
-                    <div class="color-scheme-item" data-scheme="default" style="background:#404040;">Default</div>
-                    <div class="color-scheme-item" data-scheme="fusion-light">Fusion Light</div>
-                    <div class="color-scheme-item" data-scheme="fusion-dark">Fusion Dark</div>
-                    <div class="color-scheme-item" data-scheme="dark-style">Dark Style</div>
-                    <div class="color-scheme-item" data-scheme="dark-orange">Dark Orange</div>
-                    <div class="color-scheme-item" data-scheme="aqua">Aqua</div>
-                    <div class="color-scheme-item" data-scheme="elegant-dark">Elegant Dark</div>
-                    <div class="color-scheme-item" data-scheme="material-dark">Material Dark</div>
-                    <div class="color-scheme-item" data-scheme="light-style">Light Style</div>
-                    <div class="color-scheme-item" data-scheme="ayu-mirage">Ayu Mirage</div>
-                    <div class="color-scheme-item" data-scheme="dracula">Dracula</div>
-                    <div style="height:1px;background:#404040;margin:4px 0;"></div>
-                    <div id="btnCustomCSS" style="padding:8px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;color:#4a9eff;user-select:none;">Custom CSS...</div>
-                </div>
-            </div>
-            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
-            <button title="Settings (F2)" id="btnSettings" style="display:flex;align-items:center;gap:5px;"><i class="fas fa-cog"></i></button>
-            <button title="About / Changelog (F1)" id="btnAbout"><i class="fas fa-info-circle"></i></button>
-            <button class="btn-check-update" title="Check for Updates" style="display:none;"><svg width="12" height="12" viewBox="0 0 512 512" fill="currentColor"><path d="M105.1 202.6c7.7-21.8 20.2-42.3 37.8-59.8c62.5-62.5 163.8-62.5 226.3 0L386.3 160H352c-17.7 0-32 14.3-32 32s14.3 32 32 32H463.5c0 0 0 0 0 0h.4c17.7 0 32-14.3 32-32V80c0-17.7-14.3-32-32-32s-32 14.3-32 32v35.2L414.4 97.6c-87.5-87.5-229.3-87.5-316.8 0C73.2 122 55.6 150.7 44.8 181.4c-5.9 16.7 2.9 34.9 19.5 40.8s34.9-2.9 40.8-19.5zM39 289.3c-5 1.5-9.8 4.2-13.7 8.2c-4 4-6.7 8.8-8.1 14c-.3 1.2-.6 2.5-.8 3.8c-.3 1.7-.4 3.4-.4 5.1V432c0 17.7 14.3 32 32 32s32-14.3 32-32V396.9l17.6 17.5 0 0c87.5 87.4 229.3 87.4 316.7 0c24.4-24.4 42.1-53.1 52.9-83.7c5.9-16.7-2.9-34.9-19.5-40.8s-34.9 2.9-40.8 19.5c-7.7 21.8-20.2 42.3-37.8 59.8c-62.5 62.5-163.8 62.5-226.3 0l-.1-.1L125.6 352H160c17.7 0 32-14.3 32-32s-14.3-32-32-32H48.4c-1.6 0-3.2 .1-4.8 .3s-3.1 .5-4.6 1z"/></svg></button>
-            <button id="switchBtn" title="Switch Editor">⇄<span class="tb-btn-text"> Switch</span></button>
-            <button id="btnSetshape2" title="Setshape2 Editor" onclick="typeof SetshapeEditor!=='undefined'&&SetshapeEditor.open()"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAACbUlEQVQ4y52P20uTcRzGn9972MEdHBvOw1JZZk4dTjyXhGEGUgkWFJH1P3QTQXgVne6UThCEFxVBYWVgWCCBQ6IM0cBkouLxTbc5NJzv67b39/66SG2pQfXcfPnC83y/n4fgP1RZd8JAeJ4nIDH+X8OFpQdyKE2063T6S5QmwgIAVNUdE0yWVCMhAGMbTgYQAjAAK5FwS2Zm5sGhgf6LvCC0rq4s3fBV13Z+HRwAceXuE1PtzisAvAD5/R0BwBisNkfxKbfsGdHcseHRQF35oYbHfW9ePZweH2kTIqEFc15Rme/chTOKOz+/eiMFgDCAEQBsKbzk6H/WQWrNU3pDZUW3v7fnqiJH72mUMmHzGdVojijq8vCrAQAgHoth/EMv0uk3+OfNpMwxnDbrSi9YNJrIwuwk45KJ2bYZi63jXVcXrMHPWLSWYH/jWfi/u+LrTGyKhCQOAITtlTcnpRSTYxNw5XkgGS1objyCGSmMZUXt9fe8OOnM2KPuOJAsjufg8RZCmplDia8IgigCAHhB0ADEQ4vzP327hdkGB8fxyHbnQhBFKLKMdUUBRzh9fVOLbtO7KwHZtklzEtpv3eyU12QZYLA50i+X1tRfH/74XtuVIJkkGo3iwe07jxi0+0Vl5a8bmk+vBr586jNZbW1bBIQQHiA81bQdB1SVQlW1YNXho63dTzuOuwuK07wVNXaAtwOAoFFKOY7kTEwHfRPTwR0UaiIBg8nsefv8ybW9Hm+9McWUPTo0GLLY7IGtunpDSkaK2VL4pyrOrNzzdmeWh+O4OGOANDX2UllbvRtamGUEfyczCDEk7ctgjALAD3gS6nZ20OQgAAAAAElFTkSuQmCC" width="14" height="14" style="vertical-align:middle;image-rendering:pixelated;"><span class="tb-btn-text"> Setshape2</span></button>
-            <button id="btnGmapGen" title="Gmap Generator" onclick="typeof GmapGenerator!=='undefined'&&GmapGenerator.open()"><img src="icons/gmapgen.ico" width="14" height="14" style="image-rendering:pixelated;"><span class="tb-btn-text"> Gmap</span></button>
-            <button id="btnPlayerSetup" title="Player Settings" style="margin-left:auto;display:flex;align-items:center;gap:5px;background:#353535;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#fff;padding:4px 10px;cursor:pointer;font-family:chevyray,monospace;font-size:12px;white-space:nowrap;"><i class="fas fa-user"></i> Player</button>
-            <button id="btnPlay" title="Play Mode (F4)" style="display:flex;align-items:center;gap:5px;background:#353535;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#e0e0e0;padding:4px 12px;cursor:pointer;font-family:chevyray,monospace;font-size:12px;white-space:nowrap;">&#9654; Play</button>
+        ${makeToolbarHTML('level-')}
+        <div class="tabs" id="suiteTabs" style="width:100%;flex:none;min-height:0;position:relative;z-index:60;display:flex;align-items:stretch;height:32px;">
+            <button id="suiteTabScrollLeft" style="flex-shrink:0;background:none;border:none;color:#888;padding:4px 8px;cursor:pointer;font-size:12px;display:none;"><i class="fas fa-chevron-left"></i></button>
+            <div id="suiteTabsList" style="flex:1;overflow-x:auto;display:flex;height:100%;overflow-y:hidden;justify-content:flex-start;align-items:stretch;scrollbar-width:none;"></div>
+            <button id="suiteTabScrollRight" style="flex-shrink:0;background:none;border:none;color:#888;padding:4px 8px;cursor:pointer;font-size:12px;display:none;"><i class="fas fa-chevron-right"></i></button>
         </div>
-        <div class="tabs" id="levelTabs"></div>
         <div class="level-toolbar" id="levelToolbar">
             <button id="btnSelect" title="Select" class="tool-button active"><i class="fas fa-mouse-pointer"></i></button>
             <button id="btnDraw" title="Draw" class="tool-button"><i class="fas fa-pencil"></i></button>
             <button id="btnEraserTool" title="Eraser" class="tool-button"><i class="fas fa-eraser"></i></button>
             <button id="btnFillTool" title="Flood Fill" class="tool-button"><i class="fas fa-fill"></i></button>
-            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
+            <div class="tb-sep"></div>
             <button id="btnEditLinks" title="Edit Links" class="tool-button"><i class="fas fa-link"></i></button>
             <button id="btnNewLink" title="Add Link at Selection" class="tool-button" disabled><i class="fas fa-link-plus"></i></button>
-            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
+            <div class="tb-sep"></div>
             <button id="btnEditSigns" title="Edit Signs" class="tool-button"><i class="fas fa-sign"></i></button>
             <button id="btnNewSign" title="Add Sign at Selection" class="tool-button" disabled><i class="fas fa-sign-plus"></i></button>
-            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
-            <button title="Undo (Ctrl+Z)" id="btnUndo" class="tool-button"><i class="fas fa-undo"></i></button>
-            <button title="Redo (Ctrl+Y)" id="btnRedo" class="tool-button"><i class="fas fa-redo"></i></button>
+            <div class="tb-sep"></div>
+            <button title="Undo (Ctrl+Z)" id="level-btnUndo" class="tool-button"><i class="fas fa-undo"></i></button>
+            <button title="Redo (Ctrl+Y)" id="level-btnRedo" class="tool-button"><i class="fas fa-redo"></i></button>
             <button title="Cut (Ctrl+X)" id="btnCut" class="tool-button"><i class="fas fa-cut"></i></button>
             <button title="Copy (Ctrl+C)" id="btnCopy" class="tool-button"><i class="fas fa-copy"></i></button>
             <button title="Paste (Ctrl+V)" id="btnPaste" class="tool-button"><i class="fas fa-paste"></i></button>
             <button title="Delete (Del)" id="btnDelete" class="tool-button"><i class="fas fa-trash"></i></button>
             <button title="Export selected NPC as .npc file" id="btnExportNPC" class="tool-button" disabled><i class="fas fa-npc-export"></i></button>
-            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
+            <div class="tb-sep"></div>
             <div class="tool-dropdown">
                 <button id="btnFunctions" title="Miscellaneous Functions" class="tool-button"><i class="fas fa-wrench"></i></button>
                 <div class="tool-dropdown-menu" id="functionsMenu">
@@ -778,7 +911,7 @@
                 </div>
             </div>
             <button id="btnScreenshot" title="Screenshot" class="tool-button"><i class="fas fa-camera"></i></button>
-            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
+            <div class="tb-sep"></div>
             <div class="tool-dropdown">
                 <button id="btnSelectionFilter" title="Selection Filter" class="tool-button"><i class="fas fa-hand-pointer"></i></button>
                 <div class="tool-dropdown-menu" id="selectionFilterMenu">
@@ -800,15 +933,13 @@
                     <label><input type="checkbox" id="visLayer2" checked> Layer 2</label>
                 </div>
             </div>
-            <div style="width:1px;background:#1a1a1a;margin:0 4px;"></div>
-            <i class="fas fa-layer-group" title="Layer" style="margin-right:4px;"></i>
-            <input type="number" id="layerSpinbox" value="0" min="0" max="2" title="Current Layer" style="width:44px;height:30px;background:#2b2b2b;border:1px solid #1a1a1a;color:#e0e0e0;padding:2px 4px;font-family:chevyray,monospace;font-size:12px;text-align:center;">
-            <button id="btnLayerUp" class="tool-button"><i class="fas fa-chevron-up"></i></button>
-            <button id="btnLayerDown" class="tool-button"><i class="fas fa-chevron-down"></i></button>
+            <div class="tb-sep"></div>
+            <i class="fas fa-layer-group" title="Layer" style="flex-shrink:0;color:#e0e0e0;font-size:14px;"></i>
+            <div style="display:flex;align-items:center;gap:0;"><input type="number" id="layerSpinbox" data-no-spinner value="0" min="0" max="2" title="Current Layer" style="width:44px;height:30px;background:#2b2b2b;border:1px solid #1a1a1a;color:#e0e0e0;padding:2px 4px;font-family:chevyray,monospace;font-size:12px;text-align:center;"><button id="btnLayerUp" class="tool-button" style="padding:6px 5px;"><i class="fas fa-chevron-up"></i></button><button id="btnLayerDown" class="tool-button" style="padding:6px 5px;"><i class="fas fa-chevron-down"></i></button></div>
             <button id="btnFadeLayers" title="Fade Inactive Layers" class="tool-button active"><i class="fas fa-eye-low-vision"></i></button>
         </div>
         <div class="level-area" id="levelArea">
-            <div class="splitter horizontal" id="mainSplitter" style="flex:1;overflow:hidden;position:relative;">
+            <div class="splitter horizontal" id="level-mainSplitter" style="flex:1;overflow:hidden;position:relative;">
                 <div class="object-library-panel">
                     <div class="left-panel-tabs">
                         <button class="left-tab active" data-panel="workdir">Workdir</button>
@@ -838,10 +969,10 @@
                 <div class="center-panel">
                     <div class="canvas-container">
                         <div class="canvas-wrapper">
-                            <canvas id="mainCanvas"></canvas>
+                            <canvas id="level-mainCanvas"></canvas>
                             <div class="canvas-controls">
                                 <button id="btnGrid" title="Toggle Grid"><i class="fas fa-th"></i></button>
-                                <button id="btnCenterView" title="Center View"><i class="fas fa-crosshairs"></i></button>
+                                <button id="level-btnCenterView" title="Center View"><i class="fas fa-crosshairs"></i></button>
                                 <button id="btnSnapGrid" title="Snap to Grid" class="active"><i class="fas fa-magnet"></i></button>
                             </div>
                         </div>
@@ -855,7 +986,7 @@
                             <button id="btnHeightUp"><i class="fas fa-chevron-up"></i></button>
                             <button id="btnHeightDown"><i class="fas fa-chevron-down"></i></button>
                             <i class="fas fa-search" style="margin-left:16px;margin-right:4px;"></i>
-                            <input type="range" id="zoomSlider" min="0" max="9" value="5" style="width:150px;">
+                            <input type="range" id="level-zoomSlider" min="0" max="9" value="5" style="width:150px;">
                             <label>Zoom:</label>
                             <span id="zoomDisplay">1x</span>
                             <div style="margin-left:auto;display:flex;align-items:center;gap:4px;">
@@ -893,8 +1024,10 @@
                             </div>
                             <div class="tile-selection-toolbar">
                                 <button title="Tile Definitions" id="btnEditTileset"><i class="fas fa-th"></i></button>
-                                <input type="range" id="tilesetZoomSlider" min="1" max="4" step="0.5" value="2" title="Tileset Zoom" style="width:70px;accent-color:#4a9eff;cursor:pointer;margin-left:8px;">
-                                <span id="tilesetZoomLabel" style="font-size:11px;color:#9a9a9e;font-family:chevyray,monospace;min-width:28px;">2x</span>
+                                <div class="tileset-zoom-group">
+                                    <input type="range" id="tilesetZoomSlider" min="1" max="4" step="0.5" value="2" title="Tileset Zoom" style="width:130px;accent-color:#4a9eff;cursor:pointer;">
+                                    <span id="tilesetZoomLabel" style="font-size:11px;color:#9a9a9e;font-family:chevyray,monospace;min-width:28px;">2x</span>
+                                </div>
                                 <div class="selected-tile-display" style="margin-left:auto;">
                                     <canvas id="selectedTileCanvas" width="16" height="16"></canvas>
                                 </div>
@@ -976,18 +1109,9 @@
                 <span id="zoomLevel">Zoom: 100%</span>
             </div>
         </div>
-        <input type="file" id="fileInput" accept=".nw,.gmap,.graal,.zelda" multiple style="display:none;">
-        <input type="file" id="imageInput" multiple accept="image/*" style="display:none;">
-        <input type="file" id="folderInput" webkitdirectory style="display:none;">
-        <div id="defaultGaniDialog" class="dialog-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;justify-content:center;align-items:center;">
-            <div style="background:#2b2b2b;border:2px solid #1a1a1a;width:400px;max-width:90vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 4px 16px rgba(0,0,0,0.9);">
-                <div class="dialog-titlebar" style="border-bottom:2px solid #0a0a0a;display:flex;align-items:center;padding:10px 14px;gap:8px;"><i class="fas fa-book"></i><span style="font-family:'chevyray',monospace;font-size:13px;color:#c0c0c0;">Default Levels</span></div>
-                <div class="dialog-content" style="flex:1;overflow-y:auto;min-height:200px;max-height:420px;"></div>
-                <div style="border-top:1px solid #0a0a0a;padding:12px 16px;display:flex;justify-content:flex-end;">
-                    <button id="defaultGaniCancel" style="background:#1a1a1a;color:#fff;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;padding:8px 16px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;">Cancel</button>
-                </div>
-            </div>
-        </div>
+        <input type="file" id="level-fileInput" accept=".nw,.gmap,.graal,.zelda,.gani" multiple style="display:none;">
+        <input type="file" id="level-imageInput" multiple accept="image/*" style="display:none;">
+        <input type="file" id="level-folderInput" webkitdirectory style="display:none;">
         <div id="floatingTooltip"></div>
         <div id="tilesetOrderDialog" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;justify-content:center;align-items:center;">
             <div style="background:#2b2b2b;border:1px solid #555;width:300px;display:flex;flex-direction:column;font-size:13px;color:#ccc;">

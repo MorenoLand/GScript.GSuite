@@ -246,7 +246,7 @@ pub fn run() {
             } else {
                 let label = format!("w{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis());
                 let _ = tauri::WebviewWindowBuilder::new(app, label, tauri::WebviewUrl::App("index.html".into()))
-                    .title("GraalSuite").inner_size(1280.0, 800.0).decorations(false).resizable(true).center().build();
+                    .title("GSuite").inner_size(1280.0, 800.0).decorations(false).resizable(true).center().build();
             }
         }))
         .plugin(tauri_plugin_dialog::init())

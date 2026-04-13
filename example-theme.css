@@ -93,7 +93,7 @@ input[type=range]::-moz-range-thumb { background: #cc00ff !important; border: 3p
 #colorSwatch { border: 1px solid #660099 !important; border-radius: 3px !important; }
 
 /* ── Custom checkbox spans ──────────────────────────────────── */
-#singleDirCheckbox, #loopedCheckbox, #continousCheckbox, #historyLoggingToggleCheckbox, #colorEffectCheckbox { background: #1a003a !important; border: 1px solid #660099 !important; color: #ff44ff !important; border-radius: 2px !important; }
+.custom-checkbox { background: #1a003a !important; border: 1px solid #660099 !important; color: #ff44ff !important; border-radius: 2px !important; }
 
 /* ── Right panel ────────────────────────────────────────────── */
 .right-panel { background: #0d0020 !important; border-color: #330055 !important; }
@@ -152,12 +152,23 @@ input[type=range]::-moz-range-thumb { background: #cc00ff !important; border: 3p
 .dialog-content label, .dialog-overlay > div label { color: #aa66ff !important; }
 .dialog-overlay > div > div { color: #e0c0ff !important; }
 
-/* ── Default GANI dialog list ───────────────────────────────── */
+/* ── Default open dialog list items ─────────────────────────── */
 .default-gani-item { background: #0d0020 !important; color: #cc88ff !important; border-bottom: 1px solid #220044 !important; }
 .default-gani-item:hover { background: #1a0035 !important; color: #ff88ff !important; }
 .default-gani-item.selected { background: #2a0055 !important; color: #ff44ff !important; border-left: 3px solid #ff00ff !important; }
-#defaultGaniCancel { background: #1a003a !important; color: #cc88ff !important; border: 1px solid #550088 !important; border-radius: 4px !important; }
-#defaultGaniCancel:hover { background: #330066 !important; border-color: #ff00ff !important; box-shadow: 0 0 6px #ff00ff66 !important; }
+/* ── Dialog tab buttons ─────────────────────────────────────── */
+.info-tab-btn, .settings-tab-btn, .defaultOpen-tab-btn { color: #cc88ff !important; border-color: #330055 !important; }
+.info-tab-btn.active, .settings-tab-btn.active, .defaultOpen-tab-btn.active { background: #1a0035 !important; color: #ff44ff !important; }
+.info-tab-btn:hover, .settings-tab-btn:hover, .defaultOpen-tab-btn:hover { background: #1a003a !important; }
+/* ── Splitter grip indicator ────────────────────────────────── */
+.splitter-grip { background: #9900ff !important; opacity: 0.5 !important; }
+
+/* ── Scrollbars ─────────────────────────────────────────────── */
+* { scrollbar-color: #550088 #0a0015 !important; }
+*::-webkit-scrollbar-track { background: #0a0015 !important; }
+*::-webkit-scrollbar-thumb { background: #550088 !important; border-color: #0a0015 !important; border-radius: 6px !important; }
+*::-webkit-scrollbar-thumb:hover { background: #880099 !important; }
+*::-webkit-scrollbar-corner { background: #0a0015 !important; }
 
 /* ── Theme switcher menu items ──────────────────────────────── */
 .color-scheme-item { background: #0d001a !important; color: #cc88ff !important; border-bottom: 1px solid #220044 !important; }

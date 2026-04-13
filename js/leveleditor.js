@@ -465,6 +465,8 @@ class Level {
 }
 
 class LevelEditor {
+    static _PREFIXED_IDS = new Set(['bgColorInput','btnAbout','btnCenterView','btnCloseAll','btnColorScheme','btnCustomCSS','btnGmapGen','btnNew','btnOpen','btnOpenDefault','btnPlay','btnPlayerSetup','btnRedo','btnReset','btnSave','btnSaveAll','btnSaveAs','btnSetshape2','btnSettings','btnUndo','btnWorkingDir','colorSchemeDropdown','fileInput','folderInput','imageInput','mainCanvas','mainSplitter','switchBtn','zoomSlider']);
+    $(id) { return document.getElementById(LevelEditor._PREFIXED_IDS.has(id) ? 'level-' + id : id); }
     constructor() {
         this.levels = [];
         this.currentLevelIndex = -1;
@@ -494,14 +496,16 @@ class LevelEditor {
         this.resizeStartSelectionEndX = 0;
         this.resizeStartSelectionEndY = 0;
         this.panAnimationFrame = null;
-        this.canvas = document.getElementById('mainCanvas');
+        this.canvas = this.$('mainCanvas');
         this.ctx = this.canvas.getContext('2d');
         this.tilesetCanvas = null;
 
         this.objectMode = false;
         this.selectedObjectType = 'chest';
         this.selectedObject = null;
+        this.selectedObjects = new Set();
         this._clipboardTiles = null;
+        this._clipboardObjects = null;
         this.resizingLink = null;
         this.resizingLinkHandle = null;
         this.resizingLinkStartX = 0;
@@ -561,6 +565,7 @@ class LevelEditor {
         this.draggingObject = null;
         this.draggingObjectOffsetX = 0;
         this.draggingObjectOffsetY = 0;
+        this.draggingObjectStartPositions = null;
         this.draggingNewObjectType = null;
         this.draggingNewObjectX = 0;
         this.draggingNewObjectY = 0;
@@ -570,7 +575,6 @@ class LevelEditor {
     }
 
     init() {
-        this._initLoader = this.showLoadingMessage('Loading Level Editor...');
         this.initMonaco();
         document.addEventListener('contextmenu', (e) => e.preventDefault());
         this.setupCanvas();
@@ -726,54 +730,62 @@ class LevelEditor {
         });
         this.canvas.addEventListener('auxclick', (e) => { if (e.button === 2) e.preventDefault(); });
 
-        document.getElementById('btnNew').addEventListener('click', () => this.newLevel());
-        document.getElementById('btnOpen').addEventListener('click', () => this.openLevel());
-        document.getElementById('btnOpenDefault')?.addEventListener('click', () => this.openDefaultLevelDialog());
-        document.getElementById('btnSave').addEventListener('click', () => this.saveLevel());
-        document.getElementById('btnSaveAs').addEventListener('click', () => this.saveLevelAs());
-        document.getElementById('btnTilesetOrder').addEventListener('click', () => { this.tilesetOrder(); });
-        document.getElementById('tilesetsCombo').addEventListener('change', (e) => this.selectTileset(e.target.value));
-        try { const tc = JSON.parse(localStorage.getItem('levelEditor_tilesetCache')||'{}'); if (tc && typeof tc === 'object') { this._tilesetDataCache = tc; const combo = document.getElementById('tilesetsCombo'); for (const name of Object.keys(tc)) { if (combo && ![...combo.options].some(o => o.value === name)) { const o = document.createElement('option'); o.value = o.textContent = name; combo.appendChild(o); } } } } catch(e) {}
-        document.getElementById('btnRefreshTileset').addEventListener('click', () => this.refreshTileset());
-        document.getElementById('btnNewTileset').addEventListener('click', () => this.newTileset());
-        document.getElementById('btnLoadTileset').addEventListener('click', () => this.loadTileset());
-        document.getElementById('btnDeleteTileset').addEventListener('click', () => this.deleteTileset());
-        document.getElementById('btnEditTileset').addEventListener('click', () => this.editTileset());
-        const tzSlider = document.getElementById('tilesetZoomSlider');
-        const tzLabel = document.getElementById('tilesetZoomLabel');
+        this.$('btnNew').addEventListener('click', () => this.newLevel());
+        this.$('btnOpen').addEventListener('click', () => this.openLevel());
+        this.$('btnOpenDefault')?.addEventListener('click', () => this.openDefaultLevelDialog());
+        this._registerDefaultLevelLoader();
+        this.$('btnSave').addEventListener('click', () => this.saveLevel());
+        this.$('btnSaveAs').addEventListener('click', () => this.saveLevelAs());
+        this.$('btnSaveAll')?.addEventListener('click', () => this.saveAllLevels());
+        this.$('btnTilesetOrder').addEventListener('click', () => { this.tilesetOrder(); });
+        this.$('tilesetsCombo').addEventListener('change', (e) => this.selectTileset(e.target.value));
+        try { const tc = JSON.parse(localStorage.getItem('levelEditor_tilesetCache')||'{}'); if (tc && typeof tc === 'object') { this._tilesetDataCache = tc; const combo = this.$('tilesetsCombo'); for (const name of Object.keys(tc)) { if (combo && ![...combo.options].some(o => o.value === name)) { const o = document.createElement('option'); o.value = o.textContent = name; combo.appendChild(o); } } } } catch(e) {}
+        this.$('btnRefreshTileset').addEventListener('click', () => this.refreshTileset());
+        this.$('btnNewTileset').addEventListener('click', () => this.newTileset());
+        this.$('btnLoadTileset').addEventListener('click', () => this.loadTileset());
+        this.$('btnDeleteTileset').addEventListener('click', () => this.deleteTileset());
+        this.$('btnEditTileset').addEventListener('click', () => this.editTileset());
+        const tzSlider = this.$('tilesetZoomSlider');
+        const tzLabel = this.$('tilesetZoomLabel');
         if (tzSlider) { tzSlider.value = this.tilesetZoom; if (tzLabel) tzLabel.textContent = Math.round(this.tilesetZoom*100)/100 + 'x'; tzSlider.addEventListener('input', () => { this.tilesetZoom = parseFloat(tzSlider.value); if (tzLabel) tzLabel.textContent = Math.round(this.tilesetZoom*100)/100 + 'x'; localStorage.setItem('levelEditor_tilesetZoom', this.tilesetZoom); this.updateTilesetDisplay(); }); }
-        document.getElementById('selectedTileCanvas').addEventListener('dblclick', () => this.clearSelectedTile());
+        this.$('selectedTileCanvas').addEventListener('dblclick', () => this.clearSelectedTile());
 
-        document.getElementById('btnGrid').addEventListener('click', () => this.toggleGrid());
-        document.getElementById('btnCenterView').addEventListener('click', () => this.centerView());
-        document.getElementById('btnSnapGrid').addEventListener('click', () => this.toggleSnapGrid());
-        const btnUndo = document.getElementById('btnUndo');
+        this.$('btnGrid').addEventListener('click', () => this.toggleGrid());
+        this.$('btnCenterView').addEventListener('click', () => this.centerView());
+        this.$('btnSnapGrid').addEventListener('click', () => this.toggleSnapGrid());
+        const btnUndo = this.$('btnUndo');
         if (btnUndo) btnUndo.addEventListener('click', () => this.undo());
-        const btnRedo = document.getElementById('btnRedo');
+        const btnRedo = this.$('btnRedo');
         if (btnRedo) btnRedo.addEventListener('click', () => this.redo());
-        const btnCut = document.getElementById('btnCut');
+        const btnCut = this.$('btnCut');
         if (btnCut) btnCut.addEventListener('click', () => this._doCut());
-        const btnCopy = document.getElementById('btnCopy');
+        const btnCopy = this.$('btnCopy');
         if (btnCopy) btnCopy.addEventListener('click', () => this._doCopy());
-        const btnPaste = document.getElementById('btnPaste');
+        const btnPaste = this.$('btnPaste');
         if (btnPaste) btnPaste.addEventListener('click', () => this._doPaste());
-        const btnDelete = document.getElementById('btnDelete');
+        const btnDelete = this.$('btnDelete');
         if (btnDelete) btnDelete.addEventListener('click', () => this._doDelete());
-        const btnDraw = document.getElementById('btnDraw');
+        const btnDraw = this.$('btnDraw');
         if (btnDraw) btnDraw.addEventListener('click', () => this.setTool('draw'));
-        const btnFill = document.getElementById('btnFillTool');
+        const btnFill = this.$('btnFillTool');
         if (btnFill) btnFill.addEventListener('click', () => { this.floodFillEnabled = !this.floodFillEnabled; if (this.floodFillEnabled) this.setTool('draw'); btnFill.classList.toggle('active', this.floodFillEnabled); });
-        const btnEraser = document.getElementById('btnEraserTool');
+        const btnEraser = this.$('btnEraserTool');
         if (btnEraser) btnEraser.addEventListener('click', () => this.setTool('eraser'));
-        const btnSelect = document.getElementById('btnSelect');
+        const btnSelect = this.$('btnSelect');
         if (btnSelect) btnSelect.addEventListener('click', () => { this.objectMode = false; this.setTool('select'); });
-        const btnCloseAll = document.getElementById('btnCloseAll');
-        if (btnCloseAll) btnCloseAll.addEventListener('click', () => this.closeAllTabs());
-        const btnResetEditor = document.getElementById('btnResetEditor');
+        const btnCloseAll = this.$('btnCloseAll');
+        if (btnCloseAll) btnCloseAll.addEventListener('click', () => {
+            if (window.tabManager && typeof window.tabManager.closeAll === 'function') {
+                window.tabManager.closeAll();
+                return;
+            }
+            this.closeAllTabs();
+        });
+        const btnResetEditor = this.$('btnReset');
         if (btnResetEditor) btnResetEditor.addEventListener('click', () => this.resetEditor());
 
         const setupDragPlace = (id, type) => {
-            const btn = document.getElementById(id);
+            const btn = this.$(id);
             if (!btn) return;
             btn.addEventListener('mousedown', (e) => {
                 if (e.button !== 0) return;
@@ -788,8 +800,8 @@ class LevelEditor {
         setupDragPlace('btnPlaceChest', 'chest');
         setupDragPlace('btnPlaceSign', 'sign');
         setupDragPlace('btnPlaceLink', 'link');
-        document.getElementById('btnDeleteObject')?.addEventListener('click', () => this.setObjectMode('delete'));
-        const btnTileMode = document.getElementById('btnTileMode');
+        this.$('btnDeleteObject')?.addEventListener('click', () => this.setObjectMode('delete'));
+        const btnTileMode = this.$('btnTileMode');
         if (btnTileMode) btnTileMode.addEventListener('click', () => { this.draggingNewObjectType = null; this.setObjectMode(null); });
 
         document.addEventListener('mousemove', (e) => {
@@ -827,22 +839,22 @@ class LevelEditor {
 
         this.initRightTabs();
 
-        document.getElementById('btnResizeLevel')?.addEventListener('click', () => this.resizeLevel());
-        document.getElementById('btnRefreshNPCList')?.addEventListener('click', () => this.refreshNPCList());
+        this.$('btnResizeLevel')?.addEventListener('click', () => this.resizeLevel());
+        this.$('btnRefreshNPCList')?.addEventListener('click', () => this.refreshNPCList());
 
-        const btnWorkingDir = document.getElementById('btnWorkingDir');
+        const btnWorkingDir = this.$('btnWorkingDir');
         if (btnWorkingDir) btnWorkingDir.addEventListener('click', () => this.setWorkingDirectory());
-        const btnBrowseObjectsDir = document.getElementById('btnBrowseObjectsDir');
+        const btnBrowseObjectsDir = this.$('btnBrowseObjectsDir');
         if (btnBrowseObjectsDir) btnBrowseObjectsDir.addEventListener('click', () => this.setWorkingDirectory());
-        document.getElementById('btnBrowseObjectsLib')?.addEventListener('click', () => this.loadObjectsLibrary());
-        document.getElementById('btnExportNPC')?.addEventListener('click', () => this.exportSelectedNPC());
-        document.getElementById('btnExportNPC2')?.addEventListener('click', () => this.exportSelectedNPC());
+        this.$('btnBrowseObjectsLib')?.addEventListener('click', () => this.loadObjectsLibrary());
+        this.$('btnExportNPC')?.addEventListener('click', () => this.exportSelectedNPC());
+        this.$('btnExportNPC2')?.addEventListener('click', () => this.exportSelectedNPC());
         document.querySelectorAll('.left-tab').forEach(tab => tab.addEventListener('click', () => {
             document.querySelectorAll('.left-tab').forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
             const panel = tab.dataset.panel;
-            document.getElementById('leftPanelWorkdir').style.display = panel === 'workdir' ? 'flex' : 'none';
-            document.getElementById('leftPanelObjects').style.display = panel === 'objects' ? 'flex' : 'none';
+            this.$('leftPanelWorkdir').style.display = panel === 'workdir' ? 'flex' : 'none';
+            this.$('leftPanelObjects').style.display = panel === 'objects' ? 'flex' : 'none';
         }));
         const _resizeSel = (axis, delta) => {
             if (!this.hasSelection()) return;
@@ -855,39 +867,39 @@ class LevelEditor {
             this.updateSelectionInfo();
             this.render();
         };
-        const btnWidthUp = document.getElementById('btnWidthUp');
+        const btnWidthUp = this.$('btnWidthUp');
         if (btnWidthUp) btnWidthUp.addEventListener('click', () => _resizeSel('w', 1));
-        const btnWidthDown = document.getElementById('btnWidthDown');
+        const btnWidthDown = this.$('btnWidthDown');
         if (btnWidthDown) btnWidthDown.addEventListener('click', () => _resizeSel('w', -1));
-        const btnHeightUp = document.getElementById('btnHeightUp');
+        const btnHeightUp = this.$('btnHeightUp');
         if (btnHeightUp) btnHeightUp.addEventListener('click', () => _resizeSel('h', 1));
-        const btnHeightDown = document.getElementById('btnHeightDown');
+        const btnHeightDown = this.$('btnHeightDown');
         if (btnHeightDown) btnHeightDown.addEventListener('click', () => _resizeSel('h', -1));
-        const brushWidth = document.getElementById('brushWidth');
+        const brushWidth = this.$('brushWidth');
         if (brushWidth) brushWidth.addEventListener('change', (e) => { const v = parseInt(e.target.value); if (v > 0 && this.hasSelection()) { const sx = Math.min(this.selectionStartX, this.selectionEndX); const cw = Math.abs(this.selectionEndX - this.selectionStartX) + 1; _resizeSel('w', v - cw); } });
-        const brushHeight = document.getElementById('brushHeight');
+        const brushHeight = this.$('brushHeight');
         if (brushHeight) brushHeight.addEventListener('change', (e) => { const v = parseInt(e.target.value); if (v > 0 && this.hasSelection()) { const ch = Math.abs(this.selectionEndY - this.selectionStartY) + 1; _resizeSel('h', v - ch); } });
-        const zoomSlider = document.getElementById('zoomSlider');
+        const zoomSlider = this.$('zoomSlider');
         if (zoomSlider) {
             zoomSlider.addEventListener('input', (e) => {
                 this.zoomLevel = parseInt(e.target.value);
                 this.updateZoomFromLevel();
             });
         }
-        const tileTranslucencyValue = document.getElementById('tileTranslucencyValue');
+        const tileTranslucencyValue = this.$('tileTranslucencyValue');
         if (tileTranslucencyValue) {
             tileTranslucencyValue.addEventListener('change', (e) => {
                 this.tileTranslucency = Math.max(0, Math.min(15, parseInt(e.target.value) || 0));
             });
         }
-        const btnTileTranslucencyUp = document.getElementById('btnTileTranslucencyUp');
+        const btnTileTranslucencyUp = this.$('btnTileTranslucencyUp');
         if (btnTileTranslucencyUp) {
             btnTileTranslucencyUp.addEventListener('click', () => {
                 this.tileTranslucency = Math.min(15, this.tileTranslucency + 1);
                 if (tileTranslucencyValue) tileTranslucencyValue.value = this.tileTranslucency;
             });
         }
-        const btnTileTranslucencyDown = document.getElementById('btnTileTranslucencyDown');
+        const btnTileTranslucencyDown = this.$('btnTileTranslucencyDown');
         if (btnTileTranslucencyDown) {
             btnTileTranslucencyDown.addEventListener('click', () => {
                 this.tileTranslucency = Math.max(0, this.tileTranslucency - 1);
@@ -897,8 +909,8 @@ class LevelEditor {
 
         this.canvas.addEventListener('dblclick', (e) => this.handleCanvasDblClick(e));
         document.addEventListener('keydown', (e) => this.handleKeyDown(e));
-        document.getElementById('btnEditLinks')?.addEventListener('click', () => this.openEditLinksDialog());
-        document.getElementById('btnNewLink')?.addEventListener('click', () => {
+        this.$('btnEditLinks')?.addEventListener('click', () => this.openEditLinksDialog());
+        this.$('btnNewLink')?.addEventListener('click', () => {
             if (!this.hasSelection()) return;
             const sx = Math.min(this.selectionStartX, this.selectionEndX);
             const sy = Math.min(this.selectionStartY, this.selectionEndY);
@@ -911,8 +923,8 @@ class LevelEditor {
             this.render(); this.saveSessionDebounced();
             this.openLinkEditor(obj);
         });
-        document.getElementById('btnEditSigns')?.addEventListener('click', () => this.openEditSignsDialog());
-        document.getElementById('btnNewSign')?.addEventListener('click', () => {
+        this.$('btnEditSigns')?.addEventListener('click', () => this.openEditSignsDialog());
+        this.$('btnNewSign')?.addEventListener('click', () => {
             if (!this.hasSelection()) return;
             const sx = Math.min(this.selectionStartX, this.selectionEndX);
             const sy = Math.min(this.selectionStartY, this.selectionEndY);
@@ -923,52 +935,65 @@ class LevelEditor {
             this.render(); this.saveSessionDebounced();
             this.openSignEditor(obj);
         });
-        const btnScreenshot = document.getElementById('btnScreenshot');
+        const btnScreenshot = this.$('btnScreenshot');
         if (btnScreenshot) btnScreenshot.addEventListener('click', () => this.generateScreenshot());
         ['visNPCs','visCharacters','visLinks','visSigns'].forEach(id => {
-            const cb = document.getElementById(id);
+            const cb = this.$(id);
             if (cb) cb.addEventListener('change', () => this.render());
         });
         [0,1,2].forEach(i => {
-            const cb = document.getElementById(`visLayer${i}`);
+            const cb = this.$(`visLayer${i}`);
             if (cb) cb.addEventListener('change', () => { if (this.level.layers[i]) { this.level.layers[i].visible = cb.checked; this.render(); } });
         });
-        const layerSpin = document.getElementById('layerSpinbox');
+        const layerSpin = this.$('layerSpinbox');
         if (layerSpin) {
             const setLayer = (v) => { this.setCurrentLayer(v); layerSpin.value = this.currentLayer; this.updateUI(); };
             layerSpin.addEventListener('change', () => setLayer(parseInt(layerSpin.value) || 0));
-            document.getElementById('btnLayerUp')?.addEventListener('click', () => setLayer(this.currentLayer + 1));
-            document.getElementById('btnLayerDown')?.addEventListener('click', () => setLayer(this.currentLayer - 1));
-            const fadeBtn = document.getElementById('btnFadeLayers');
+            this.$('btnLayerUp')?.addEventListener('click', () => setLayer(this.currentLayer + 1));
+            this.$('btnLayerDown')?.addEventListener('click', () => setLayer(this.currentLayer - 1));
+            const fadeBtn = this.$('btnFadeLayers');
             if (fadeBtn) fadeBtn.addEventListener('click', () => { this.fadeInactiveLayers = !this.fadeInactiveLayers; fadeBtn.classList.toggle('active', this.fadeInactiveLayers); this.render(); });
         }
-        document.getElementById('btnAddLayer')?.addEventListener('click', () => this.addLayer());
-        document.getElementById('btnDeleteLayer')?.addEventListener('click', () => this.deleteLayer());
-        const btnAbout = document.getElementById('btnAbout');
-        if (btnAbout) btnAbout.addEventListener('click', () => window.openInfoDialog?.('about'));
+        this.$('btnAddLayer')?.addEventListener('click', () => this.addLayer());
+        this.$('btnDeleteLayer')?.addEventListener('click', () => this.deleteLayer());
+        const btnAbout = this.$('btnAbout');
+        if (btnAbout) {
+            btnAbout.addEventListener('click', () => window.openInfoDialog?.('about'));
+            if (_isTauri) btnAbout.style.display = 'none';
+        }
         if (_isTauri) {
             document.querySelectorAll('.btn-check-update').forEach(btn => {
                 btn.style.display = '';
                 btn.addEventListener('click', async () => {
-                    if (document.getElementById('_updateDlg')) return;
+                    if (this.$('_updateDlg')) return;
                     btn.disabled = true;
                     this._showUpdateCheckDialog(btn);
                 });
             });
             if (_isTauri) {
                 _tauri.event.listen('update-available', (event) => {
-                    if (document.getElementById('_updateDlg')) return;
+                    if (this.$('_updateDlg')) return;
                     this._showUpdatePrompt(event.payload);
                 }).catch(() => {});
             }
         }
-        document.getElementById('btnSettings')?.addEventListener('click', () => this.openSettingsDialog());
-        document.getElementById('btnPlay')?.addEventListener('click', () => this.togglePlayMode());
-        document.getElementById('btnPlayerSetup')?.addEventListener('click', () => this.openPlayerCustomizeDialog());
+        this.$('btnSettings')?.addEventListener('click', () => this.openSettingsDialog());
+        this.$('btnPlay')?.addEventListener('click', () => this.togglePlayMode());
+        this.$('btnPlayerSetup')?.addEventListener('click', () => this.openPlayerCustomizeDialog());
+        const bgColorInput = this.$('bgColorInput');
+        if (bgColorInput) {
+            bgColorInput.value = this._getSettings().voidColor || '#000000';
+            bgColorInput.addEventListener('input', () => {
+                if (!this._editorSettings) this._editorSettings = {};
+                this._editorSettings.voidColor = bgColorInput.value;
+                localStorage.setItem('graal_editorSettings', JSON.stringify(this._editorSettings));
+                this.redrawCanvas();
+            });
+        }
     }
 
     _showUpdateCheckDialog(btn) {
-        const existing = document.getElementById('_updateDlg'); if (existing) existing.remove();
+        const existing = this.$('_updateDlg'); if (existing) existing.remove();
         const box = document.createElement('div'); box.id = '_updateDlg'; box.style.cssText = 'position:fixed;top:80px;left:calc(50% - 180px);width:360px;z-index:10000;display:flex;flex-direction:column;background:#2b2b2b;border:2px solid #1a1a1a;'; box.classList.add('ed-dialog-box');
         const _bs = 'background:#2b2b2b;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#e0e0e0;padding:6px 12px;cursor:pointer;font-family:chevyray,monospace;font-size:12px;';
         box.innerHTML = `<div style="padding:8px 12px;font-size:13px;display:flex;align-items:center;justify-content:space-between;user-select:none;background:#353535;flex-shrink:0;" class="_udlg-title"><span>Check for Updates</span><button id="_updateDlgClose" style="background:none;border:none;cursor:pointer;font-size:16px;line-height:1;">×</button></div><div id="_updateDlgBody" style="padding:16px;font-size:13px;font-family:chevyray,monospace;">Checking for updates...</div>`;
@@ -976,19 +1001,19 @@ class LevelEditor {
         box.querySelector('#_updateDlgClose').addEventListener('click', () => { box.remove(); btn.disabled = false; });
         _tauri.core.invoke('check_for_update').then(result => {
             if (result) this._showUpdatePrompt(result, btn);
-            else { document.getElementById('_updateDlgBody').textContent = 'You\'re up to date!'; btn.disabled = false; }
-        }).catch(e => { document.getElementById('_updateDlgBody').innerHTML = `<span style="color:#ff6b6b;">Update check failed:\n${e}</span>`; btn.disabled = false; });
+            else { this.$('_updateDlgBody').textContent = 'You\'re up to date!'; btn.disabled = false; }
+        }).catch(e => { this.$('_updateDlgBody').innerHTML = `<span style="color:#ff6b6b;">Update check failed:\n${e}</span>`; btn.disabled = false; });
     }
 
     _showUpdatePrompt(version, btn = null) {
-        if (localStorage.getItem('graalsuite_skipUpdate') === version) { if (btn) btn.disabled = false; return; }
-        const existing = document.getElementById('_updateDlg'); if (existing) existing.remove();
+        if (localStorage.getItem('gsuite_skipUpdate') === version) { if (btn) btn.disabled = false; return; }
+        const existing = this.$('_updateDlg'); if (existing) existing.remove();
         const box = document.createElement('div'); box.id = '_updateDlg'; box.style.cssText = 'position:fixed;top:80px;left:calc(50% - 180px);width:360px;z-index:10000;display:flex;flex-direction:column;background:#2b2b2b;border:2px solid #1a1a1a;'; box.classList.add('ed-dialog-box');
         const _bs = 'background:#2b2b2b;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#e0e0e0;padding:6px 12px;cursor:pointer;font-family:chevyray,monospace;font-size:12px;';
         box.innerHTML = `
             <div style="padding:8px 12px;font-size:13px;display:flex;align-items:center;justify-content:space-between;user-select:none;background:#353535;flex-shrink:0;" class="_udlg-title"><span>Update Available</span><button id="_updateDlgClose" style="background:none;border:none;cursor:pointer;font-size:16px;line-height:1;">×</button></div>
             <div style="padding:16px;font-size:13px;font-family:chevyray,monospace;">
-                <div style="margin-bottom:14px;">GraalSuite <span style="color:#4a9eff;">${version}</span> is available.</div>
+                <div style="margin-bottom:14px;">GSuite <span style="color:#4a9eff;">${version}</span> is available.</div>
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:14px;font-size:12px;opacity:0.7;"><input type="checkbox" id="_updateSkipThis" style="accent-color:#4a9eff;"> Skip this version</label>
                 <div style="display:flex;gap:8px;justify-content:flex-end;">
                     <button id="_updateLater" style="${_bs}">Later</button>
@@ -997,13 +1022,13 @@ class LevelEditor {
             </div>`;
         document.body.appendChild(box);
         const close = (skipThis) => {
-            if (skipThis) localStorage.setItem('graalsuite_skipUpdate', version); else localStorage.removeItem('graalsuite_skipUpdate');
+            if (skipThis) localStorage.setItem('gsuite_skipUpdate', version); else localStorage.removeItem('gsuite_skipUpdate');
             box.remove(); if (btn) btn.disabled = false;
         };
         box.querySelector('#_updateDlgClose').addEventListener('click', () => close(false));
-        box.querySelector('#_updateLater').addEventListener('click', () => close(document.getElementById('_updateSkipThis').checked));
+        box.querySelector('#_updateLater').addEventListener('click', () => close(this.$('_updateSkipThis').checked));
         box.querySelector('#_updateNow').addEventListener('click', () => {
-            document.getElementById('_updateDlgBody') || (box.querySelector('div:nth-child(2)').innerHTML = '<div style="text-align:center;padding:8px;">Downloading and installing...</div>');
+            this.$('_updateDlgBody') || (box.querySelector('div:nth-child(2)').innerHTML = '<div style="text-align:center;padding:8px;">Downloading and installing...</div>');
             _tauri.core.invoke('do_update').catch(e => { box.querySelector('div:nth-child(2)').innerHTML = `<span style="color:#ff6b6b;">Update failed:\n${e}</span>`; });
         });
     }
@@ -1099,17 +1124,25 @@ class LevelEditor {
                 e.preventDefault();
                 return;
             }
-            const filterNPCs = document.getElementById('filterNPCs')?.checked !== false;
-            const filterLinks = document.getElementById('filterLinks')?.checked !== false;
-            const filterSigns = document.getElementById('filterSigns')?.checked !== false;
+            const filterNPCs = this.$('filterNPCs')?.checked !== false;
+            const filterLinks = this.$('filterLinks')?.checked !== false;
+            const filterSigns = this.$('filterSigns')?.checked !== false;
             let hitObj = this.level.getObjectAt(coords.x, coords.y, (o, wx, wy) => this._npcPixelHit(o, wx, wy));
             if (hitObj && ((hitObj.type === 'npc' || hitObj.type === 'baddy') && !filterNPCs)) hitObj = null;
             if (hitObj && hitObj.type === 'link' && !filterLinks) hitObj = null;
             if (hitObj && hitObj.type === 'sign' && !filterSigns) hitObj = null;
             if (hitObj && this.selectedObjectType !== 'delete') {
+                const isMultiSelect = e.shiftKey || e.ctrlKey || e.metaKey;
+                if (isMultiSelect) {
+                    this.toggleObjectSelection(hitObj);
+                    this.render();
+                    e.preventDefault();
+                    return;
+                }
                 this.pushUndo();
-                this.selectedObject = hitObj;
+                if (!this.isObjectSelected(hitObj)) this.setSelectedObject(hitObj);
                 this.draggingObject = hitObj;
+                this.draggingObjectStartPositions = new Map(this.getSelectedObjects().map(obj => [obj.id, { x: obj.x, y: obj.y }]));
                 const dragOrigin = this.snapGrid ? coords : this.getCanvasCoordsRaw(e);
                 this.draggingObjectOffsetX = dragOrigin.x - hitObj.x;
                 this.draggingObjectOffsetY = dragOrigin.y - hitObj.y;
@@ -1117,7 +1150,7 @@ class LevelEditor {
                 e.preventDefault();
                 return;
             }
-            if (!hitObj && this.selectedObject) { this.selectedObject = null; this.render(); }
+            if (!hitObj && this.hasObjectSelection()) { this.clearObjectSelection(); this.render(); }
             if (this.selectedObjectType === 'delete') {
                 this.deleteObjectAt(coords.x, coords.y);
             } else if (this.hasSelection() && this.currentTool === 'select') {
@@ -1212,8 +1245,8 @@ class LevelEditor {
             const ox = Math.floor(o.x), oy = Math.floor(o.y);
             return coords.x >= ox && coords.x < ox + ow && coords.y >= oy && coords.y < oy + oh;
         }).sort((a, b) => {
-            if (a === this.selectedObject) return -1;
-            if (b === this.selectedObject) return 1;
+            if (this.isObjectSelected(a) && !this.isObjectSelected(b)) return -1;
+            if (this.isObjectSelected(b) && !this.isObjectSelected(a)) return 1;
             return (pri[a.type] ?? 5) - (pri[b.type] ?? 5);
         })[0] ?? null;
         if (!obj) {
@@ -1223,26 +1256,29 @@ class LevelEditor {
             }
             return;
         }
-        this.selectedObject = obj;
+        this.setSelectedObject(obj);
         this.render();
         if (obj.type === 'npc') this.openNPCEditor(obj);
         else if (obj.type === 'sign') this.openSignEditor(obj);
         else if (obj.type === 'link') {
-            let nextLevel = obj.properties?.nextLevel;
-            if (nextLevel && !/\.nw$/i.test(nextLevel)) nextLevel += '.nw';
-            const nwText = nextLevel && this.fileCache?.levels?.get(nextLevel);
-            if (nwText) {
-                const existing = this.levels.findIndex(l => l.name === nextLevel);
-                if (existing >= 0) { this.switchLevel(existing); return; }
-                const level = Level.loadFromNW(nwText);
-                if (this.level?.tilesetImage) { level.tilesetImage = this.level.tilesetImage; level.tilesetName = this.level.tilesetName; }
-                this.levels.push({ level, name: nextLevel, modified: false });
-                this.currentLevelIndex = this.levels.length - 1;
-                this.level = level;
-                this.addLevelTab(this.currentLevelIndex);
-                this.render();
-                this.saveSessionDebounced();
-            } else this.openLinkEditor(obj);
+            if (this._editBypass) { this.openLinkEditor(obj); }
+            else {
+                let nextLevel = obj.properties?.nextLevel;
+                if (nextLevel && !/\.nw$/i.test(nextLevel)) nextLevel += '.nw';
+                const nwText = nextLevel && this.fileCache?.levels?.get(nextLevel);
+                if (nwText) {
+                    const existing = this.levels.findIndex(l => l.name === nextLevel);
+                    if (existing >= 0) { this.switchLevel(existing); return; }
+                    const level = Level.loadFromNW(nwText);
+                    if (this.level?.tilesetImage) { level.tilesetImage = this.level.tilesetImage; level.tilesetName = this.level.tilesetName; }
+                    this.levels.push({ level, name: nextLevel, modified: false });
+                    this.currentLevelIndex = this.levels.length - 1;
+                    this.level = level;
+                    this.addLevelTab(this.currentLevelIndex);
+                    this.render();
+                    this.saveSessionDebounced();
+                } else this.openLinkEditor(obj);
+            }
         }
         else if (obj.type === 'chest') this.openChestEditor(obj);
         else if (obj.type === 'baddy') this.openBaddyEditor(obj);
@@ -1313,11 +1349,33 @@ class LevelEditor {
             let nx = raw.x - this.draggingObjectOffsetX;
             let ny = raw.y - this.draggingObjectOffsetY;
             if (this.snapGrid) { nx = Math.round(nx); ny = Math.round(ny); }
-            nx = Math.max(0, Math.min(this.level.width - 1, nx));
-            ny = Math.max(0, Math.min(this.level.height - 1, ny));
-            if (nx !== this.draggingObject.x || ny !== this.draggingObject.y) {
-                this.draggingObject.x = nx;
-                this.draggingObject.y = ny;
+            const selectedObjects = this.getSelectedObjects();
+            const startPositions = this.draggingObjectStartPositions || new Map([[this.draggingObject.id, { x: this.draggingObject.x, y: this.draggingObject.y }]]);
+            const anchorStart = startPositions.get(this.draggingObject.id) || { x: this.draggingObject.x, y: this.draggingObject.y };
+            let deltaX = nx - anchorStart.x;
+            let deltaY = ny - anchorStart.y;
+            let minStartX = anchorStart.x, maxStartX = anchorStart.x, minStartY = anchorStart.y, maxStartY = anchorStart.y;
+            for (const obj of selectedObjects) {
+                const start = startPositions.get(obj.id) || { x: obj.x, y: obj.y };
+                if (start.x < minStartX) minStartX = start.x;
+                if (start.x > maxStartX) maxStartX = start.x;
+                if (start.y < minStartY) minStartY = start.y;
+                if (start.y > maxStartY) maxStartY = start.y;
+            }
+            deltaX = Math.max(-minStartX, Math.min(this.level.width - 1 - maxStartX, deltaX));
+            deltaY = Math.max(-minStartY, Math.min(this.level.height - 1 - maxStartY, deltaY));
+            let changed = false;
+            for (const obj of selectedObjects) {
+                const start = startPositions.get(obj.id) || { x: obj.x, y: obj.y };
+                const ox = start.x + deltaX;
+                const oy = start.y + deltaY;
+                if (ox !== obj.x || oy !== obj.y) {
+                    obj.x = ox;
+                    obj.y = oy;
+                    changed = true;
+                }
+            }
+            if (changed) {
                 this.render();
             }
             return;
@@ -1513,6 +1571,7 @@ class LevelEditor {
         this.lastDrawY = -1;
         if (this.draggingObject) {
             this.draggingObject = null;
+            this.draggingObjectStartPositions = null;
             this.saveSessionDebounced();
         } else {
             this.saveSessionDebounced();
@@ -1542,7 +1601,7 @@ class LevelEditor {
             this.panX = anchorX - (anchorX - this.panX) * (this.zoom / oldZoom);
             this.panY = anchorY - (anchorY - this.panY) * (this.zoom / oldZoom);
         }
-        const zoomSlider = document.getElementById('zoomSlider');
+        const zoomSlider = this.$('zoomSlider');
         if (zoomSlider) zoomSlider.value = this.zoomLevel;
         this.updateZoomDisplay();
         this.render();
@@ -1605,7 +1664,7 @@ class LevelEditor {
         this.invalidateLayerCache();
         for (let i = 0; i < snap.layers.length; i++) this.level.layers[i].tiles = snap.layers[i];
         this.level.objects = snap.objects.map(d => { const o = new LevelObject(d.x, d.y, d.type); o.id = d.id; o.properties = d.properties; return o; });
-        if (this.selectedObject && !this.level.objects.find(o => o.id === this.selectedObject?.id)) this.selectedObject = null;
+        this.syncObjectSelection();
     }
 
     pushUndo() {
@@ -1633,7 +1692,7 @@ class LevelEditor {
         if (e.key === 'Escape') {
             const modals = Array.from(document.body.children).filter(el => el._closeModal);
             if (modals.length) { modals[modals.length - 1]._closeModal(); return; }
-            const about = document.getElementById('infoDialog');
+            const about = this.$('infoDialog');
             if (about?.style.display === 'flex') { about.style.display = 'none'; return; }
         }
         const _kb = this._getKeybinds();
@@ -1641,30 +1700,15 @@ class LevelEditor {
         if (_matchKB(e, _kb.settings)) { e.preventDefault(); this.openSettingsDialog(); return; }
         if (_matchKB(e, _kb.playMode)) { e.preventDefault(); this.togglePlayMode(); return; }
         if (_matchKB(e, _kb.delete)) {
-            if (this.selectedObject) {
-                this.pushUndo();
-                this.level.removeObject(this.selectedObject);
-                this.selectedObject = null;
-                this.render();
-                this.saveSessionDebounced();
-            } else if (this.hasSelection()) {
-                this.pushUndo();
-                const sx = Math.min(this.selectionStartX, this.selectionEndX);
-                const sy = Math.min(this.selectionStartY, this.selectionEndY);
-                const ex = Math.max(this.selectionStartX, this.selectionEndX);
-                const ey = Math.max(this.selectionStartY, this.selectionEndY);
-                for (let y = sy; y <= ey; y++) for (let x = sx; x <= ex; x++) this.level.setTile(this.currentLayer, x, y, -1);
-                this.render();
-                this.saveSessionDebounced();
-            }
+            this._doDelete();
             return;
         }
         if (_matchKB(e, _kb.undo)) { e.preventDefault(); this.undo(); return; }
         if (_matchKB(e, _kb.redo)) { e.preventDefault(); this.redo(); return; }
         if (_matchKB(e, _kb.save)) { e.preventDefault(); this.saveLevel(); return; }
-        if (_matchKB(e, _kb.copy) && this.hasSelection()) { e.preventDefault(); this._doCopy(); return; }
-        if (_matchKB(e, _kb.cut) && this.hasSelection()) { e.preventDefault(); this._doCut(); return; }
-        if (_matchKB(e, _kb.paste) && this._clipboardTiles) { e.preventDefault(); this._doPaste(); return; }
+        if (_matchKB(e, _kb.copy) && (this.hasObjectSelection() || this.hasSelection())) { e.preventDefault(); this._doCopy(); return; }
+        if (_matchKB(e, _kb.cut) && (this.hasObjectSelection() || this.hasSelection())) { e.preventDefault(); this._doCut(); return; }
+        if (_matchKB(e, _kb.paste) && (this._clipboardObjects?.length || this._clipboardTiles)) { e.preventDefault(); this._doPaste(); return; }
     }
 
     _canvasRect() {
@@ -1734,12 +1778,13 @@ class LevelEditor {
     }
 
     render() {
-        if (!this.level || !this.level.tilesetImage || this.level.tilesetImage.complete === false) { console.warn('[render bail]', 'level:', !!this.level, 'tilesetImage:', this.level?.tilesetImage, 'complete:', this.level?.tilesetImage?.complete); return; }
+        if (!this.level || !this.level.tilesetImage || this.level.tilesetImage.complete === false) { console.warn('[render bail] reason: no level or no tileset or not complete'); return; }
         const isNPCSel = this.selectedObject?.type === 'npc';
-        ['btnExportNPC','btnExportNPC2'].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = !isNPCSel; });
+        ['btnExportNPC','btnExportNPC2'].forEach(id => { const b = this.$(id); if (b) b.disabled = !isNPCSel; });
 
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        this.ctx.fillStyle = '#000000';
+        const _s = this._getSettings();
+        this.ctx.fillStyle = _s.voidColor || '#000000';
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         this.ctx.imageSmoothingEnabled = false;
@@ -1967,12 +2012,47 @@ class LevelEditor {
     }
 
     _doCopy() {
+        const selectedObjects = this.getSelectedObjects();
+        if (selectedObjects.length) {
+            const minX = Math.min(...selectedObjects.map(o => o.x));
+            const minY = Math.min(...selectedObjects.map(o => o.y));
+            this._clipboardObjects = selectedObjects.map(o => ({
+                dx: o.x - minX,
+                dy: o.y - minY,
+                type: o.type,
+                properties: JSON.parse(JSON.stringify(o.properties || {}))
+            }));
+            this._clipboardObjectOriginX = minX;
+            this._clipboardObjectOriginY = minY;
+            return;
+        }
         if (!this.hasSelection()) return;
         this._clipboardTiles = this._captureSelectionAsStamp();
         this._clipboardOriginX = Math.min(this.selectionStartX, this.selectionEndX);
         this._clipboardOriginY = Math.min(this.selectionStartY, this.selectionEndY);
     }
     _doPaste() {
+        if (this._clipboardObjects?.length) {
+            this.pushUndo();
+            const baseX = this._lastMouseTileX ?? this._clipboardObjectOriginX ?? 0;
+            const baseY = this._lastMouseTileY ?? this._clipboardObjectOriginY ?? 0;
+            const pasted = [];
+            for (const data of this._clipboardObjects) {
+                const obj = new LevelObject(
+                    Math.max(0, Math.min(this.level.width - 1, baseX + data.dx)),
+                    Math.max(0, Math.min(this.level.height - 1, baseY + data.dy)),
+                    data.type
+                );
+                obj.properties = JSON.parse(JSON.stringify(data.properties || {}));
+                this.level.addObject(obj);
+                pasted.push(obj);
+            }
+            this.clearObjectSelection();
+            pasted.forEach(obj => this.addObjectToSelection(obj));
+            this.render();
+            this.saveSessionDebounced();
+            return;
+        }
         if (!this._clipboardTiles) return;
         this.selectedTilesetTiles = this._clipboardTiles.map(r => [...r]);
         this.updateSelectedTileDisplay();
@@ -1983,6 +2063,16 @@ class LevelEditor {
         this.updateSelectedTileDisplay();
     }
     _doCut() {
+        const selectedObjects = this.getSelectedObjects();
+        if (selectedObjects.length) {
+            this._doCopy();
+            this.pushUndo();
+            selectedObjects.forEach(obj => this.level.removeObject(obj));
+            this.clearObjectSelection();
+            this.render();
+            this.saveSessionDebounced();
+            return;
+        }
         if (!this.hasSelection()) return;
         this._clipboardTiles = this._captureSelectionAsStamp();
         this.pushUndo();
@@ -1992,8 +2082,78 @@ class LevelEditor {
         this.render(); this.saveSessionDebounced();
     }
     _doDelete() {
-        if (this.selectedObject) { this.pushUndo(); this.level.removeObject(this.selectedObject); this.selectedObject = null; this.render(); this.saveSessionDebounced(); }
+        const selectedObjects = this.getSelectedObjects();
+        if (selectedObjects.length) {
+            this.pushUndo();
+            selectedObjects.forEach(obj => this.level.removeObject(obj));
+            this.clearObjectSelection();
+            this.render();
+            this.saveSessionDebounced();
+        }
         else if (this.hasSelection()) { this.pushUndo(); const sx = Math.min(this.selectionStartX, this.selectionEndX), sy = Math.min(this.selectionStartY, this.selectionEndY); const ex = Math.max(this.selectionStartX, this.selectionEndX), ey = Math.max(this.selectionStartY, this.selectionEndY); for (let y = sy; y <= ey; y++) for (let x = sx; x <= ex; x++) this.level.setTile(this.currentLayer, x, y, -1); this.render(); this.saveSessionDebounced(); }
+    }
+
+    isObjectSelected(obj) {
+        if (!obj) return false;
+        return this.selectedObjects.has(obj.id) || this.selectedObject?.id === obj.id;
+    }
+
+    getSelectedObjects() {
+        if (!this.level?.objects?.length) return [];
+        const ids = new Set(this.selectedObjects);
+        if (this.selectedObject?.id) ids.add(this.selectedObject.id);
+        return this.level.objects.filter(obj => ids.has(obj.id));
+    }
+
+    hasObjectSelection() {
+        return this.getSelectedObjects().length > 0;
+    }
+
+    clearObjectSelection() {
+        this.selectedObject = null;
+        this.selectedObjects.clear();
+    }
+
+    setSelectedObject(obj) {
+        this.clearObjectSelection();
+        if (!obj) return;
+        this.selectedObject = obj;
+        this.selectedObjects.add(obj.id);
+    }
+
+    addObjectToSelection(obj) {
+        if (!obj) return;
+        this.selectedObject = obj;
+        this.selectedObjects.add(obj.id);
+    }
+
+    toggleObjectSelection(obj) {
+        if (!obj) return;
+        if (this.selectedObjects.has(obj.id)) {
+            this.selectedObjects.delete(obj.id);
+            if (this.selectedObject?.id === obj.id) {
+                const nextId = this.selectedObjects.values().next().value;
+                this.selectedObject = nextId ? (this.level?.objects.find(o => o.id === nextId) || null) : null;
+            }
+        } else {
+            this.selectedObjects.add(obj.id);
+            this.selectedObject = obj;
+        }
+    }
+
+    syncObjectSelection() {
+        if (!this.level?.objects) {
+            this.clearObjectSelection();
+            return;
+        }
+        const ids = new Set(this.level.objects.map(o => o.id));
+        this.selectedObjects = new Set([...this.selectedObjects].filter(id => ids.has(id)));
+        if (this.selectedObject && !ids.has(this.selectedObject.id)) this.selectedObject = null;
+        if (!this.selectedObject && this.selectedObjects.size > 0) {
+            const nextId = this.selectedObjects.values().next().value;
+            this.selectedObject = this.level.objects.find(o => o.id === nextId) || null;
+        }
+        if (this.selectedObject?.id) this.selectedObjects.add(this.selectedObject.id);
     }
 
     hasSelection() {
@@ -2057,6 +2217,7 @@ class LevelEditor {
 
     _getLightCanvas(imgName, img, sx, sy, sw, sh) {
         if (!imgName) return null;
+        if (this._playMode && /\.gif$/i.test(imgName)) return null;
         if (!this._lightMapCache) this._lightMapCache = new Map();
         const cacheKey = `${imgName}_${sx}_${sy}_${sw}_${sh}`;
         if (this._lightMapCache.has(cacheKey)) return this._lightMapCache.get(cacheKey);
@@ -2452,7 +2613,6 @@ class LevelEditor {
     loadDefaultTileset() {
         const img = new Image();
         img.onload = () => {
-            console.log('[loadDefaultTileset] pics1.png loaded, complete:', img.complete, 'levels:', this.levels.length);
             if (this.levels.length === 0) {
                 const sessionRaw = localStorage.getItem('levelEditorSession');
                 let restored = false;
@@ -2473,7 +2633,7 @@ class LevelEditor {
                                 }
                                 if (ld.graalBinary) {
                                     const level = Level.loadFromGraal(this._fromB64(ld.graalBinary));
-                                    if (level) { level.tilesetImage = img; level.tilesetName = ld.tilesetName || 'pics1.png'; if (ld.tiledefs) level._tiledefs = ld.tiledefs; this.levels.push({ level, name: ld.name || 'level', modified: ld.modified || false }); }
+                                    if (level) { level.tilesetImage = img; level.tilesetName = ld.tilesetName || 'pics1.png'; if (ld.tiledefs) level._tiledefs = ld.tiledefs; const lvlName = ld.name || 'level'; this.levels.push({ level, name: lvlName.includes('.') ? lvlName : lvlName + '.nw', modified: ld.modified || false }); }
                                 } else {
                                     const level = Level.loadFromNW(ld.nw);
                                     if (level) {
@@ -2481,7 +2641,8 @@ class LevelEditor {
                                         level.tilesetName = ld.tilesetName || 'pics1.png';
                                         if (ld.sourceFormat) level._sourceFormat = ld.sourceFormat;
                                         if (ld.tiledefs) level._tiledefs = ld.tiledefs;
-                                        this.levels.push({ level, name: ld.name || 'level', modified: ld.modified || false });
+                                        const lvlName = ld.name || 'level';
+                                        this.levels.push({ level, name: lvlName.includes('.') ? lvlName : lvlName + '.nw', modified: ld.modified || false });
                                     }
                                 }
                             }
@@ -2490,7 +2651,7 @@ class LevelEditor {
                                 this.level = this.levels[this.currentLevelIndex].level;
                                 this.newTabCounter = this.levels.reduce((m, l) => { const n = parseInt(l.name?.replace('new ','')); return isNaN(n) ? m : Math.max(m, n); }, 0);
                                 this.levels.forEach((_, i) => this.addLevelTab(i));
-                                const _combo = document.getElementById('tilesetsCombo');
+                                const _combo = this.$('tilesetsCombo');
                                 if (_combo && this.level?.tilesetName && this.level.tilesetName !== 'pics1.png') {
                                     const _ts = this.level.tilesetName;
                                     if (![..._combo.options].some(o => o.value === _ts)) { const _o = document.createElement('option'); _o.value = _o.textContent = _ts; _combo.appendChild(_o); }
@@ -2504,7 +2665,8 @@ class LevelEditor {
                             if (level) {
                                 level.tilesetImage = img;
                                 level.tilesetName = data.tilesetName || 'pics1.png';
-                                this.levels.push({ level, name: data.name || 'level', modified: false });
+                                const lvlName = data.name || 'level';
+                                this.levels.push({ level, name: lvlName.includes('.') ? lvlName : lvlName + '.nw', modified: false });
                                 this.currentLevelIndex = 0;
                                 this.level = level;
                                 this.addLevelTab(0);
@@ -2514,14 +2676,14 @@ class LevelEditor {
                     } catch(e) {}
                 }
                 if (!restored) {
-                    const wEl = document.getElementById('levelWidth');
-                    const hEl = document.getElementById('levelHeight');
+                    const wEl = this.$('levelWidth');
+                    const hEl = this.$('levelHeight');
                     const w = wEl ? parseInt(wEl.value) || 64 : 64;
                     const h = hEl ? parseInt(hEl.value) || 64 : 64;
                     const level = new Level(w, h);
                     level.tilesetImage = img;
                     level.tilesetName = 'pics1.png';
-                    this.levels.push({ level, name: `new ${++this.newTabCounter}`, modified: false });
+                    this.levels.push({ level, name: `new ${++this.newTabCounter}.nw`, modified: false });
                     this.currentLevelIndex = 0;
                     this.level = level;
                     this.addLevelTab(0);
@@ -2535,12 +2697,10 @@ class LevelEditor {
             this.updateTilesetDisplay();
             this.defaultTile = 0;
             this.updateSelectedTileCanvas();
-            console.log('[loadDefaultTileset] before setTimeout: level.tilesetImage=', this.level?.tilesetImage, 'levels.length=', this.levels.length, 'currentLevelIndex=', this.currentLevelIndex);
-            setTimeout(() => { console.log('[render timeout] canvas:', this.canvas?.width, 'x', this.canvas?.height, 'zoom:', this.zoom, 'tilesetW:', this.level?.tilesetImage?.width, 'levelW:', this.level?.width, 'levelH:', this.level?.height, 'tile0:', this.level?.layers?.[0]?.tiles?.[0]); this.render(); if (this._initLoader) { this._initLoader.close(); this._initLoader = null; } }, 0);
+            setTimeout(() => { this.render(); }, 0);
         };
         img.onerror = () => {
             console.warn('[loadDefaultTileset] pics1.png FAILED, using fallback canvas');
-            if (this._initLoader) { this._initLoader.close(); this._initLoader = null; }
             this.createFallbackTileset();
         };
         img.src = 'images/pics1.png';
@@ -2568,7 +2728,7 @@ class LevelEditor {
     }
 
     loadTileset() {
-        const input = document.getElementById('imageInput');
+        const input = this.$('imageInput');
         input.click();
 
         input.onchange = (e) => {
@@ -2583,7 +2743,7 @@ class LevelEditor {
                         try { localStorage.setItem('levelEditor_tilesetCache', JSON.stringify(this._tilesetDataCache)); } catch(e) {}
                         this.level.tilesetImage = img;
                         this.level.tilesetName = file.name;
-                        const combo = document.getElementById('tilesetsCombo');
+                        const combo = this.$('tilesetsCombo');
                         if (combo && ![...combo.options].some(o => o.value === file.name)) {
                             const opt = document.createElement('option');
                             opt.value = opt.textContent = file.name;
@@ -2603,7 +2763,7 @@ class LevelEditor {
     }
 
     updateTilesetDisplay() {
-        const tilesetCanvas = document.getElementById('tilesetCanvas');
+        const tilesetCanvas = this.$('tilesetCanvas');
         if (!tilesetCanvas) return;
         
         if (this.level.tilesetImage && this.level.tilesetImage.complete) {
@@ -2794,7 +2954,7 @@ class LevelEditor {
                         }
                         this.tilesetZoom = zoomFactors[this.tilesetZoomLevel];
                         localStorage.setItem('levelEditor_tilesetZoom', this.tilesetZoom);
-                        const tzs = document.getElementById('tilesetZoomSlider'); if (tzs) { tzs.value = this.tilesetZoom; const tzl = document.getElementById('tilesetZoomLabel'); if (tzl) tzl.textContent = Math.round(this.tilesetZoom*100)/100 + 'x'; }
+                        const tzs = this.$('tilesetZoomSlider'); if (tzs) { tzs.value = this.tilesetZoom; const tzl = this.$('tilesetZoomLabel'); if (tzl) tzl.textContent = Math.round(this.tilesetZoom*100)/100 + 'x'; }
                         this.updateTilesetDisplay();
                     } else {
                         e.preventDefault();
@@ -2960,7 +3120,7 @@ class LevelEditor {
                             const scrollCX = tilesetDisplay.scrollLeft + (midX - rect.left);
                             const scrollCY = tilesetDisplay.scrollTop + (midY - rect.top);
                             this.tilesetZoom = newZoom;
-                            const tzs = document.getElementById('tilesetZoomSlider'); if (tzs) { tzs.value = this.tilesetZoom; const tzl = document.getElementById('tilesetZoomLabel'); if (tzl) tzl.textContent = Math.round(this.tilesetZoom*100)/100 + 'x'; }
+                            const tzs = this.$('tilesetZoomSlider'); if (tzs) { tzs.value = this.tilesetZoom; const tzl = this.$('tilesetZoomLabel'); if (tzl) tzl.textContent = Math.round(this.tilesetZoom*100)/100 + 'x'; }
                             localStorage.setItem('levelEditor_tilesetZoom', this.tilesetZoom);
                             this.updateTilesetDisplay();
                             tilesetDisplay.scrollLeft = scrollCX * ratio - (midX - rect.left);
@@ -2992,7 +3152,7 @@ class LevelEditor {
     }
 
     updateTilesList() {
-        const tilesList = document.getElementById('tilesList');
+        const tilesList = this.$('tilesList');
         tilesList.innerHTML = '';
 
         if (!this.level.tilesetImage) return;
@@ -3045,19 +3205,20 @@ class LevelEditor {
     }
 
     newLevel() {
-        const wEl = document.getElementById('levelWidth');
-        const hEl = document.getElementById('levelHeight');
+        const wEl = this.$('levelWidth');
+        const hEl = this.$('levelHeight');
         const width = wEl ? parseInt(wEl.value) || 64 : 64;
         const height = hEl ? parseInt(hEl.value) || 64 : 64;
         const dlg = document.createElement('div');
         dlg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:99999;display:flex;align-items:center;justify-content:center;';
         const _bs = 'background:#2b2b2b;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#e0e0e0;padding:6px 12px;cursor:pointer;font-family:chevyray,monospace;font-size:12px;';
         dlg.innerHTML = `<div class="ed-dialog-box" style="background:var(--dialog-bg,#2b2b2b);border:2px solid #404040;padding:24px 28px;max-width:300px;font-family:chevyray,monospace;font-size:12px;line-height:1.7;color:#e0e0e0;">
-            <div class="ed-dlg-title">New Level</div>
+            <div class="ed-dlg-title">New File</div>
             <div style="margin-bottom:14px;">
                 <button class="newlvl-btn" data-fmt="nw" style="${_bs}display:block;width:100%;text-align:left;margin-bottom:6px;">.nw — Graal Level (text)</button>
                 <button class="newlvl-btn" data-fmt="graal" style="${_bs}display:block;width:100%;text-align:left;margin-bottom:6px;">.graal — Classic Binary</button>
                 <button class="newlvl-btn" data-fmt="zelda" style="${_bs}display:block;width:100%;text-align:left;margin-bottom:6px;">.zelda — Zelda Binary</button>
+                <button class="newlvl-btn" data-fmt="gani" style="${_bs}display:block;width:100%;text-align:left;margin-bottom:6px;">.gani — Graal Animation</button>
             </div>
             <div style="text-align:right;"><button id="newlvlCancel" style="${_bs}">Cancel</button></div>
         </div>`;
@@ -3068,6 +3229,15 @@ class LevelEditor {
             btn.onclick = () => {
                 close();
                 const fmt = btn.dataset.fmt;
+                if (fmt === 'gani') {
+                    if (typeof window.createNewGani === 'function') {
+                        window.createNewGani();
+                    } else {
+                        const btnNew = document.getElementById('gani-btnNew');
+                        if (btnNew) btnNew.click();
+                    }
+                    return;
+                }
                 const level = new Level(width, height);
                 const existingImg = this.level?.tilesetImage || this.levels.find(e => e.level.tilesetImage)?.level.tilesetImage;
                 if (existingImg) { level.tilesetImage = existingImg; level.tilesetName = this.level?.tilesetName || 'pics1.png'; }
@@ -3087,7 +3257,14 @@ class LevelEditor {
 
     addLevelTab(index) {
         this._setEditorVisible(true);
-        const tabsContainer = document.getElementById('levelTabs');
+        const entry = this.levels[index];
+        const suiteTabsList = document.getElementById('suiteTabsList');
+        if (window.tabManager && typeof window.tabManager.addTab === 'function' && suiteTabsList) {
+            window.tabManager.addTab('level', entry.name, { level: entry.level, index });
+            return;
+        }
+        const tabsContainer = this.$('suiteTabsList');
+        if (!tabsContainer) { return; }
         const tab = document.createElement('div');
         tab.className = 'tab active';
         tab.dataset.levelIndex = index;
@@ -3101,8 +3278,7 @@ class LevelEditor {
         close.innerHTML = '×';
         close.onclick = (e) => { e.stopPropagation(); this.closeLevelTab(index); };
         tab.appendChild(close);
-        tab.onclick = () => this.switchLevel(index);
-        tab.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); this._showTabContextMenu(e, index); });
+        tab.onclick = () => { window.switchToTab?.('level'); this.switchLevel(index); };
         tab.addEventListener('dragstart', (e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(index)); setTimeout(() => tab.style.opacity = '0.4', 0); });
         tab.addEventListener('dragend', () => { tab.style.opacity = ''; this._removeTabDragIndicator(); });
         tab.addEventListener('dragover', (e) => {
@@ -3130,8 +3306,10 @@ class LevelEditor {
             if (this.currentLevelIndex === fromIdx) this.currentLevelIndex = finalTo;
             else if (fromIdx < this.currentLevelIndex && finalTo >= this.currentLevelIndex) this.currentLevelIndex--;
             else if (fromIdx > this.currentLevelIndex && finalTo <= this.currentLevelIndex) this.currentLevelIndex++;
-            tabsContainer.innerHTML = '';
-            this.levels.forEach((_, i) => this.addLevelTab(i));
+            if (!window.tabManager) {
+                tabsContainer.innerHTML = '';
+                this.levels.forEach((_, i) => this.addLevelTab(i));
+            }
             this.saveSessionDebounced();
         });
         tabsContainer.appendChild(tab);
@@ -3156,8 +3334,18 @@ class LevelEditor {
 
     switchLevel(index) {
         if (index < 0 || index >= this.levels.length) return;
-        if (this.levels[this.currentLevelIndex]) this.levels[this.currentLevelIndex].currentLayer = this.currentLayer;
         const entry = this.levels[index];
+        if (entry.isGani) {
+            this.currentLevelIndex = index;
+            this.updateLevelTabs();
+            window.switchToTab?.('gani');
+            const existing = window.ganiAnimations?.find(a => a.fileName === entry.name);
+            const existIdx = window.ganiAnimations ? Array.from(window.ganiAnimations).indexOf(existing) : -1;
+            if (existing && existIdx >= 0) window.switchTab?.(existIdx);
+            else if (typeof parseGani === 'function' && typeof addTab === 'function') { const ani = parseGani(entry.ganiText); if (ani) { ani.fileName = entry.name; addTab(ani, entry.name); } }
+            return;
+        }
+        if (this.levels[this.currentLevelIndex]) this.levels[this.currentLevelIndex].currentLayer = this.currentLayer;
         const prevWasGmap = !!this.levels[this.currentLevelIndex]?.gmapGrid;
         if (entry.currentLayer !== undefined) this.currentLayer = entry.currentLayer;
         else this.currentLayer = 0;
@@ -3166,7 +3354,9 @@ class LevelEditor {
         if (this.level._sourceFormat === 'graal' || this.level._sourceFormat === 'zelda') this.currentLayer = 0;
         this.updateLevelTabs();
         this.updateUI();
-        const combo = document.getElementById('tilesetsCombo');
+        document.title = entry.name;
+        const t = document.getElementById('tbTitle'); if (t) t.textContent = entry.name;
+        const combo = this.$('tilesetsCombo');
         if (combo) {
             const ts = this.level.tilesetName;
             const exists = [...combo.options].some(o => o.value === ts);
@@ -3176,7 +3366,6 @@ class LevelEditor {
         this.loadTilesetImage(this.level.tilesetName);
         this.applyTiledefFromNPCs();
         this.render(); if (prevWasGmap && !entry.gmapGrid) this.centerView();
-        if (prevWasGmap && !entry.gmapGrid) this.centerView();
     }
     _confirm(msg, fn) {
         const box = document.createElement('div');
@@ -3195,21 +3384,38 @@ class LevelEditor {
 
     _setEditorVisible(visible) {
         const ids = ['levelToolbar', 'levelArea'];
-        ids.forEach(id => { const el = document.getElementById(id); if (el) el.style.visibility = visible ? '' : 'hidden'; });
+        ids.forEach(id => { const el = this.$(id); if (el) el.style.visibility = visible ? '' : 'hidden'; });
         const sb = document.querySelector('.status-bar'); if (sb) sb.style.visibility = visible ? '' : 'hidden';
-        ['btnPlay','btnPlayerSetup'].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !visible; });
+        ['btnPlay','btnPlayerSetup'].forEach(id => { const el = this.$(id); if (el) el.disabled = !visible; });
     }
 
     closeLevelTab(index) {
-        const name = this.levels[index]?.name || 'this level';
-        this._confirm(`Close "${name}"?`, () => {
+        const entry = this.levels[index];
+        if (!entry) return;
+        const name = entry.name || 'this level';
+        const doClose = () => {
+            const levelObj = entry.level;
+            const suiteTab = window.tabManager?._tabs?.find(t => t.data?.level === levelObj || t.data?.index === index);
+            if (suiteTab && typeof window.tabManager._forceRemoveTab === 'function') window.tabManager._forceRemoveTab(suiteTab.id);
+            this._removeLevelData(index);
+        };
+        if (entry.modified) {
+            this._confirm(`Close "${name}"?\nUnsaved changes will be lost.`, doClose);
+        } else {
+            doClose();
+        }
+    }
+
+    _removeLevelData(index) {
         this.levels.splice(index, 1);
         if (this.levels.length === 0) {
             this.currentLevelIndex = -1;
             this.level = null;
-            document.getElementById('levelTabs').innerHTML = '';
             this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
             this._setEditorVisible(false);
+            document.title = 'GSuite';
+            if (window.__TAURI__) { window.__TAURI__.window.getCurrentWindow().setTitle('GSuite'); }
+            const t = document.getElementById('tbTitle'); if (t) t.textContent = 'GSuite';
             this.saveSession();
             return;
         }
@@ -3219,23 +3425,36 @@ class LevelEditor {
             const donor = this.levels.find(e => e.level.tilesetImage);
             if (donor) this.level.tilesetImage = donor.level.tilesetImage;
         }
-        const tabsContainer = document.getElementById('levelTabs');
-        tabsContainer.innerHTML = '';
-        this.levels.forEach((_, i) => this.addLevelTab(i));
-        this.updateUI();
-        this.render();
-        });
+        this.switchLevel(this.currentLevelIndex);
+        this.saveSession();
     }
 
     updateLevelTabs() {
-        const tabs = document.querySelectorAll('#levelTabs .tab');
-        tabs.forEach((tab, i) => {
-            tab.classList.toggle('active', i === this.currentLevelIndex);
+        const tabs = document.querySelectorAll('#suiteTabsList .tab');
+        tabs.forEach(tab => {
+            if (tab.dataset.tabType !== 'level') return;
+            const tmTab = window.tabManager?._tabs?.find(t => t.id === tab.dataset.tabId);
+            if (!tmTab) return;
+            const idx = tmTab.data?.level
+                ? this.levels.findIndex(e => e.level === tmTab.data.level)
+                : (tmTab.data?.index ?? -1);
+            tab.classList.toggle('active', idx >= 0 && idx === this.currentLevelIndex);
             const ns = tab.querySelector('.tab-name');
-            if (ns && this.levels[i]) ns.textContent = this.levels[i].name;
+            if (ns && idx >= 0 && this.levels[idx]) ns.textContent = this.levels[idx].name;
         });
+        const entry = this.levels[this.currentLevelIndex];
+        const _isTauri = !!window.__TAURI__;
+        if (entry) {
+            document.title = entry.name;
+            if (_isTauri) { window.__TAURI__.window.getCurrentWindow().setTitle(entry.name); }
+            const t = document.getElementById('tbTitle'); if (t) t.textContent = entry.name;
+        } else {
+            document.title = 'GSuite';
+            if (_isTauri) { window.__TAURI__.window.getCurrentWindow().setTitle('GSuite'); }
+            const t = document.getElementById('tbTitle'); if (t) t.textContent = 'GSuite';
+        }
         const isZelda = this._currentLevelIsZelda();
-        ['btnPlaceNPC', 'btnPlaceChest'].forEach(id => { const btn = document.getElementById(id); if (btn) { btn.disabled = isZelda; btn.style.opacity = isZelda ? '0.35' : ''; } });
+        ['btnPlaceNPC', 'btnPlaceChest'].forEach(id => { const btn = this.$(id); if (btn) { btn.disabled = isZelda; btn.style.opacity = isZelda ? '0.35' : ''; } });
     }
 
     async loadImageFromPath(filePath, name) {
@@ -3298,7 +3517,7 @@ class LevelEditor {
                 if (window._workspaceScanUnlisten) { window._workspaceScanUnlisten(); window._workspaceScanUnlisten = null; }
                 loader.close();
                 this._workspaceCount = (this._workspaceCount || 0) + 1;
-                const el = document.getElementById('objectsDir');
+                const el = this.$('objectsDir');
                 if (el) el.value = this._workspaceCount === 1 ? dirName : `${this._workspaceCount} workspaces`;
                 this.applyTiledefFromNPCs();
                 this._refillGmapEntries().catch(() => {});
@@ -3339,9 +3558,8 @@ class LevelEditor {
             ));
             await _yield();
         }
-        console.log(`[TAURI] Level workspace restored: ${this._tauriPathIndex.size} files, dir=${dirPath}`);
         this._workspaceCount = 1;
-        const el = document.getElementById('objectsDir');
+        const el = this.$('objectsDir');
         if (el) el.value = dirName;
         this.applyTiledefFromNPCs();
         this._refillGmapEntries().catch(() => {});
@@ -3359,7 +3577,7 @@ class LevelEditor {
             this._fcLower = null;
             loader.close();
             this._workspaceCount = (this._workspaceCount || 0) + 1;
-            const el = document.getElementById('objectsDir');
+            const el = this.$('objectsDir');
             if (el) el.value = this._workspaceCount === 1 ? dirName : `${this._workspaceCount} workspaces`;
             this.applyTiledefFromNPCs();
             this.render();
@@ -3409,7 +3627,7 @@ class LevelEditor {
                 finishScan(loader, this.workingDirectory);
             } catch (e) {}
         } else {
-            const input = document.getElementById('folderInput');
+            const input = this.$('folderInput');
             input.click();
             input.onchange = async (e) => {
                 if (!e.target.files.length) return;
@@ -3436,9 +3654,9 @@ class LevelEditor {
             return { image, code: code.trim() };
         };
         const render = (npcs, dirName, append = false) => {
-            const el = document.getElementById('objectsLibDir');
+            const el = this.$('objectsLibDir');
             if (el && dirName) el.value = dirName;
-            const list = document.getElementById('objectsList');
+            const list = this.$('objectsList');
             if (!list) return;
             if (!npcs.length) return;
             if (!append) list.innerHTML = '';
@@ -3522,7 +3740,7 @@ class LevelEditor {
             npcs.push({ name, image, code });
         }
         if (!npcs.length) return;
-        const list = document.getElementById('objectsList');
+        const list = this.$('objectsList');
         if (!list) return;
         list.innerHTML = '';
         list.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
@@ -3624,19 +3842,19 @@ class LevelEditor {
         if (!this._editorSettings) { try { this._editorSettings = JSON.parse(localStorage.getItem('graal_editorSettings') || 'null'); } catch(e) {} }
         if (!this._editorSettings) this._editorSettings = {};
         const d = this._editorSettings;
-        return { nickFontSize: d.nickFontSize ?? 24, chatFontSize: d.chatFontSize ?? 28, uiFont: d.uiFont ?? 'chevyray', uiFontSize: d.uiFontSize ?? 12, uiFontStyle: d.uiFontStyle ?? 'normal', uiScale: d.uiScale ?? 1 };
+        return { nickFontSize: d.nickFontSize ?? 24, chatFontSize: d.chatFontSize ?? 28, uiFont: d.uiFont ?? 'chevyray', uiFontSize: d.uiFontSize ?? 12, uiFontStyle: d.uiFontStyle ?? 'normal', uiScale: d.uiScale ?? 1, voidColor: d.voidColor ?? '#000000' };
     }
-    _saveSettings(s) { this._editorSettings = s; localStorage.setItem('graal_editorSettings', JSON.stringify(s)); }
+    _saveSettings(s) { this._editorSettings = s; localStorage.setItem('graal_editorSettings', JSON.stringify(s)); const bi = this.$('bgColorInput'); if (bi && s.voidColor) bi.value = s.voidColor; }
     _applyUISettings(s) {
         const _fonts = { chevyray:'"chevyray",monospace', chevyrayOeuf:'"chevyrayOeuf",monospace', Silkscreen:'"Silkscreen",monospace', PressStart2P:'"PressStart2P",monospace', monospace:'monospace' };
         const ff = _fonts[s.uiFont] || '"chevyray",monospace';
         const fw = (s.uiFontStyle||'normal').includes('bold') ? 'bold' : 'normal';
         const fi = (s.uiFontStyle||'normal').includes('italic') ? 'italic' : 'normal';
         const sz = (s.uiFontSize||12) + 'px';
-        let tag = document.getElementById('_lvUIStyle');
+        let tag = this.$('_lvUIStyle');
         if (!tag) { tag = document.createElement('style'); tag.id = '_lvUIStyle'; document.head.appendChild(tag); }
         tag.textContent = `#editorContainer button,#editorContainer .left-tab,#editorContainer select,#editorContainer label,#editorContainer .combo-label,#editorContainer .panel-section-title{font-family:${ff}!important;font-size:${sz}!important;font-weight:${fw}!important;font-style:${fi}!important;}`;
-        const ec = document.getElementById('editorContainer');
+        const ec = this.$('editorContainer');
         if (ec) ec.style.zoom = String(s.uiScale ?? 1);
     }
     _getKeybinds() {
@@ -3646,7 +3864,7 @@ class LevelEditor {
     _saveKeybinds(kb) { this._keybinds = kb; localStorage.setItem('graal_editorKeybinds', JSON.stringify(kb)); }
 
     openSettingsDialog() {
-        if (document.getElementById('_settingsDlg')) return;
+        if (this.$('_settingsDlg')) return;
         const s = this._getSettings(), kb = this._getKeybinds();
         const _snapSettings = { ...s }, _snapKB = { ...kb };
         const box = document.createElement('div');
@@ -3687,6 +3905,8 @@ class LevelEditor {
                 <label style="display:flex;align-items:center;gap:8px;"><span style="${_lblStyle}">Font Style</span><select id="_stUIFontStyle" style="flex:1;background:#1a1a1a;color:#e0e0e0;border:1px solid #555;padding:3px 6px;font-family:chevyray,monospace;font-size:12px;"><option value="normal">Normal</option><option value="bold">Bold</option><option value="italic">Italic</option><option value="bold italic">Bold Italic</option></select></label>
                 ${sliderRow('Font Size','_stUIFontSize',s.uiFontSize??12,8,24)}
                 ${sliderRow('UI Scale %','_stUIScale',Math.round((s.uiScale??1)*100),50,200)}
+                <div style="border-top:1px solid #1a1a1a;padding-top:10px;font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">Editor</div>
+                <label style="display:flex;align-items:center;gap:8px;"><span style="${_lblStyle}">Void Color</span><input type="color" id="_stVoidColor" value="${s.voidColor ?? '#000000'}" style="width:60px;height:35px;border:1px solid #555;cursor:pointer;"></label>
                 <div style="border-top:1px solid #1a1a1a;padding-top:10px;font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">Play Mode — Labels</div>
                 ${sliderRow('Nick font size','_stNick',s.nickFontSize,8,48)}
                 ${sliderRow('Chat font size','_stChat',s.chatFontSize,8,48)}
@@ -3703,7 +3923,7 @@ class LevelEditor {
         document.body.appendChild(box);
         box.querySelector('#_stUIFont').value = s.uiFont ?? 'chevyray';
         box.querySelector('#_stUIFontStyle').value = s.uiFontStyle ?? 'normal';
-        const readSettings = () => ({ nickFontSize: parseInt(box.querySelector('#_stNick_n').value)||24, chatFontSize: parseInt(box.querySelector('#_stChat_n').value)||28, uiFont: box.querySelector('#_stUIFont').value, uiFontSize: parseInt(box.querySelector('#_stUIFontSize_n').value)||12, uiFontStyle: box.querySelector('#_stUIFontStyle').value, uiScale: Math.round(parseInt(box.querySelector('#_stUIScale_n').value)||100) / 100 });
+        const readSettings = () => ({ nickFontSize: parseInt(box.querySelector('#_stNick_n').value)||24, chatFontSize: parseInt(box.querySelector('#_stChat_n').value)||28, uiFont: box.querySelector('#_stUIFont').value, uiFontSize: parseInt(box.querySelector('#_stUIFontSize_n').value)||12, uiFontStyle: box.querySelector('#_stUIFontStyle').value, uiScale: Math.round(parseInt(box.querySelector('#_stUIScale_n').value)||100) / 100, voidColor: box.querySelector('#_stVoidColor').value || '#000000' });
         const syncSlider = (id) => {
             const r = box.querySelector(`#${id}_r`), n = box.querySelector(`#${id}_n`);
             r.addEventListener('input', () => { n.value = r.value; const ns = readSettings(); this._saveSettings(ns); this._applyUISettings(ns); this.requestRender(); });
@@ -3711,6 +3931,7 @@ class LevelEditor {
         };
         syncSlider('_stNick'); syncSlider('_stChat'); syncSlider('_stUIFontSize'); syncSlider('_stUIScale');
         ['#_stUIFont','#_stUIFontStyle'].forEach(sel => box.querySelector(sel).addEventListener('change', () => { const ns = readSettings(); this._saveSettings(ns); this._applyUISettings(ns); }));
+        box.querySelector('#_stVoidColor').addEventListener('input', () => { const ns = readSettings(); this._saveSettings(ns); this.requestRender(); });
         if (_isTauri) { const regBtn = box.querySelector('#_stRegAssoc'); if (regBtn) regBtn.onclick = async () => { regBtn.disabled = true; const st = box.querySelector('#_stRegAssocStatus'); st.style.color = '#aaa'; st.textContent = 'Registering...'; try { const msg = await _tauri.core.invoke('register_file_associations'); st.style.color = '#6c6'; st.textContent = msg; } catch(e) { st.style.color = '#f66'; st.textContent = String(e); } regBtn.disabled = false; }; }
         box.querySelectorAll('._stTab').forEach(btn => btn.addEventListener('click', () => {
             box.querySelectorAll('._stTab').forEach((b,_i,arr) => { const a = b===btn; b.style.cssText = _btnStyle(a); });
@@ -3760,7 +3981,7 @@ class LevelEditor {
     }
 
     openPlayerCustomizeDialog() {
-        if (document.getElementById('_playerDlg')) return;
+        if (this.$('_playerDlg')) return;
         if (!this._playerSettings) { try { this._playerSettings = JSON.parse(localStorage.getItem('graal_playerSettings') || 'null'); } catch(e) {} }
         if (!this._playerSettings) this._playerSettings = this._defaultPlayerSettings();
         const s = this._playerSettings;
@@ -4008,9 +4229,10 @@ class LevelEditor {
         this._colHW = 15; this._colHH = 15;
         this._playMode = true;
         if ('ontouchstart' in window) this._createMobileControls();
-        this.selectedObject = null; this.selectionStartX = -1; this.selectionEndX = -1;
-        const btn = document.getElementById('btnPlay');
+        this.clearObjectSelection(); this.selectionStartX = -1; this.selectionEndX = -1;
+        const btn = this.$('btnPlay');
         if (btn) btn.innerHTML = '&#9632; Stop';
+        this.canvas.parentElement?.classList.add('play-mode');
         const hide = ['#levelToolbar','.object-library-panel','.right-tabs','.splitter-handle','.status-bar','.canvas-controls-bar','#btnCenterView'];
         this._hiddenEls = [];
         hide.forEach(sel => document.querySelectorAll(sel).forEach(el => { this._hiddenEls.push([el, el.style.display]); el.style.display = 'none'; }));
@@ -4075,14 +4297,15 @@ class LevelEditor {
 
     exitPlayMode() {
         this._playMode = false;
-        const btn = document.getElementById('btnPlay');
+        const btn = this.$('btnPlay');
         if (btn) btn.innerHTML = '&#9654; Play';
+        this.canvas.parentElement?.classList.remove('play-mode');
         (this._hiddenEls || []).forEach(([el, disp]) => el.style.display = disp);
         this._hiddenEls = null; this._player = null; this._playKeys = {}; this._playNoclip = false; this._mngAnimCache = null;
         this._mobileStickDir = null; this._mobileStickVal = {x:0,y:0}; this._mobileControlsEl = null; this._mobileKnobs = null; this._mobileRelease = null;
         this._removeMobileControls();
         this._chatOpen = false; this._playerChat = null;
-        document.getElementById('_playChatBar')?.remove();
+        this.$('_playChatBar')?.remove();
         if (this._chatCanvasClick) this.canvas.removeEventListener('mousedown', this._chatCanvasClick);
         if (this._playMouseMove) this.canvas.removeEventListener('mousemove', this._playMouseMove);
         this.resizeCanvas();
@@ -4368,7 +4591,7 @@ class LevelEditor {
     }
 
     populateFileCache() {
-        const tree = document.getElementById('objectTree');
+        const tree = this.$('objectTree');
         if (!tree) return;
         tree.innerHTML = '';
         tree.style.display = 'grid';
@@ -4505,7 +4728,6 @@ class LevelEditor {
     }
 
     async _refillGmapEntries() {
-        console.log('[refill] called, tauriPathIndex size:', this._tauriPathIndex?.size, 'levels:', this.levels.length);
         if (!this._tauriPathIndex?.size) return;
         let anyFilled = false;
         for (const entry of this.levels) {
@@ -4517,10 +4739,8 @@ class LevelEditor {
                 const key = name.toLowerCase().endsWith('.nw') ? name.toLowerCase() : name.toLowerCase() + '.nw';
                 const inFileCache = this.fileCache.levels.has(key);
                 const inPathIndex = this._tauriPathIndex.has(key);
-                console.log(`[refill] cell "${name}" key="${key}" inFileCache=${inFileCache} inPathIndex=${inPathIndex} gmapLevelsHas=${!!entry.gmapLevels?.[name]}`);
                 if (!inFileCache && inPathIndex) missing.push([name, key]);
             }
-            console.log('[refill] entry:', entry.name, 'missing:', missing.map(m => m[0]));
             if (!missing.length) continue;
             await Promise.all(missing.map(([, key]) =>
                 _tauri.fs.readTextFile(this._tauriPathIndex.get(key)).then(t => this.fileCache.levels.set(key, t)).catch(() => {})
@@ -4581,7 +4801,6 @@ class LevelEditor {
     }
 
     async openGmapText(text, filename, levelsOverride) {
-        console.log('[openGmapText]', filename, 'tauriPathIndex size:', this._tauriPathIndex?.size, 'levelsOverride:', !!levelsOverride, 'fileCache.levels size:', this.fileCache?.levels?.size);
         if (!levelsOverride && _isTauri && this._tauriPathIndex?.size) {
             const { grid } = this.parseGmap(text);
             const toLoad = [];
@@ -4590,11 +4809,10 @@ class LevelEditor {
                 const key = rawName.toLowerCase().endsWith('.nw') ? rawName.toLowerCase() : rawName.toLowerCase() + '.nw';
                 const alreadyLoaded = this.fileCache.levels.has(key) || this.fileCache.levels.has(rawName.toLowerCase()) || [...this.fileCache.levels.keys()].some(k => k.toLowerCase().endsWith('\\' + key) || k.toLowerCase().endsWith('/' + key));
                 const path = alreadyLoaded ? null : (this._tauriPathIndex.get(key) || this._tauriPathIndex.get(rawName.toLowerCase()) || [...this._tauriPathIndex.entries()].find(([k]) => k.toLowerCase().endsWith('\\' + key) || k.toLowerCase().endsWith('/' + key))?.[1]);
-                console.log(`[openGmapText cell] "${rawName}" key="${key}" alreadyLoaded=${alreadyLoaded} path=${path}`);
                 if (!alreadyLoaded && path) toLoad.push([key, path]);
             }
             await Promise.all(toLoad.map(([name, path]) =>
-                _tauri.fs.readTextFile(path).then(t => { console.log(`[openGmapText load] "${name}" bytes=${t.length} preview="${t.substring(0,80).replace(/\n/g,'\\n')}"`); this.fileCache.levels.set(name, t); }).catch(e => console.warn('[openGmapText load err]', name, e))
+                _tauri.fs.readTextFile(path).then(t => { this.fileCache.levels.set(name, t); }).catch(e => console.warn('[openGmapText load err]', name, e))
             ));
         }
         const entry = this._buildGmapEntry(text, filename, levelsOverride);
@@ -4613,6 +4831,7 @@ class LevelEditor {
     openFromText(text, name, filePath = null) {
         const ext = name.split('.').pop().toLowerCase();
         if (ext === 'gmap') { this.openGmapText(text, name); return; }
+        if (ext === 'gani') { this.levels.push({ level: null, name, modified: false, isGani: true, ganiText: text, filePath }); this.currentLevelIndex = this.levels.length - 1; this.addLevelTab(this.currentLevelIndex); this.switchLevel(this.currentLevelIndex); this.saveSessionDebounced(); return; }
         let level;
         if (ext === 'graal' || ext === 'zelda') { const buf = new TextEncoder().encode(text).buffer; level = Level.loadFromGraal(buf); }
         else level = Level.loadFromNW(text);
@@ -4638,54 +4857,54 @@ class LevelEditor {
         this.loadDefaultTileset(); this.addLevelTab(this.currentLevelIndex); this.updateLevelTabs(); this.updateUI(); this.render(); this.saveSessionDebounced();
     }
 
-    async openDefaultLevelDialog() {
-        const dlg = document.getElementById('defaultGaniDialog');
-        const container = dlg?.querySelector('.dialog-content');
-        if (!dlg || !container) return;
-        container.innerHTML = `<div style="color:#888;padding:20px;text-align:center;font-family:chevyray,monospace;font-size:12px;">Loading...</div>`;
-        dlg.style.display = 'flex';
-        const fallback = ['cave1.zelda','house1.graal','house1.zelda','onlinestartlocal.nw'];
-        let files = fallback;
-        try {
-            if (_isTauri) {
-                const entries = await _tauri.fs.readDir('levels').catch(() => null);
-                if (entries) files = entries.map(e => e.name).filter(n => n && /\.(nw|zelda|graal|gmap)$/i.test(n));
-            } else {
-                let r = await fetch('levels/index.json').catch(() => null);
-                if (!r?.ok) r = await fetch('levels/').catch(() => null);
-                if (r?.ok) { const d = await r.json().catch(() => null); if (Array.isArray(d)) files = d; }
-            }
-        } catch(e) {}
-        container.innerHTML = '';
-        files.forEach(fileName => {
-            const item = document.createElement('div');
-            item.style.cssText = 'padding:12px 16px;cursor:pointer;color:#e0e0e0;font-size:12px;font-family:chevyray,monospace;border-bottom:1px solid #1a1a1a;';
-            item.textContent = fileName;
-            item.onmouseenter = () => item.style.background = '#353535';
-            item.onmouseleave = () => item.style.background = '';
-            item.onclick = async () => {
-                dlg.style.display = 'none';
-                const ext = fileName.split('.').pop().toLowerCase();
-                try {
-                    if (ext === 'graal' || ext === 'zelda') {
-                        const buf = await fetch(`levels/${fileName}`).then(r => r.arrayBuffer());
-                        const lvl = Level.loadFromGraal(buf);
-                        if (lvl) { lvl.tilesetImage = this.level?.tilesetImage||null; lvl.tilesetName='pics1.png'; this.levels.push({level:lvl,name:fileName,modified:false}); this.currentLevelIndex=this.levels.length-1; this.level=lvl; this.undoStack=[]; this.redoStack=[]; this.loadDefaultTileset(); this.addLevelTab(this.currentLevelIndex); this.updateLevelTabs(); this.updateUI(); this.render(); this.saveSessionDebounced(); }
-                    } else {
-                        const text = await fetch(`levels/${fileName}`).then(r => r.text());
-                        this.openFromText(text, fileName);
-                    }
-                } catch(e) {}
-            };
-            container.appendChild(item);
-        });
-        if (!files.length) container.innerHTML = `<div style="color:#666;padding:20px;text-align:center;font-family:chevyray,monospace;font-size:12px;">No levels found</div>`;
-        document.getElementById('defaultGaniCancel').onclick = () => { dlg.style.display = 'none'; };
-        dlg.onclick = e => { if (e.target === dlg) dlg.style.display = 'none'; };
+    _registerDefaultLevelLoader() {
+        window._defaultDialogLoaders = window._defaultDialogLoaders || {};
+        window._defaultDialogLoaders.level = async (container) => {
+            const fallback = ['cave1.zelda','house1.graal','house1.zelda','onlinestartlocal.nw'];
+            let files = fallback;
+            try {
+                if (_isTauri) {
+                    const entries = await _tauri.fs.readDir('levels').catch(() => null);
+                    if (entries) files = entries.map(e => e.name).filter(n => n && /\.(nw|zelda|graal|gmap)$/i.test(n));
+                } else {
+                    let r = await fetch('levels/index.json').catch(() => null);
+                    if (!r?.ok) r = await fetch('levels/').catch(() => null);
+                    if (r?.ok) { const d = await r.json().catch(() => null); if (Array.isArray(d)) files = d; }
+                }
+            } catch(e) {}
+            container.innerHTML = '';
+            files.forEach(fileName => {
+                const item = document.createElement('div');
+                item.style.cssText = 'padding:12px 16px;cursor:pointer;color:#e0e0e0;font-size:12px;font-family:chevyray,monospace;border-bottom:1px solid #1a1a1a;';
+                item.textContent = fileName;
+                item.onmouseenter = () => item.style.background = '#404040';
+                item.onmouseleave = () => item.style.background = '';
+                item.onclick = async () => {
+                    document.getElementById('defaultOpenDialog').style.display = 'none';
+                    const ext = fileName.split('.').pop().toLowerCase();
+                    try {
+                        if (ext === 'graal' || ext === 'zelda') {
+                            const buf = await fetch(`levels/${fileName}`).then(r => r.arrayBuffer());
+                            const lvl = Level.loadFromGraal(buf);
+                            if (lvl) { lvl.tilesetImage = this.level?.tilesetImage||null; lvl.tilesetName='pics1.png'; this.levels.push({level:lvl,name:fileName,modified:false}); this.currentLevelIndex=this.levels.length-1; this.level=lvl; this.undoStack=[]; this.redoStack=[]; this.loadDefaultTileset(); this.addLevelTab(this.currentLevelIndex); this.updateLevelTabs(); this.updateUI(); this.render(); this.saveSessionDebounced(); }
+                        } else {
+                            const text = await fetch(`levels/${fileName}`).then(r => r.text());
+                            this.openFromText(text, fileName);
+                        }
+                    } catch(e) {}
+                };
+                container.appendChild(item);
+            });
+            if (!files.length) container.innerHTML = '<div style="color:#666;padding:20px;text-align:center;font-family:chevyray,monospace;font-size:12px;">No levels found</div>';
+        };
+    }
+
+    openDefaultLevelDialog() {
+        window.openDefaultDialog('level');
     }
 
     openLevel() {
-        const input = document.getElementById('fileInput');
+        const input = this.$('fileInput');
         input.value = '';
         input.click();
         input.onchange = (e) => {
@@ -4695,18 +4914,28 @@ class LevelEditor {
             const finish = () => { if (++loaded < files.length) return; this.currentLevelIndex = this.levels.length - 1; this.level = this.levels[this.currentLevelIndex].level; this.undoStack = []; this.redoStack = []; this.loadDefaultTileset(); this.updateLevelTabs(); this.updateUI(); this.render(); this.saveSessionDebounced(); };
             files.forEach(file => {
                 const ext = file.name.split('.').pop().toLowerCase();
+                if (ext === 'gani') {
+                    file.text().then(text => {
+                        this.levels.push({ level: null, name: file.name, modified: false, isGani: true, ganiText: text });
+                        this.addLevelTab(this.levels.length - 1);
+                        this.switchLevel(this.levels.length - 1);
+                        loaded++; // count toward finish without triggering level render
+                    });
+                    return;
+                }
                 const reader = new FileReader();
                 reader.onload = (event) => {
                     if (ext === 'gmap') {
                         this.openGmapText(event.target.result, file.name);
                     } else if (ext === 'graal' || ext === 'zelda') {
                         const level = Level.loadFromGraal(event.target.result);
-                        if (level) { level.tilesetImage = this.level?.tilesetImage || null; level.tilesetName = 'pics1.png'; this.levels.push({ level, name: file.name, modified: false }); this.addLevelTab(this.levels.length - 1); }
+                        if (level) { level.tilesetImage = this.level?.tilesetImage || null; level.tilesetName = 'pics1.png'; const lvlName = file.name || 'level'; this.levels.push({ level, name: lvlName.includes('.') ? lvlName : lvlName + '.' + ext, modified: false }); this.addLevelTab(this.levels.length - 1); }
                     } else {
                         const level = Level.loadFromNW(event.target.result);
                         level.tilesetImage = this.level?.tilesetImage || null;
                         level.tilesetName = level.tilesetName || 'pics1.png';
-                        this.levels.push({ level, name: file.name, modified: false });
+                        const lvlName = file.name || 'level';
+                        this.levels.push({ level, name: lvlName.includes('.') ? lvlName : lvlName + '.nw', modified: false });
                         this.addLevelTab(this.levels.length - 1);
                     }
                     finish();
@@ -4775,6 +5004,15 @@ class LevelEditor {
         this._promptRename(this.currentLevelIndex, suggested, true);
     }
 
+    async saveAllLevels() {
+        for (let i = 0; i < this.levels.length; i++) {
+            const entry = this.levels[i];
+            if (!entry || !entry.modified) continue;
+            this.currentLevelIndex = i;
+            await this.saveLevel();
+        }
+    }
+
     _saveGmap(entry) {
         const serialized = this._serializeGmapEntry(entry);
         const changed = Object.entries(serialized.gmapLevels).filter(([k]) => {
@@ -4797,7 +5035,7 @@ class LevelEditor {
         document.body.appendChild(box);
         const close = () => box.remove();
         box._closeModal = close;
-        document.getElementById('_gmCancel').onclick = close;
+        this.$('_gmCancel').onclick = close;
         const doSave = async (subset) => {
             close();
             const { default: JSZip } = await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm');
@@ -4808,8 +5046,8 @@ class LevelEditor {
             this._downloadFile(gmapName.replace('.gmap', '.zip'), blob, 'application/zip');
             this.saveSessionDebounced();
         };
-        document.getElementById('_gmSaveAll').onclick = () => doSave(all);
-        document.getElementById('_gmSaveChanged').onclick = () => doSave(changed);
+        this.$('_gmSaveAll').onclick = () => doSave(all);
+        this.$('_gmSaveChanged').onclick = () => doSave(changed);
     }
 
     _promptRename(index, currentName, andSave = false) {
@@ -4824,11 +5062,11 @@ class LevelEditor {
               <button id="_renameCancel" style="padding:4px 10px;">Cancel</button>
             </div>`;
         document.body.appendChild(box);
-        const inp = document.getElementById('_renameInput');
+        const inp = this.$('_renameInput');
         inp.focus(); inp.select();
         const close = () => box.remove();
         box._closeModal = close;
-        document.getElementById('_renameCancel').onclick = close;
+        this.$('_renameCancel').onclick = close;
         const confirm = () => {
             let name = inp.value.trim();
             if (!name) return;
@@ -4838,7 +5076,7 @@ class LevelEditor {
             close();
             if (andSave) { const _ext = name.split('.').pop().toLowerCase(); if (_ext === 'graal' || _ext === 'zelda') { this._downloadFile(name, entry.level.saveToGraal(_ext === 'zelda'), 'application/octet-stream'); } else { this._downloadFile(name, entry.level.saveToNW()); } this.saveSessionDebounced(); }
         };
-        document.getElementById('_renameOk').onclick = confirm;
+        this.$('_renameOk').onclick = confirm;
         inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirm(); if (e.key === 'Escape') close(); });
     }
 
@@ -4867,8 +5105,8 @@ class LevelEditor {
     }
 
     resizeLevel() {
-        const width = parseInt(document.getElementById('levelWidth').value);
-        const height = parseInt(document.getElementById('levelHeight').value);
+        const width = parseInt(this.$('levelWidth').value);
+        const height = parseInt(this.$('levelHeight').value);
         if (width > 0 && height > 0) {
             this.level.resize(width, height);
             this.render();
@@ -4882,10 +5120,10 @@ class LevelEditor {
     }
 
     refreshLayerPanel() {
-        const list = document.getElementById('layersList');
+        const list = this.$('layersList');
         if (!list || !this.level) return;
         const isBinary = this.level._sourceFormat === 'graal' || this.level._sourceFormat === 'zelda';
-        const addBtn = document.getElementById('btnAddLayer'), delBtn = document.getElementById('btnDeleteLayer');
+        const addBtn = this.$('btnAddLayer'), delBtn = this.$('btnDeleteLayer');
         if (addBtn) addBtn.disabled = isBinary;
         if (delBtn) delBtn.disabled = isBinary;
         if (isBinary) { list.innerHTML = ''; return; }
@@ -4914,7 +5152,7 @@ class LevelEditor {
             if (i === layers.length - 1) btnDown.disabled = true;
             btnWrap.append(btnUp, btnDown);
             row.append(cb, thumb, name, btnWrap);
-            row.addEventListener('click', () => { this.setCurrentLayer(i); this.refreshLayerPanel(); const ls = document.getElementById('layerSpinbox'); if (ls) ls.value = this.currentLayer; });
+            row.addEventListener('click', () => { this.setCurrentLayer(i); this.refreshLayerPanel(); const ls = this.$('layerSpinbox'); if (ls) ls.value = this.currentLayer; });
             row.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', String(i)); row.style.opacity = '0.4'; });
             row.addEventListener('dragend', () => { row.style.opacity = '1'; list.querySelectorAll('[data-layer-idx]').forEach(r => r.style.outline = ''); });
             row.addEventListener('dragover', e => { e.preventDefault(); row.style.outline = '2px solid #4a9eff'; });
@@ -4956,7 +5194,7 @@ class LevelEditor {
     addLayer() {
         if (!this.level || this.level.layers.length >= 8) return;
         this.level.layers.push(this.level.createEmptyLayer());
-        const ls = document.getElementById('layerSpinbox'); if (ls) ls.max = this.level.layers.length - 1;
+        const ls = this.$('layerSpinbox'); if (ls) ls.max = this.level.layers.length - 1;
         this.refreshLayerPanel();
         this.saveSessionDebounced?.();
     }
@@ -4966,7 +5204,7 @@ class LevelEditor {
         if (idx == null) idx = this.currentLayer;
         this.level.layers.splice(idx, 1);
         if (this.currentLayer >= this.level.layers.length) this.currentLayer = this.level.layers.length - 1;
-        const ls = document.getElementById('layerSpinbox'); if (ls) { ls.max = this.level.layers.length - 1; ls.value = this.currentLayer; }
+        const ls = this.$('layerSpinbox'); if (ls) { ls.max = this.level.layers.length - 1; ls.value = this.currentLayer; }
         this.refreshLayerPanel();
         this.render();
         this.saveSessionDebounced?.();
@@ -4981,7 +5219,7 @@ class LevelEditor {
         if (this.currentLayer === from) this.currentLayer = to;
         else if (from < this.currentLayer && to >= this.currentLayer) this.currentLayer--;
         else if (from > this.currentLayer && to <= this.currentLayer) this.currentLayer++;
-        const ls = document.getElementById('layerSpinbox'); if (ls) ls.value = this.currentLayer;
+        const ls = this.$('layerSpinbox'); if (ls) ls.value = this.currentLayer;
         this.refreshLayerPanel();
         this.render();
         this.saveSessionDebounced?.();
@@ -4990,7 +5228,7 @@ class LevelEditor {
     setCurrentLayer(layer) {
         this.currentLayer = Math.max(0, Math.min((this.level?.layers.length ?? 3) - 1, layer));
         this.selectionStartX = this.selectionStartY = this.selectionEndX = this.selectionEndY = -1;
-        this.selectedObject = null;
+        this.clearObjectSelection();
         this.render();
     }
 
@@ -5016,16 +5254,16 @@ class LevelEditor {
 
     toggleSnapGrid() {
         this.snapGrid = !this.snapGrid;
-        const btn = document.getElementById('btnSnapGrid');
+        const btn = this.$('btnSnapGrid');
         if (btn) btn.classList.toggle('active', this.snapGrid);
     }
 
     loadChangelog() {
-        const el = document.getElementById('changelogContent');
+        const el = this.$('changelogContent');
         if (!el || el.dataset.loaded) return;
         fetch('changelog.json').then(r => r.json()).then(data => {
             el.dataset.loaded = '1';
-            const tagColors = { 'GraalSuite':'#c792ea','Level Editor':'#4a9eff','Gani Editor':'#56d364','Gmap Generator':'#ffa657','Setshape2':'#ff7b72' };
+            const tagColors = { 'GSuite':'#c792ea','Level Editor':'#4a9eff','Gani Editor':'#56d364','Gmap Generator':'#ffa657','Setshape2':'#ff7b72' };
             el.innerHTML = data.map(entry => {
                 const tc = tagColors[entry.tag] || '#888';
                 return `<p style="color:#569cd6;font-weight:bold;margin:0 0 4px">${entry.version} <span style="color:${tc};font-size:11px;">(${entry.tag})</span> <span style="color:#666;font-weight:normal;font-size:11px;">&mdash; ${entry.date}</span></p>
@@ -5056,11 +5294,11 @@ class LevelEditor {
         this.currentTool = tool;
         const map = { select:'btnSelect', draw:'btnDraw', eraser:'btnEraserTool' };
         document.querySelectorAll('.tool-button:not(#btnFillTool)').forEach(b => b.classList.remove('active'));
-        const btn = document.getElementById(map[tool]);
+        const btn = this.$(map[tool]);
         if (btn) btn.classList.add('active');
         if (tool !== 'draw') {
             this.floodFillEnabled = false;
-            const fill = document.getElementById('btnFillTool');
+            const fill = this.$('btnFillTool');
             if (fill) fill.classList.remove('active');
         }
         if (tool === 'draw' || tool === 'eraser') {
@@ -5075,28 +5313,28 @@ class LevelEditor {
 
     updateUI() {
         if (!this.level) return;
-        const lw = document.getElementById('levelWidth'); if (lw) lw.value = this.level.width;
-        const lh = document.getElementById('levelHeight'); if (lh) lh.value = this.level.height;
-        const tn = document.getElementById('tilesetName'); if (tn) tn.value = this.level.tilesetName;
-        [0,1,2].forEach(i => { const cb = document.getElementById(`visLayer${i}`); if (cb && this.level.layers[i]) cb.checked = this.level.layers[i].visible !== false; });
-        const ls = document.getElementById('layerSpinbox');
+        const lw = this.$('levelWidth'); if (lw) lw.value = this.level.width;
+        const lh = this.$('levelHeight'); if (lh) lh.value = this.level.height;
+        const tn = this.$('tilesetName'); if (tn) tn.value = this.level.tilesetName;
+        [0,1,2].forEach(i => { const cb = this.$(`visLayer${i}`); if (cb && this.level.layers[i]) cb.checked = this.level.layers[i].visible !== false; });
+        const ls = this.$('layerSpinbox');
         if (ls) ls.value = this.currentLayer;
         const isNw = !this.level._sourceFormat || this.level._sourceFormat === 'nw';
-        ['layerSpinbox','btnLayerUp','btnLayerDown','btnFadeLayers'].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !isNw; });
-        ['visLayer1','visLayer2'].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !isNw; });
+        ['layerSpinbox','btnLayerUp','btnLayerDown','btnFadeLayers'].forEach(id => { const el = this.$(id); if (el) el.disabled = !isNw; });
+        ['visLayer1','visLayer2'].forEach(id => { const el = this.$(id); if (el) el.disabled = !isNw; });
         const layersTabEl = document.querySelector('.right-tabs .tab[data-tab="layers"]');
-        if (layersTabEl) { layersTabEl.style.opacity = isNw ? '' : '0.4'; layersTabEl.style.pointerEvents = isNw ? '' : 'none'; layersTabEl.title = isNw ? '' : 'Layers not supported for this format'; }
+        if (layersTabEl) { layersTabEl.style.opacity = isNw ? '' : '0.4'; layersTabEl.style.pointerEvents = isNw ? '' : 'none'; if (isNw) layersTabEl.removeAttribute('title'); else layersTabEl.title = 'Layers not supported for this format'; }
         this.updateSelectedTileDisplay();
         this.updateZoomDisplay();
-        const ls2 = document.getElementById('layerSpinbox');
+        const ls2 = this.$('layerSpinbox');
         if (ls2) ls2.max = this.level.layers.length - 1;
         this.refreshLayerPanel();
     }
 
     updateMouseCoords(x, y, source = 'canvas') {
-        const coordsSpan = document.getElementById('mouseCoords');
+        const coordsSpan = this.$('mouseCoords');
         coordsSpan.textContent = `Mouse: ${x}, ${y}`;
-        const tileSpan = document.getElementById('selectedTile');
+        const tileSpan = this.$('selectedTile');
         if (source === 'canvas' && x >= 0 && x < this.level.width && y >= 0 && y < this.level.height) {
             const rawIndex = this.level.getTile(this.currentLayer, x, y);
             const tileIndex = rawIndex < 0 ? 0 : rawIndex;
@@ -5116,10 +5354,10 @@ class LevelEditor {
 
     updateSelectionInfo() {
         const hasSel = this.hasSelection();
-        document.getElementById('btnNewLink').disabled = !hasSel;
-        document.getElementById('btnNewSign').disabled = !hasSel;
-        const wEl = document.getElementById('brushWidth');
-        const hEl = document.getElementById('brushHeight');
+        this.$('btnNewLink').disabled = !hasSel;
+        this.$('btnNewSign').disabled = !hasSel;
+        const wEl = this.$('brushWidth');
+        const hEl = this.$('brushHeight');
         if (this.selectionStartX < 0 || this.selectionEndX < 0) {
             if (wEl) { wEl.value = ''; wEl.disabled = true; }
             if (hEl) { hEl.value = ''; hEl.disabled = true; }
@@ -5132,7 +5370,7 @@ class LevelEditor {
         const width = endX - startX + 1, height = endY - startY + 1;
         if (wEl) { wEl.value = width; wEl.disabled = false; }
         if (hEl) { hEl.value = height; hEl.disabled = false; }
-        const selectionSpan = document.getElementById('selectionInfo');
+        const selectionSpan = this.$('selectionInfo');
         selectionSpan.textContent = `Selection: (${startX}, ${startY}) -> (${endX}, ${endY}) = (${width}, ${height})`;
     }
 
@@ -5141,7 +5379,7 @@ class LevelEditor {
 
 
     updateSelectedTileCanvas() {
-        const canvas = document.getElementById('selectedTileCanvas');
+        const canvas = this.$('selectedTileCanvas');
         if (!canvas) return;
 
         const ctx = canvas.getContext('2d');
@@ -5203,26 +5441,26 @@ class LevelEditor {
     }
 
     tilesetOrder() {
-        const dlg = document.getElementById('tilesetOrderDialog');
+        const dlg = this.$('tilesetOrderDialog');
         if (!dlg) return;
         dlg.style.display = 'flex';
         this._refreshTilesetOrderList();
-        this._makeDialogDraggable(dlg, dlg.querySelector('div'), document.getElementById('tilesetOrderTitlebar'));
+        this._makeDialogDraggable(dlg, dlg.querySelector('div'), this.$('tilesetOrderTitlebar'));
     }
 
     _refreshTilesetOrderList() {
-        const list = document.getElementById('tilesetOrderListBox');
-        const combo = document.getElementById('tilesetsCombo');
+        const list = this.$('tilesetOrderListBox');
+        const combo = this.$('tilesetsCombo');
         if (!list || !combo) return;
         const options = [...combo.options].map(o => o.value);
         const selected = combo.value;
         list.innerHTML = options.map(name =>
-            `<div data-ts="${name}" style="padding:4px 10px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:${name === selected ? '#2a4a6a' : 'transparent'};color:${name === selected ? '#fff' : '#ccc'};" onclick="document.getElementById('tilesetsCombo').value='${name}';window._editor.selectTileset('${name}');window._editor._refreshTilesetOrderList();">${name}</div>`
+            `<div data-ts="${name}" style="padding:4px 10px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:${name === selected ? '#2a4a6a' : 'transparent'};color:${name === selected ? '#fff' : '#ccc'};" onclick="this.$('tilesetsCombo').value='${name}';window._editor.selectTileset('${name}');window._editor._refreshTilesetOrderList();">${name}</div>`
         ).join('');
     }
 
     tilesetMoveUp() {
-        const combo = document.getElementById('tilesetsCombo');
+        const combo = this.$('tilesetsCombo');
         if (!combo) return;
         const idx = combo.selectedIndex;
         if (idx <= 0) return;
@@ -5233,7 +5471,7 @@ class LevelEditor {
     }
 
     tilesetMoveDown() {
-        const combo = document.getElementById('tilesetsCombo');
+        const combo = this.$('tilesetsCombo');
         if (!combo) return;
         const idx = combo.selectedIndex;
         if (idx < 0 || idx >= combo.options.length - 1) return;
@@ -5332,11 +5570,10 @@ class LevelEditor {
     }
 
     newTileset() {
-        console.log('New tileset clicked');
     }
 
     deleteTileset() {
-        const combo = document.getElementById('tilesetsCombo');
+        const combo = this.$('tilesetsCombo');
         if (!combo || !combo.value) return;
         const name = combo.value;
         if (/^(pics1|zlttp)\.(png|gif)$/i.test(name)) return;
@@ -5545,13 +5782,13 @@ class LevelEditor {
         const activeTab = document.querySelector(`.right-tabs .tab[data-tab="${tabName}"]`);
         let activePanel = null;
         if (tabName === 'tileset') {
-            activePanel = document.getElementById('tileset-tab');
+            activePanel = this.$('tileset-tab');
         } else if (tabName === 'tileobjects') {
-            activePanel = document.getElementById('tileobjects-tab');
+            activePanel = this.$('tileobjects-tab');
         } else if (tabName === 'objects') {
-            activePanel = document.getElementById('objects-tab');
+            activePanel = this.$('objects-tab');
         } else if (tabName === 'layers') {
-            activePanel = document.getElementById('layers-tab');
+            activePanel = this.$('layers-tab');
             this.refreshLayerPanel();
         }
         
@@ -5563,7 +5800,7 @@ class LevelEditor {
     }
 
     refreshNPCList() {
-        const tbody = document.getElementById('npcListBody');
+        const tbody = this.$('npcListBody');
         if (!tbody || !this.level) return;
         const npcs = this.level.objects.filter(o => o.type === 'npc');
         const selId = this.selectedObject?.type === 'npc' ? this.selectedObject.id : null;
@@ -5582,17 +5819,17 @@ class LevelEditor {
         let minDiff = Infinity;
         for (let i = 0; i < factors.length; i++) { const d = Math.abs(this.zoom - factors[i]); if (d < minDiff) { minDiff = d; closest = i; } }
         this.zoomLevel = closest;
-        const zoomSlider = document.getElementById('zoomSlider');
+        const zoomSlider = this.$('zoomSlider');
         if (zoomSlider) zoomSlider.value = closest;
         this.updateZoomDisplay();
     }
 
     updateZoomDisplay() {
-        const zoomSpan = document.getElementById('zoomLevel');
+        const zoomSpan = this.$('zoomLevel');
         if (zoomSpan) {
             zoomSpan.textContent = `Zoom: ${Math.round(this.zoom * 100)}%`;
         }
-        const zoomDisplay = document.getElementById('zoomDisplay');
+        const zoomDisplay = this.$('zoomDisplay');
         if (zoomDisplay) {
             if (this.zoom >= 1.0) {
                 zoomDisplay.textContent = `${Math.round(this.zoom)}x`;
@@ -5663,6 +5900,7 @@ class LevelEditor {
         if (obj) {
             this.pushUndo();
             this.level.removeObject(obj);
+            this.syncObjectSelection();
             this.render();
             this.saveSessionDebounced();
         }
@@ -5672,10 +5910,10 @@ class LevelEditor {
         const tw = this.level.tileWidth || 16;
         const th = this.level.tileHeight || 16;
         const ss = this._screenshotMode && this._ssOpts;
-        const visNPCs = ss ? this._ssOpts.ssNPCs : document.getElementById('visNPCs')?.checked !== false;
-        const visChars = ss ? this._ssOpts.ssChars : document.getElementById('visCharacters')?.checked !== false;
-        const visLinks = ss ? this._ssOpts.ssLinks : (!this._playMode && document.getElementById('visLinks')?.checked !== false);
-        const visSigns = ss ? this._ssOpts.ssSigns : (!this._playMode && document.getElementById('visSigns')?.checked !== false);
+        const visNPCs = ss ? this._ssOpts.ssNPCs : this.$('visNPCs')?.checked !== false;
+        const visChars = ss ? this._ssOpts.ssChars : this.$('visCharacters')?.checked !== false;
+        const visLinks = ss ? this._ssOpts.ssLinks : ((!this._playMode || this._editBypass) && this.$('visLinks')?.checked !== false);
+        const visSigns = ss ? this._ssOpts.ssSigns : ((!this._playMode || this._editBypass) && this.$('visSigns')?.checked !== false);
         const visChests = ss ? this._ssOpts.ssChests : true;
         const _drawItems = [];
         this.level.objects.forEach(obj => {
@@ -5714,7 +5952,7 @@ class LevelEditor {
                 case 'link': this.drawLink(x, y, tw, th, obj); break;
                 default: this.drawGenericObject(x, y, tw, th, obj.type);
             }
-            if (!this._screenshotMode && this.selectedObject === obj) {
+            if (!this._screenshotMode && this.isObjectSelected(obj)) {
                 const _bc = obj.type === 'baddy' ? BADDY_CROPS[Math.max(0, Math.min(9, obj.properties?.baddyType ?? 0))] : null;
                 const sc2 = obj.type === 'sign' ? 'rgb(255,0,0)' : obj.type === 'link' ? 'rgb(255,215,0)' : 'rgb(255,105,180)';
                 const fc2 = obj.type === 'sign' ? 'rgba(255,0,0,0.25)' : obj.type === 'link' ? 'rgba(255,215,0,0.25)' : 'rgba(255,105,180,0.35)';
@@ -6032,7 +6270,7 @@ class LevelEditor {
 
         const buttons = ['btnPlaceBaddy', 'btnPlaceNPC', 'btnPlaceChest', 'btnPlaceSign', 'btnPlaceLink', 'btnTileMode'];
         buttons.forEach(id => {
-            const btn = document.getElementById(id);
+            const btn = this.$(id);
             if (btn) {
                 if ((id === 'btnTileMode' && !this.objectMode && objectType !== 'delete') ||
                     (id !== 'btnTileMode' && this.objectMode && id.toLowerCase().includes(objectType))) {
@@ -6053,7 +6291,7 @@ class LevelEditor {
         this.levels = [];
         this.currentLevelIndex = -1;
         this.level = new Level();
-        const tabsContainer = document.getElementById('levelTabs');
+        const tabsContainer = this.$('suiteTabsList');
         if (tabsContainer) tabsContainer.innerHTML = '';
         this.undoStack = [];
         this.redoStack = [];
@@ -6075,8 +6313,8 @@ class LevelEditor {
         document.body.appendChild(box);
         const close = () => box.remove();
         box._closeModal = close;
-        document.getElementById('_resetCancel').onclick = close;
-        document.getElementById('_resetOk').onclick = () => {
+        this.$('_resetCancel').onclick = close;
+        this.$('_resetOk').onclick = () => {
             close();
             this._doReset();
         };
@@ -6106,7 +6344,7 @@ class LevelEditor {
         this.closeAllTabs();
         this.updateZoomFromLevel();
         this.resizeCanvas();
-        const oldStyle = document.getElementById('colorSchemeStyle');
+        const oldStyle = this.$('colorSchemeStyle');
         if (oldStyle) oldStyle.remove();
         document.body.style.background = '';
         document.body.style.color = '';
@@ -6121,7 +6359,7 @@ class LevelEditor {
             this.currentLevelIndex = Math.min(this.currentLevelIndex, this.levels.length - 1);
             if (this.currentLevelIndex < 0) this.currentLevelIndex = 0;
             this.level = this.levels[this.currentLevelIndex]?.level || new Level();
-            const tabsContainer = document.getElementById('levelTabs');
+            const tabsContainer = this.$('suiteTabsList');
             tabsContainer.innerHTML = '';
             this.levels.forEach((_, i) => this.addLevelTab(i));
             this.updateUI();
@@ -6623,7 +6861,7 @@ class LevelEditor {
     }
 
     _showLinkPickConfirm(result) {
-        const existing = document.getElementById('_linkPickConfirm');
+        const existing = this.$('_linkPickConfirm');
         if (existing) existing.parentNode?.removeChild(existing);
         const panel = document.createElement('div');
         panel.id = '_linkPickConfirm';
@@ -6655,7 +6893,7 @@ class LevelEditor {
             result.nextY = panel.querySelector('#_lhcY').value;
             remove(); this._linkPickCallback(result);
         };
-        panel.querySelector('#_lhcCancel').onclick = () => { remove(); this._linkPickMode = false; document.getElementById('_linkPickBanner')?.parentNode?.removeChild(document.getElementById('_linkPickBanner')); };
+        panel.querySelector('#_lhcCancel').onclick = () => { remove(); this._linkPickMode = false; this.$('_linkPickBanner')?.parentNode?.removeChild(this.$('_linkPickBanner')); };
         panel.querySelector('#_lhcRetry').onclick = () => { remove(); this.requestRender(); };
     }
 
@@ -6835,36 +7073,69 @@ class LevelEditor {
                 }
             }
         }
-        this._toGroup = () => document.getElementById('tileObjectGroup')?.value || 'Default';
-        this._toName = () => document.getElementById('tileObjectName')?.value || '';
+        this._toGroup = () => this.$('tileObjectGroup')?.value || 'Default';
+        this._toName = () => this.$('tileObjectName')?.value || '';
         this._saveTileObjects = () => localStorage.setItem('levelEditorTileObjects', JSON.stringify(this.tileObjects));
+        const refreshCustomSelect = (selectElement) => {
+            if (!selectElement) return;
+            const wrapper = selectElement.parentElement;
+            const button = wrapper?.querySelector?.('.custom-dropdown-button');
+            const buttonText = button?.querySelector?.('span');
+            const dropdown = wrapper?.querySelector?.('.custom-dropdown');
+            if (!button || !buttonText || !dropdown) return;
+            buttonText.textContent = selectElement.options[selectElement.selectedIndex]?.text || selectElement.options[0]?.text || '';
+            dropdown.innerHTML = '';
+            Array.from(selectElement.options).forEach((option, index) => {
+                const item = document.createElement('div');
+                item.className = 'custom-dropdown-item';
+                item.style.cssText = 'padding: 8px; cursor: pointer; font-size: 12px; color: #e0e0e0; border-bottom: 1px solid #0a0a0a;';
+                item.textContent = option.text;
+                if (index === selectElement.selectedIndex) item.style.background = '#404040';
+                item.onclick = (e) => {
+                    e.stopPropagation();
+                    selectElement.selectedIndex = index;
+                    selectElement.value = option.value;
+                    dropdown.style.display = 'none';
+                    selectElement.dispatchEvent(new Event('change', { bubbles: true }));
+                };
+                dropdown.appendChild(item);
+            });
+        };
 
         const fillGroups = () => {
-            const sel = document.getElementById('tileObjectGroup');
+            const sel = this.$('tileObjectGroup');
             const cur = sel.value;
-            sel.innerHTML = Object.keys(this.tileObjects).map(g => `<option${g===cur?' selected':''}>${g}</option>`).join('');
+            sel.innerHTML = Object.keys(this.tileObjects).map(g => `<option>${g}</option>`).join('');
+            if (cur && this.tileObjects[cur]) sel.value = cur;
+            else sel.value = Object.keys(this.tileObjects)[0] || '';
+            refreshCustomSelect(sel);
             fillObjects();
         };
         const updateDeleteBtn = () => {
-            const btn = document.getElementById('btnDeleteTileObject');
+            const btn = this.$('btnDeleteTileObject');
             if (!btn) return;
             const isBuiltin = this._builtinKeys.has(`${this._toGroup()}/${this._toName()}`);
             btn.style.display = isBuiltin ? 'none' : '';
         };
-        const fillObjects = () => {
-            const sel = document.getElementById('tileObjectName');
-            const group = this.tileObjects[this._toGroup()] || {};
+        const fillObjects = (forcedGroup) => {
+            const groupName = forcedGroup !== undefined ? forcedGroup : this._toGroup();
+            const sel = this.$('tileObjectName');
+            const group = this.tileObjects[groupName] || {};
             const cur = sel.value;
             const keys = Object.keys(group);
-            sel.innerHTML = keys.length ? keys.map(k => `<option${k===cur?' selected':''}>${k}</option>`).join('') : '<option value="">— empty —</option>';
+            sel.innerHTML = keys.length ? keys.map(k => `<option>${k}</option>`).join('') : '<option value="">— empty —</option>';
+            if (cur && group[cur]) sel.value = cur;
+            else sel.value = keys[0] || '';
+            refreshCustomSelect(sel);
+            sel.dispatchEvent(new Event('change'));
             this._renderTileObjectPreview();
             updateDeleteBtn();
         };
 
-        document.getElementById('tileObjectGroup').addEventListener('change', fillObjects);
-        document.getElementById('tileObjectName').addEventListener('change', () => { this._renderTileObjectPreview(); updateDeleteBtn(); });
+        this.$('tileObjectGroup').addEventListener('change', (e) => fillObjects(e.target.value));
+        this.$('tileObjectName').addEventListener('change', () => { this._renderTileObjectPreview(); updateDeleteBtn(); });
 
-        document.getElementById('btnNewTileObjectGroup').onclick = () => {
+        this.$('btnNewTileObjectGroup').onclick = () => {
             const box = document.createElement('div');
             box.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#2b2b2b;border:1px solid #404040;padding:14px 18px;z-index:99999;min-width:260px;font-size:13px;color:#e0e0e0;'; box.classList.add('ed-dialog-box');
             box.innerHTML = `<div class="ed-dlg-title">New Group</div>
@@ -6876,22 +7147,22 @@ class LevelEditor {
             document.body.appendChild(box);
             const close = () => box.remove();
             box._closeModal = close;
-            document.getElementById('_grpCancel').onclick = close;
-            const inp = document.getElementById('_grpNameInp');
+            this.$('_grpCancel').onclick = close;
+            const inp = this.$('_grpNameInp');
             inp.focus();
-            document.getElementById('_grpOk').onclick = () => {
+            this.$('_grpOk').onclick = () => {
                 const name = inp.value.trim();
                 if (!name || this.tileObjects[name]) return;
                 this.tileObjects[name] = {};
                 this._saveTileObjects();
                 fillGroups();
-                document.getElementById('tileObjectGroup').value = name;
+                this.$('tileObjectGroup').value = name;
                 fillObjects();
                 close();
             };
-            inp.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('_grpOk').click(); if (e.key === 'Escape') close(); });
+            inp.addEventListener('keydown', e => { if (e.key === 'Enter') this.$('_grpOk').click(); if (e.key === 'Escape') close(); });
         };
-        document.getElementById('btnDeleteTileObjectGroup').onclick = () => {
+        this.$('btnDeleteTileObjectGroup').onclick = () => {
             const g = this._toGroup();
             if (g === 'Default') return;
             const box = document.createElement('div');
@@ -6905,15 +7176,15 @@ class LevelEditor {
             document.body.appendChild(box);
             const close = () => box.remove();
             box._closeModal = close;
-            document.getElementById('_delGrpCancel').onclick = close;
-            document.getElementById('_delGrpOk').onclick = () => {
+            this.$('_delGrpCancel').onclick = close;
+            this.$('_delGrpOk').onclick = () => {
                 delete this.tileObjects[g];
                 this._saveTileObjects();
                 fillGroups();
                 close();
             };
         };
-        document.getElementById('btnNewTileObject').onclick = () => {
+        this.$('btnNewTileObject').onclick = () => {
             if (!this.selectionStartX < 0 && !this.hasSelection()) {
                 const box = document.createElement('div');
                 box.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#2b2b2b;border:1px solid #404040;padding:16px 20px;z-index:99999;min-width:280px;font-size:13px;color:#e0e0e0;'; box.classList.add('ed-dialog-box');
@@ -6925,7 +7196,7 @@ class LevelEditor {
                 document.body.appendChild(box);
                 const close = () => box.remove();
                 box._closeModal = close;
-                document.getElementById('_noSelOk').onclick = close;
+                this.$('_noSelOk').onclick = close;
                 return;
             }
             const box = document.createElement('div');
@@ -6939,10 +7210,10 @@ class LevelEditor {
             document.body.appendChild(box);
             const close = () => box.remove();
             box._closeModal = close;
-            document.getElementById('_objCancel').onclick = close;
-            const inp = document.getElementById('_objNameInp');
+            this.$('_objCancel').onclick = close;
+            const inp = this.$('_objNameInp');
             inp.focus();
-            document.getElementById('_objOk').onclick = () => {
+            this.$('_objOk').onclick = () => {
                 const name = inp.value.trim();
                 if (!name) return;
                 close();
@@ -6960,19 +7231,19 @@ class LevelEditor {
                 this.tileObjects[g][name] = { tiles, width: endX - startX + 1, height: endY - startY + 1 };
                 this._saveTileObjects();
                 fillObjects();
-                document.getElementById('tileObjectName').value = name;
+                this.$('tileObjectName').value = name;
                 this._renderTileObjectPreview();
             };
-            inp.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('_objOk').click(); if (e.key === 'Escape') close(); });
+            inp.addEventListener('keydown', e => { if (e.key === 'Enter') this.$('_objOk').click(); if (e.key === 'Escape') close(); });
         };
-        document.getElementById('btnDeleteTileObject').onclick = () => {
+        this.$('btnDeleteTileObject').onclick = () => {
             const g = this._toGroup(), n = this._toName();
             if (!n || !this.tileObjects[g]?.[n]) return;
             delete this.tileObjects[g][n];
             this._saveTileObjects();
             fillObjects();
         };
-        document.getElementById('btnUseTileObject').onclick = () => {
+        this.$('btnUseTileObject').onclick = () => {
             const obj = this.tileObjects[this._toGroup()]?.[this._toName()];
             if (!obj) return;
             this.selectedTilesetTiles = obj.tiles;
@@ -6980,7 +7251,7 @@ class LevelEditor {
             this.setTool('draw');
         };
 
-        document.getElementById('btnExportTileObjects').onclick = () => {
+        this.$('btnExportTileObjects').onclick = () => {
             const data = {};
             for (const [g, objs] of Object.entries(this.tileObjects)) {
                 const filtered = {};
@@ -6990,8 +7261,8 @@ class LevelEditor {
             this._downloadFile('tile-objects.json', JSON.stringify(data, null, 2), 'application/json');
         };
 
-        const importInput = document.getElementById('tileObjectsImportInput');
-        document.getElementById('btnImportTileObjects').onclick = () => importInput.click();
+        const importInput = this.$('tileObjectsImportInput');
+        this.$('btnImportTileObjects').onclick = () => importInput.click();
         importInput.onchange = e => {
             const file = e.target.files[0]; if (!file) return;
             const r = new FileReader();
@@ -7014,11 +7285,11 @@ class LevelEditor {
     }
 
     applyColorScheme(scheme) {
-        const oldStyle = document.getElementById('colorSchemeStyle');
+        const oldStyle = this.$('colorSchemeStyle');
         if (oldStyle) oldStyle.remove();
-        const tag = document.getElementById('levelEditorCustomUserCSS');
+        const tag = this.$('levelEditorCustomUserCSS');
         if (tag) tag.textContent = '';
-        localStorage.removeItem('graalsuite_customCSS');
+        localStorage.removeItem('gsuite_customCSS');
         const schemes = {
             'fusion-light': { bg:'#f5f5f5', panel:'#ffffff', border:'#d0d0d0', text:'#1a1a1a', hover:'#e8e8e8', button:'#ffffff', buttonText:'#1a1a1a', buttonHover:'#f0f0f0', tabActive:'#ffffff', inputBg:'#ffffff' },
             'fusion-dark':  { bg:'#1e1e1e', panel:'#2d2d2d', border:'#0f0f0f', text:'#e8e8e8', hover:'#3d3d3d' },
@@ -7034,7 +7305,7 @@ class LevelEditor {
         if (scheme === 'default') {
             if (window.monaco) monaco.editor.setTheme('graal-default');
             document.body.style.background = ''; document.body.style.color = '';
-            const tb = document.getElementById('tauriBar'); if (tb) { tb.style.background = ''; tb.style.borderColor = ''; }
+            const tb = this.$('tauriBar'); if (tb) { tb.style.background = ''; tb.style.borderColor = ''; }
             this._schemeColors = null;
             localStorage.setItem('editorColorScheme', scheme); this._updateSchemeDropdown(scheme); return;
         }
@@ -7051,9 +7322,9 @@ class LevelEditor {
             .toolbar, .level-toolbar, .tileset-toolbar, .tile-selection-toolbar, .canvas-controls-bar { background: ${c.panel} !important; border-color: ${c.border} !important; }
             .left-panel, .right-panel { background: ${c.panel} !important; }
             .tabs { background: ${c.panel} !important; }
-            .tab { background: transparent !important; color: ${c.text} !important; opacity: 0.6; }
+            .tab { background: transparent !important; color: ${c.text} !important; opacity: 0.55; }
             .tab:hover { background: ${c.hover} !important; opacity: 0.8; }
-            .tab.active { background: ${tabAct} !important; color: ${c.text} !important; border-color: ${c.border} !important; border-bottom: none !important; opacity: 1; }
+            .tab.active { background: ${c.bg} !important; color: ${c.text} !important; border-top: 2px solid #4a9eff !important; border-bottom: none !important; opacity: 1; }
             .splitter-handle { background: ${c.border} !important; }
             .toolbar button, .level-toolbar button, .tileset-toolbar button, .tile-selection-toolbar button, .canvas-controls button:not(.active), .canvas-controls-bar button:not(.active) { background: ${bBg} !important; color: ${bTxt} !important; border-color: ${c.border} !important; }
             .toolbar button:hover, .level-toolbar button:hover, .tileset-toolbar button:hover, .canvas-controls button:hover:not(.active), .canvas-controls-bar button:hover { background: ${bHov} !important; }
@@ -7075,14 +7346,21 @@ class LevelEditor {
             .dialog-content label, .dialog-content p, .dialog-content span { color: ${c.text} !important; }
             .dialog-content button { background: ${bBg} !important; color: ${bTxt} !important; border-color: ${c.border} !important; }
             .dialog-content button:hover { background: ${bHov} !important; }
+            .dialog-titlebar { background: ${c.bg} !important; border-color: ${c.border} !important; }
+            .dialog-titlebar span { color: ${c.text} !important; }
+            .info-tab-btn, .settings-tab-btn, .defaultOpen-tab-btn { color: ${c.text} !important; opacity: 0.6; border-color: ${c.border} !important; }
+            .info-tab-btn.active, .settings-tab-btn.active, .defaultOpen-tab-btn.active { color: #4a9eff !important; opacity: 1; background: ${c.panel} !important; }
+            .info-tab-btn:hover, .settings-tab-btn:hover, .defaultOpen-tab-btn:hover { background: ${c.hover} !important; opacity: 0.8; }
+            #defaultOpenContent { background: ${c.bg} !important; }
+            #defaultOpenCancel, #infoClose { background: ${bBg} !important; color: ${bTxt} !important; border-color: ${c.border} !important; }
             .dialog-content select, .dialog-content input, .dialog-content textarea { background: ${inp} !important; color: ${c.text} !important; border-color: ${c.border} !important; }
             .tab-bar { background: ${c.panel} !important; border-color: ${c.border} !important; }
-            .tab { background: ${c.hover} !important; color: ${c.text} !important; border-color: ${c.border} !important; }
+            .tab { background: ${c.hover} !important; color: ${c.text} !important; border-color: ${c.border} !important; opacity: 0.7; }
             .object-library-panel { background: ${c.bg} !important; border-color: ${c.border} !important; }
             .left-panel-tabs { background: ${c.bg} !important; border-color: ${c.border} !important; }
-            .left-tab { background: transparent !important; color: ${c.text} !important; opacity: 0.6; border-color: ${c.border} !important; }
+            .left-tab { background: transparent !important; color: ${c.text} !important; opacity: 0.55; border-color: ${c.border} !important; }
             .left-tab:hover { background: ${c.hover} !important; opacity: 0.8; }
-            .left-tab.active { background: ${c.panel} !important; color: ${c.text} !important; opacity: 1; border-bottom-color: #4a9eff !important; }
+            .left-tab.active { background: ${c.bg} !important; color: #4a9eff !important; opacity: 1; border-bottom: 2px solid #4a9eff !important; }
             .object-library-header { background: ${c.panel} !important; border-color: ${c.border} !important; color: ${c.text} !important; }
             .object-library-header label { color: ${c.text} !important; }
             .object-library-header button { background: ${bBg} !important; color: ${bTxt} !important; border-color: ${c.border} !important; }
@@ -7095,8 +7373,8 @@ class LevelEditor {
             .status-bar, .status-info { background: ${c.panel} !important; border-color: ${c.border} !important; color: ${c.text} !important; }
             .status-info span { color: ${c.text} !important; }
             .panel-tabs { background: ${c.panel} !important; border-color: ${c.border} !important; }
-            .panel-tab { background: ${c.hover} !important; color: ${c.text} !important; border-color: ${c.border} !important; }
-            .panel-tab.active { background: ${c.bg} !important; color: ${c.text} !important; }
+            .panel-tab { background: ${c.hover} !important; color: ${c.text} !important; border-color: ${c.border} !important; opacity: 0.7; }
+            .panel-tab.active { background: ${c.bg} !important; color: #4a9eff !important; border-bottom: 2px solid #4a9eff !important; opacity: 1; }
             .panel-content { background: ${c.bg} !important; }
             .panel-section { color: ${c.text} !important; }
             .layer-selector { background: ${c.panel} !important; color: ${c.text} !important; }
@@ -7170,6 +7448,11 @@ class LevelEditor {
             #tilesetZoomSlider::-moz-range-track { background: ${c.border} !important; box-shadow: none !important; }
             #tilesetZoomSlider::-webkit-slider-thumb { background: ${c.panel} !important; box-shadow: 0 1px 3px rgba(0,0,0,0.4) !important; border: 1px solid ${c.border} !important; }
             #tilesetZoomSlider::-moz-range-thumb { background: ${c.panel} !important; box-shadow: 0 1px 3px rgba(0,0,0,0.4) !important; border: 1px solid ${c.border} !important; }
+            #settingsUIScale, #settingsSelectionBorderThickness, #settingsSelectionBorderOpacity { accent-color: #4a9eff !important; }
+            #settingsUIScale::-webkit-slider-runnable-track, #settingsSelectionBorderThickness::-webkit-slider-runnable-track, #settingsSelectionBorderOpacity::-webkit-slider-runnable-track { background: ${c.border} !important; box-shadow: none !important; }
+            #settingsUIScale::-moz-range-track, #settingsSelectionBorderThickness::-moz-range-track, #settingsSelectionBorderOpacity::-moz-range-track { background: ${c.border} !important; box-shadow: none !important; }
+            #settingsUIScale::-webkit-slider-thumb, #settingsSelectionBorderThickness::-webkit-slider-thumb, #settingsSelectionBorderOpacity::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:16px; height:24px; background: ${c.panel} !important; border: 1px solid ${c.border} !important; cursor:pointer; margin-top:-8px; box-shadow: 0 1px 3px rgba(0,0,0,0.4) !important; }
+            #settingsUIScale::-moz-range-thumb, #settingsSelectionBorderThickness::-moz-range-thumb, #settingsSelectionBorderOpacity::-moz-range-thumb { width:16px; height:24px; background: ${c.panel} !important; border: 1px solid ${c.border} !important; cursor:pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.4) !important; }
             .tileset-display { background: ${c.bg} !important; scrollbar-color: ${c.hover} ${c.bg} !important; }
             .tileset-display::-webkit-scrollbar-track { background: ${c.bg} !important; }
             .tileset-display::-webkit-scrollbar-thumb { background: ${c.hover} !important; }
@@ -7189,6 +7472,60 @@ class LevelEditor {
             #_gmgDialog input, #_gmgDialog select { background: ${c.bg} !important; color: ${c.text} !important; border-color: ${c.border} !important; }
             #_gmgDialog label { color: ${c.text} !important; }
             #_gmgDialog div[style*="background:#1e1e1e"], #_gmgDialog div[style*="background: #1e1e1e"] { background: ${c.bg} !important; }
+            .direction-selector { background: ${c.panel} !important; border-color: ${c.border} !important; }
+            .direction-selector label { color: ${c.text} !important; }
+            .direction-selector select { background: ${inp} !important; color: ${c.text} !important; border-color: ${c.border} !important; }
+            .timeline-container, .timeline-view, .timeline-header { background: ${c.panel} !important; }
+            .timeline-header label, .timeline-header span { color: ${c.text} !important; }
+            #timelineCanvas { background: ${c.panel} !important; }
+            .timeline-slider { background: ${inp} !important; border-color: ${c.border} !important; }
+            .timeline-slider::-webkit-slider-thumb, .timeline-slider::-moz-range-thumb { background: ${bBg} !important; border-color: ${c.border} !important; }
+            .playback-controls { background: ${c.panel} !important; }
+            .playback-controls button { background: ${bBg} !important; color: ${bTxt} !important; border-color: ${c.border} !important; }
+            .playback-controls button:hover { background: ${bHov} !important; }
+            .sprite-edit-panel { background: ${c.panel} !important; }
+            .sprite-item { background: ${c.bg} !important; border-color: ${c.border} !important; opacity: 0.85; }
+            .sprite-item > div { color: ${c.text} !important; }
+            .sprite-item:hover { opacity: 1; background: ${c.hover} !important; }
+            .sprite-item.selected { border: 2px solid #4a9eff !important; opacity: 1; }
+            #historyList { background: ${c.bg} !important; border-color: ${c.border} !important; color: ${c.text} !important; }
+            .custom-checkbox { background: ${inp} !important; border-color: ${c.border} !important; color: ${c.text} !important; }
+            .defaults-table th { background: ${bBg} !important; color: ${bTxt} !important; }
+            .defaults-table td { background: ${c.panel} !important; color: ${c.text} !important; }
+            .custom-dropdown-button { background: ${inp} !important; color: ${c.text} !important; border-color: ${c.border} !important; }
+            .custom-dropdown-button:hover { background: ${c.hover} !important; border-color: ${c.border} !important; }
+            .custom-dropdown { background: ${c.panel} !important; border-color: ${c.border} !important; }
+            .custom-dropdown-item { color: ${c.text} !important; border-color: ${c.border} !important; }
+            .custom-dropdown-item:hover { background: ${c.hover} !important; }
+            .info-tab-btn, .settings-tab-btn, .defaultOpen-tab-btn { color: ${c.text} !important; border-color: ${c.border} !important; }
+            .info-tab-btn.active, .settings-tab-btn.active, .defaultOpen-tab-btn.active { background: ${tabAct} !important; color: ${c.text} !important; }
+            .dialog-titlebar { background: ${c.panel} !important; border-color: ${c.border} !important; }
+            .dialog-titlebar span { color: ${c.text} !important; }
+            .splitter-grip { background: ${c.text} !important; opacity: 0.25; }
+            .playback-sep, .tb-sep { background: ${c.border} !important; }
+            .sprite-toolbar { background: ${c.panel} !important; }
+            .sprite-toolbar button { background: ${bBg} !important; color: ${bTxt} !important; border-color: ${c.border} !important; }
+            .sprite-toolbar button:hover { background: ${bHov} !important; }
+            #gani-collabDropdown { background: ${c.panel} !important; border-color: ${c.border} !important; color: ${c.text} !important; }
+            #gani-collabDropdown div { color: ${c.text} !important; }
+            #gani-collabPeers { background: ${c.bg} !important; border-color: ${c.border} !important; }
+            #gani-collabDisconnect { border-color: #804040 !important; }
+            #gani-collabToggleTrack { border-color: ${c.border} !important; background: ${c.bg} !important; }
+            #gani-collabCopy, #gani-collabJoin { background: ${bBg} !important; color: ${bTxt} !important; border-color: ${c.border} !important; }
+            #gani-collabCopy:hover, #gani-collabJoin:hover { background: ${bHov} !important; }
+            #gani-collabMyCode, #gani-collabJoinCode { background: ${c.bg} !important; border-color: ${c.border} !important; }
+            #gani-collabStatus { color: ${c.text} !important; }
+            #level-levelCollabDropdown { background: ${c.panel} !important; border-color: ${c.border} !important; color: ${c.text} !important; }
+            #ganiRoot * { scrollbar-color: ${c.border} ${c.bg} !important; }
+            #ganiRoot *::-webkit-scrollbar-track { background: ${c.bg} !important; }
+            #ganiRoot *::-webkit-scrollbar-thumb { background: ${c.border} !important; border-color: ${c.bg} !important; }
+            #ganiRoot *::-webkit-scrollbar-thumb:hover { background: ${bHov} !important; }
+            #ganiRoot *::-webkit-scrollbar-corner { background: ${c.bg} !important; }
+            #levelRoot * { scrollbar-color: ${c.border} ${c.bg} !important; }
+            #levelRoot *::-webkit-scrollbar-track { background: ${c.bg} !important; }
+            #levelRoot *::-webkit-scrollbar-thumb { background: ${c.border} !important; border-color: ${c.bg} !important; }
+            #levelRoot *::-webkit-scrollbar-thumb:hover { background: ${bHov} !important; }
+            #levelRoot *::-webkit-scrollbar-corner { background: ${c.bg} !important; }
         `;
         document.head.appendChild(s);
         if (window.monaco) {
@@ -7221,7 +7558,7 @@ class LevelEditor {
     }
 
     _updateSchemeDropdown(scheme) {
-        const drop = document.getElementById('colorSchemeDropdown');
+        const drop = this.$('colorSchemeDropdown');
         if (!drop) return;
         drop.querySelectorAll('.color-scheme-item').forEach(item => {
             item.style.background = item.dataset.scheme === scheme ? '#404040' : '';
@@ -7231,14 +7568,14 @@ class LevelEditor {
     initColorScheme() {
         const saved = localStorage.getItem('editorColorScheme') || 'default';
         this.applyColorScheme(saved);
-        const btn = document.getElementById('btnColorScheme');
-        const drop = document.getElementById('colorSchemeDropdown');
+        const btn = this.$('btnColorScheme');
+        const drop = this.$('colorSchemeDropdown');
         if (!btn || !drop) return;
         btn.onclick = (e) => { e.stopPropagation(); drop.style.display = drop.style.display === 'none' ? 'block' : 'none'; };
         drop.querySelectorAll('.color-scheme-item').forEach(item => {
             item.onclick = (e) => { e.stopPropagation(); this.applyColorScheme(item.dataset.scheme); drop.style.display = 'none'; };
         });
-        const btnCustomCSS = document.getElementById('btnCustomCSS');
+        const btnCustomCSS = this.$('btnCustomCSS');
         if (btnCustomCSS) {
             btnCustomCSS.onmouseenter = () => { btnCustomCSS.style.background = '#252525'; };
             btnCustomCSS.onmouseleave = () => { btnCustomCSS.style.background = ''; };
@@ -7249,15 +7586,15 @@ class LevelEditor {
     }
 
     initCustomCSS() {
-        const saved = localStorage.getItem('graalsuite_customCSS');
+        const saved = localStorage.getItem('gsuite_customCSS');
         if (!saved) return;
-        let tag = document.getElementById('levelEditorCustomUserCSS');
+        let tag = this.$('levelEditorCustomUserCSS');
         if (!tag) { tag = document.createElement('style'); tag.id = 'levelEditorCustomUserCSS'; document.head.appendChild(tag); }
         tag.textContent = saved;
     }
 
     openCustomCSSDialog() {
-        const current = (document.getElementById('levelEditorCustomUserCSS') || {}).textContent || '';
+        const current = (this.$('levelEditorCustomUserCSS') || {}).textContent || '';
         const overlay = document.createElement('div');
         overlay.className = 'dialog-overlay';
         overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;display:flex;justify-content:center;align-items:center;';
@@ -7298,19 +7635,19 @@ class LevelEditor {
         } else { mkFallback(); }
         const applyCSS = () => {
             const css = getValue();
-            let tag = document.getElementById('levelEditorCustomUserCSS');
+            let tag = this.$('levelEditorCustomUserCSS');
             if (!tag) { tag = document.createElement('style'); tag.id = 'levelEditorCustomUserCSS'; document.head.appendChild(tag); }
             tag.textContent = css;
-            localStorage.setItem('graalsuite_customCSS', css);
+            localStorage.setItem('gsuite_customCSS', css);
         };
         overlay.querySelector('#levelCssApply').onclick = applyCSS;
         overlay.querySelector('#levelCssClose').onclick = () => { if (ed) ed.dispose(); document.body.removeChild(overlay); };
         overlay.onclick = e => { if (e.target === overlay) { if (ed) ed.dispose(); document.body.removeChild(overlay); } };
         overlay.querySelector('#levelCssClear').onclick = () => {
             setValue('');
-            const tag = document.getElementById('levelEditorCustomUserCSS');
+            const tag = this.$('levelEditorCustomUserCSS');
             if (tag) tag.textContent = '';
-            localStorage.removeItem('graalsuite_customCSS');
+            localStorage.removeItem('gsuite_customCSS');
         };
         overlay.querySelector('#levelCssImport').onclick = () => {
             const inp = document.createElement('input');
@@ -7326,7 +7663,7 @@ class LevelEditor {
     }
 
     _renderTileObjectPreview() {
-        const canvas = document.getElementById('tileObjectPreview');
+        const canvas = this.$('tileObjectPreview');
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         const obj = this.tileObjects?.[this._toGroup?.()]?.[this._toName?.()];
@@ -7346,5 +7683,47 @@ class LevelEditor {
 
 document.addEventListener('DOMContentLoaded', () => {
     window._editor = window.levelEditor = new LevelEditor();
+    window._levelEditor = window.levelEditor;
+    let _restoringTabs = false;
+    window.levelEditor.activateLevelTab = (tab) => {
+        if (tab && tab.data && typeof tab.data.index === 'number') {
+            const idx = tab.data.index;
+            if (_restoringTabs) {
+                if (idx >= 0 && idx < window.levelEditor.levels.length) {
+                    window.levelEditor.currentLevelIndex = idx;
+                    window.levelEditor.level = window.levelEditor.levels[idx].level;
+                    window.levelEditor.updateLevelTabs();
+                    window.levelEditor.updateUI();
+                    window.levelEditor.render();
+                }
+            } else {
+                if (idx >= 0 && idx < window.levelEditor.levels.length) {
+                    window.levelEditor.switchLevel(idx);
+                }
+            }
+        }
+    };
+    window.levelEditor.deactivateLevelTab = (tab) => {};
+    window.levelEditor.closeLevelTabByData = (tab) => {
+        if (!tab?.data) return false;
+        const lvl = tab.data.level;
+        if (lvl) {
+            const idx = window.levelEditor.levels.findIndex(e => e.level === lvl);
+            if (idx >= 0) { window.levelEditor._removeLevelData(idx); return true; }
+        }
+        if (typeof tab.data.index === 'number') {
+            const idx = tab.data.index;
+            if (idx >= 0 && idx < window.levelEditor.levels.length) { window.levelEditor._removeLevelData(idx); return true; }
+        }
+        return false;
+    };
+    window.levelEditor.isLevelTabDirty = (tab) => {
+        if (!tab?.data) return false;
+        const lvl = tab.data.level;
+        if (lvl) return window.levelEditor.levels.find(e => e.level === lvl)?.modified === true;
+        const idx = typeof tab.data.index === 'number' ? tab.data.index : -1;
+        if (idx >= 0 && idx < window.levelEditor.levels.length) return window.levelEditor.levels[idx].modified === true;
+        return false;
+    };
+    window.levelEditor.setRestoringTabs = (v) => { _restoringTabs = v; };
 });
-
