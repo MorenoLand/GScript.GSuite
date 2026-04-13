@@ -4957,11 +4957,12 @@ async function restoreSession() {
                     }
                 }
             }
-            if (animations.length === 0) {
-                initNewAnimation();
-            } else {
+            if (animations.length > 0) {
                 currentTabIndex = Math.min(restoredCurrentTabIndex, animations.length - 1);
                 currentAnimation = animations[currentTabIndex];
+            } else {
+                currentTabIndex = -1;
+                currentAnimation = null;
             }
             if (window.tabManager && typeof tabManager.addTab === 'function') {
                 for (let i = 0; i < animations.length; i++) {
@@ -5275,9 +5276,11 @@ window.addEventListener("load", async () => {
     resizeCanvas();
     const restored = await restoreSession();
     if (!restored) {
-        if (animations.length === 0) initNewAnimation();
         updateTabs();
         updateUIVisibility();
+        if (animations.length === 0 && window.tabManager?.getTabsByType?.('level')?.length === 0) {
+            window.showEmptyEditorState?.();
+        }
     } else {
         updateUIVisibility();
         restoreCurrentFrame();

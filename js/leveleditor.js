@@ -599,9 +599,35 @@ class LevelEditor {
     }
 
     setupCanvas() {
+        this._setEditorVisible(false);
+        this._canvasLayoutSettled = false;
         this.resizeCanvas();
+        let settlePasses = 4;
+        const settleLayout = () => {
+            this.resizeCanvas();
+            if (this.level) this.centerView();
+            else this.render();
+            settlePasses--;
+            if (settlePasses > 0) {
+                requestAnimationFrame(settleLayout);
+            } else {
+                this._canvasLayoutSettled = true;
+                this._setEditorVisible(true);
+            }
+        };
+        requestAnimationFrame(settleLayout);
+        if (window.ResizeObserver && !this._canvasResizeObserver) {
+            this._canvasResizeObserver = new ResizeObserver(() => {
+                this.resizeCanvas();
+                if (this.level && !this._canvasLayoutSettled) this.centerView();
+                this.updateTilesetDisplay();
+            });
+            const container = this.canvas?.parentElement;
+            if (container) this._canvasResizeObserver.observe(container);
+        }
         window.addEventListener('resize', () => {
             this.resizeCanvas();
+            if (this.level && !this._canvasLayoutSettled) this.centerView();
             this.updateTilesetDisplay();
         });
     }

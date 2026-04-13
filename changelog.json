@@ -1,5 +1,14 @@
 [
   {
+    "version": "0.1.42",
+    "date": "2026-04-13",
+    "tag": "GSuite",
+    "changes": [
+      "Fixed the level editor startup canvas gap/green void so the viewport fills correctly on load",
+      "Fixed the stray blank gani/Untitled.gani startup case so a gani tab is no longer auto-created when none should open"
+    ]
+  },
+  {
     "version": "0.1.41",
     "date": "2026-04-12",
     "tag": "GSuite",
