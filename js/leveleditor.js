@@ -56,10 +56,10 @@ function parseNPCScript(script) {
     for (const m of script.matchAll(/this\.(x|y)\s*=\s*\(\s*this\.\1\s*(\+|-)\s*([\d.]+)\s*\)/gi)) { const ax=m[1]==='x',sg=m[2]==='-'?-1:1,v=parseFloat(m[3]); if(ax)r.xOff=(r.xOff||0)+sg*v; else r.yOff=(r.yOff||0)+sg*v; }
     for (const m of script.matchAll(/setcharprop\s+([^,;]+)\s*,\s*([^;]+)\s*;/gi)) {
         const prop = m[1].trim(), val = m[2].trim().replace(/^["']|["']$/g, '');
-        if (prop === '#3') r.HEAD = val;
-        else if (prop === '#8') r.BODY = val;
+        if (prop === '#1') r.SWORD = val;
         else if (prop === '#2') r.SHIELD = val;
-        else if (prop === '#1') r.ATTR1 = val;
+        else if (prop === '#3') r.HEAD = val;
+        else if (prop === '#8') r.BODY = val;
         else if (prop === '#m') { r.gani = val.includes('.') ? val : val + '.gani'; }
         else if (prop === '#c') r.chat = val;
         else if (prop === '#n') r.nick = val;
@@ -598,10 +598,101 @@ class LevelEditor {
         requestAnimationFrame(() => { this._renderPending = false; this.render(); });
     }
 
+    _ensurePlayGifLayer() {
+        const host = this.canvas?.parentElement;
+        if (!host) return null;
+        if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+        if (this._playGifLayer?.parentNode === host) return this._playGifLayer;
+        if (this._playGifLayer?.parentNode) this._playGifLayer.parentNode.removeChild(this._playGifLayer);
+        const layer = document.createElement('div');
+        layer.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:5;overflow:hidden;';
+        host.appendChild(layer);
+        this._playGifLayer = layer;
+        this._playGifNodes = new Map();
+        return layer;
+    }
+
+    _clearPlayGifLayer() {
+        if (this._playGifNodes) {
+            for (const node of this._playGifNodes.values()) node.remove();
+            this._playGifNodes.clear();
+        }
+        if (this._playGifLayer) this._playGifLayer.style.display = 'none';
+    }
+
+    _syncPlayGifOverlays() {
+        if (!this._playMode || !this._playGifQueue?.length) {
+            this._clearPlayGifLayer();
+            return;
+        }
+        const layer = this._ensurePlayGifLayer();
+        if (!layer) return;
+        layer.style.display = 'block';
+        const live = new Set();
+        for (const item of this._playGifQueue) {
+            live.add(item.key);
+            let img = this._playGifNodes.get(item.key);
+            if (!img) {
+                img = document.createElement('img');
+                img.alt = '';
+                img.style.cssText = 'position:absolute;pointer-events:none;image-rendering:pixelated;';
+                this._playGifNodes.set(item.key, img);
+                layer.appendChild(img);
+            }
+            if (img.src !== item.src) img.src = item.src;
+            const x = Math.round(this.panX + item.x * this.zoom);
+            const y = Math.round(this.panY + item.y * this.zoom);
+            const w = Math.round(item.w * item.zoom * this.zoom);
+            const h = Math.round(item.h * item.zoom * this.zoom);
+            const transform = `${item.flipX ? 'scaleX(-1) ' : ''}${item.flipY ? 'scaleY(-1)' : ''}`.trim() || 'none';
+            if (img._lastLeft !== x) { img.style.left = `${x}px`; img._lastLeft = x; }
+            if (img._lastTop !== y) { img.style.top = `${y}px`; img._lastTop = y; }
+            if (img._lastWidth !== w) { img.style.width = `${w}px`; img._lastWidth = w; }
+            if (img._lastHeight !== h) { img.style.height = `${h}px`; img._lastHeight = h; }
+            if (img._lastTransform !== transform) {
+                img.style.transformOrigin = 'center center';
+                img.style.transform = transform;
+                img._lastTransform = transform;
+            }
+        }
+        for (const [key, node] of this._playGifNodes.entries()) {
+            if (!live.has(key)) {
+                node.remove();
+                this._playGifNodes.delete(key);
+            }
+        }
+    }
+
     setupCanvas() {
+        this._setEditorVisible(false);
+        this._canvasLayoutSettled = false;
         this.resizeCanvas();
+        let settlePasses = 4;
+        const settleLayout = () => {
+            this.resizeCanvas();
+            if (this.level) this.centerView();
+            else this.render();
+            settlePasses--;
+            if (settlePasses > 0) {
+                requestAnimationFrame(settleLayout);
+            } else {
+                this._canvasLayoutSettled = true;
+                this._setEditorVisible(true);
+            }
+        };
+        requestAnimationFrame(settleLayout);
+        if (window.ResizeObserver && !this._canvasResizeObserver) {
+            this._canvasResizeObserver = new ResizeObserver(() => {
+                this.resizeCanvas();
+                if (this.level && !this._canvasLayoutSettled) this.centerView();
+                this.updateTilesetDisplay();
+            });
+            const container = this.canvas?.parentElement;
+            if (container) this._canvasResizeObserver.observe(container);
+        }
         window.addEventListener('resize', () => {
             this.resizeCanvas();
+            if (this.level && !this._canvasLayoutSettled) this.centerView();
             this.updateTilesetDisplay();
         });
     }
@@ -1779,6 +1870,7 @@ class LevelEditor {
 
     render() {
         if (!this.level || !this.level.tilesetImage || this.level.tilesetImage.complete === false) { console.warn('[render bail] reason: no level or no tileset or not complete'); return; }
+        this._playGifQueue = [];
         const isNPCSel = this.selectedObject?.type === 'npc';
         ['btnExportNPC','btnExportNPC2'].forEach(id => { const b = this.$(id); if (b) b.disabled = !isNPCSel; });
 
@@ -1873,45 +1965,40 @@ class LevelEditor {
             const _chatFeetY = p.y + (p._ganiOY ?? 0) + (p._imgH ?? 48);
             if (this._showColDebug) {
                 const _tw2 = this.level.tileWidth || 16, _th2 = this.level.tileHeight || 16;
-                const tilesPerRow = Math.floor((this.level.tilesetImage?.width || 512) / _tw2);
+                const tileTypeLookup = this._getTileTypeLookup();
                 const visX0 = Math.floor((-this.panX / this.zoom) / _tw2) - 1;
                 const visY0 = Math.floor((-this.panY / this.zoom) / _th2) - 1;
                 const visX1 = visX0 + Math.ceil(this.canvas.width / this.zoom / _tw2) + 2;
                 const visY1 = visY0 + Math.ceil(this.canvas.height / this.zoom / _th2) + 2;
                 const _ttColors = { 22:[255,0,0], 20:[255,140,0], 21:[180,255,0], 2:[255,0,200], 3:[0,180,255], 4:[0,220,220], 5:[0,180,180], 6:[0,160,60], 7:[200,80,0], 8:[80,160,255], 9:[0,80,180], 10:[0,80,180], 11:[0,100,220], 12:[255,80,0] };
+                _ttColors[0] = [160,160,160];
                 this.ctx.lineWidth = 0.5 / this.zoom;
                 this.ctx.font = `bold ${Math.max(6, _tw2 * 0.55)}px monospace`;
                 this.ctx.textAlign = 'center'; this.ctx.textBaseline = 'middle';
                 const _ttCS = {};
                 for (const [k, [r2,g2,b2]] of Object.entries(_ttColors)) _ttCS[k] = [`rgba(${r2},${g2},${b2},0.25)`, `rgba(${r2},${g2},${b2},0.8)`];
-                const _byType = {};
                 for (let ty2 = visY0; ty2 <= visY1; ty2++) {
                     for (let tx2 = visX0; tx2 <= visX1; tx2++) {
-                        let tType = 0;
-                        for (let layer = 0; layer < this.level.layers.length && !tType; layer++) {
+                        let tType = null;
+                        let hasTile = false;
+                        for (let layer = 0; layer < this.level.layers.length && tType === null; layer++) {
                             const idx = this.level.getTile(layer, tx2, ty2);
                             if (idx < 0) continue;
-                            const col = idx % tilesPerRow, row = Math.floor(idx / tilesPerRow);
-                            const typeId = Math.floor(col / 16) * 512 + (col % 16) + row * 16;
-                            tType = TILE_TYPES.TYPE0[typeId] || 0;
+                            hasTile = true;
+                            tType = tileTypeLookup[idx] ?? 0;
                         }
-                        if (!tType) continue;
-                        (_byType[tType] || (_byType[tType] = [])).push(tx2, ty2);
-                    }
-                }
-                for (const [tType, coords] of Object.entries(_byType)) {
-                    const [fc, sc] = _ttCS[tType] || ['rgba(200,200,200,0.25)', 'rgba(200,200,200,0.8)'];
-                    this.ctx.fillStyle = fc; this.ctx.beginPath();
-                    for (let i = 0; i < coords.length; i += 2) this.ctx.rect(coords[i]*_tw2, coords[i+1]*_th2, _tw2, _th2);
-                    this.ctx.fill();
-                    this.ctx.strokeStyle = sc; this.ctx.beginPath();
-                    for (let i = 0; i < coords.length; i += 2) this.ctx.rect(coords[i]*_tw2, coords[i+1]*_th2, _tw2, _th2);
-                    this.ctx.stroke();
-                    if (_tw2 >= 10) {
-                        this.ctx.fillStyle = 'rgba(0,0,0,0.7)';
-                        for (let i = 0; i < coords.length; i += 2) this.ctx.fillText(tType, coords[i]*_tw2 + _tw2/2 + 1, coords[i+1]*_th2 + _th2/2 + 1);
-                        this.ctx.fillStyle = '#fff';
-                        for (let i = 0; i < coords.length; i += 2) this.ctx.fillText(tType, coords[i]*_tw2 + _tw2/2, coords[i+1]*_th2 + _th2/2);
+                        if (!hasTile || tType === null) continue;
+                        const [fc, sc] = _ttCS[tType] || ['rgba(200,200,200,0.25)', 'rgba(200,200,200,0.8)'];
+                        this.ctx.fillStyle = fc;
+                        this.ctx.fillRect(tx2 * _tw2, ty2 * _th2, _tw2, _th2);
+                        this.ctx.strokeStyle = sc;
+                        this.ctx.strokeRect(tx2 * _tw2, ty2 * _th2, _tw2, _th2);
+                        if (_tw2 >= 10) {
+                            this.ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                            this.ctx.fillText(tType, tx2 * _tw2 + _tw2/2 + 1, ty2 * _th2 + _th2/2 + 1);
+                            this.ctx.fillStyle = '#fff';
+                            this.ctx.fillText(tType, tx2 * _tw2 + _tw2/2, ty2 * _th2 + _th2/2);
+                        }
                     }
                 }
                 for (const obj of (this.level.objects || [])) {
@@ -2009,6 +2096,7 @@ class LevelEditor {
             this.ctx.fillStyle = 'rgba(0,0,0,0.55)'; this.ctx.fillRect(this.canvas.width - _ew - 14, 6, _ew + 8, 18);
             this.ctx.fillStyle = '#ffcc44'; this.ctx.fillText(_em, this.canvas.width - _ew - 10, 19);
         }
+        this._syncPlayGifOverlays();
     }
 
     _doCopy() {
@@ -2615,10 +2703,17 @@ class LevelEditor {
         img.onload = () => {
             if (this.levels.length === 0) {
                 const sessionRaw = localStorage.getItem('levelEditorSession');
+                const sharedTabsRaw = localStorage.getItem('graalSuiteTabs');
                 let restored = false;
-                if (sessionRaw) {
+                if (sessionRaw && sharedTabsRaw) {
                     try {
                         const data = JSON.parse(sessionRaw);
+                        const parsedSharedTabs = JSON.parse(sharedTabsRaw);
+                        if (!Array.isArray(parsedSharedTabs) || !parsedSharedTabs.length) throw new Error('no shared tabs');
+                        const allowedSharedTabs = parsedSharedTabs.filter(t => t?.type === 'level');
+                        if (!allowedSharedTabs.length) throw new Error('no level tabs');
+                        const allowedByPath = new Set(allowedSharedTabs.map(t => t?.data?.fullPath).filter(Boolean));
+                        const allowedByName = new Set(allowedSharedTabs.map(t => t?.data?.name || t?.name).filter(Boolean));
                         if (!data.formatVersion) { localStorage.removeItem('levelEditorSession'); throw new Error('stale'); }
                         if (data.zoom !== undefined) { this.zoomLevel = data.zoom; this.updateZoomFromLevel(); }
                         if (data.panX !== undefined) this.panX = data.panX;
@@ -2626,6 +2721,13 @@ class LevelEditor {
                         if (data.showGrid !== undefined) this.showGrid = data.showGrid;
                         if (data.levels && data.levels.length) {
                             for (const ld of data.levels) {
+                                const levelName = ld?.name || '';
+                                const fullPath = ld?.fullPath || '';
+                                if (fullPath) {
+                                    if (!allowedByPath.has(fullPath) && !allowedByName.has(levelName)) continue;
+                                } else if (!allowedByName.has(levelName)) {
+                                    continue;
+                                }
                                 if (ld.gmap) {
                                     const entry = this._buildGmapEntry(ld.gmap, ld.name, ld.gmapLevels);
                                     if (entry) { entry.level.tilesetImage = img; this.levels.push(entry); }
@@ -3838,11 +3940,30 @@ class LevelEditor {
 
     togglePlayMode() { this._playMode ? this.exitPlayMode() : this.enterPlayMode(); }
 
+    _getTileTypeLookup() {
+        const tw = this.level?.tileWidth || 16;
+        const tilesetWidth = this.level?.tilesetImage?.width || 512;
+        const cacheKey = `${tilesetWidth}:${tw}`;
+        if (this._tileTypeLookupCacheKey === cacheKey && this._tileTypeLookupCache) return this._tileTypeLookupCache;
+        const tilesPerRow = Math.max(1, Math.floor(tilesetWidth / tw));
+        const lookup = [];
+        const tileCount = Math.max(TILE_TYPES.TYPE0.length, tilesPerRow * Math.ceil(TILE_TYPES.TYPE0.length / 16));
+        for (let idx = 0; idx < tileCount; idx++) {
+            const col = idx % tilesPerRow;
+            const row = Math.floor(idx / tilesPerRow);
+            const typeId = Math.floor(col / 16) * 512 + (col % 16) + row * 16;
+            lookup[idx] = TILE_TYPES.TYPE0[typeId] ?? 0;
+        }
+        this._tileTypeLookupCacheKey = cacheKey;
+        this._tileTypeLookupCache = lookup;
+        return lookup;
+    }
+
     _getSettings() {
         if (!this._editorSettings) { try { this._editorSettings = JSON.parse(localStorage.getItem('graal_editorSettings') || 'null'); } catch(e) {} }
         if (!this._editorSettings) this._editorSettings = {};
         const d = this._editorSettings;
-        return { nickFontSize: d.nickFontSize ?? 24, chatFontSize: d.chatFontSize ?? 28, uiFont: d.uiFont ?? 'chevyray', uiFontSize: d.uiFontSize ?? 12, uiFontStyle: d.uiFontStyle ?? 'normal', uiScale: d.uiScale ?? 1, voidColor: d.voidColor ?? '#000000' };
+        return { nickFontSize: d.nickFontSize ?? 20, chatFontSize: d.chatFontSize ?? 20, uiFont: d.uiFont ?? 'chevyray', uiFontSize: d.uiFontSize ?? 12, uiFontStyle: d.uiFontStyle ?? 'normal', uiScale: d.uiScale ?? 1, voidColor: d.voidColor ?? '#000000' };
     }
     _saveSettings(s) { this._editorSettings = s; localStorage.setItem('graal_editorSettings', JSON.stringify(s)); const bi = this.$('bgColorInput'); if (bi && s.voidColor) bi.value = s.voidColor; }
     _applyUISettings(s) {
@@ -3874,7 +3995,7 @@ class LevelEditor {
         const _btnStyle = (a) => `padding:6px 16px;cursor:pointer;background:${a?'#252525':'transparent'};color:${a?'#4a9eff':'#888'};border:none;border-bottom:2px solid ${a?'#4a9eff':'transparent'};font-family:chevyray,monospace;font-size:12px;`;
         const _numStyle = 'width:55px;background:#1a1a1a;color:#e0e0e0;border:1px solid #555;padding:3px 6px;font-family:chevyray,monospace;font-size:12px;text-align:center;';
         const _lblStyle = 'min-width:130px;flex-shrink:0;font-size:13px;color:#aaa;';
-        const sliderRow = (lbl,id,val,mn,mx) => `<label style="display:flex;align-items:center;gap:8px;"><span style="${_lblStyle}">${lbl}</span><input type="range" id="${id}_r" min="${mn}" max="${mx}" value="${val}" style="flex:1;accent-color:#4472C4;"><input type="number" id="${id}_n" value="${val}" min="${mn}" max="${mx}" style="${_numStyle}"></label>`;
+        const sliderRow = (lbl,id,val,mn,mx) => `<label style="display:flex;align-items:center;gap:8px;"><span style="${_lblStyle}">${lbl}</span><input type="range" class="settings-slider" id="${id}_r" min="${mn}" max="${mx}" value="${val}" style="flex:1;"><input type="number" id="${id}_n" value="${val}" min="${mn}" max="${mx}" style="${_numStyle}"></label>`;
         const _kbActions = [
             { section: 'Editor' },
             { key:'undo', label:'Undo' }, { key:'redo', label:'Redo' }, { key:'save', label:'Save' },
@@ -3923,7 +4044,7 @@ class LevelEditor {
         document.body.appendChild(box);
         box.querySelector('#_stUIFont').value = s.uiFont ?? 'chevyray';
         box.querySelector('#_stUIFontStyle').value = s.uiFontStyle ?? 'normal';
-        const readSettings = () => ({ nickFontSize: parseInt(box.querySelector('#_stNick_n').value)||24, chatFontSize: parseInt(box.querySelector('#_stChat_n').value)||28, uiFont: box.querySelector('#_stUIFont').value, uiFontSize: parseInt(box.querySelector('#_stUIFontSize_n').value)||12, uiFontStyle: box.querySelector('#_stUIFontStyle').value, uiScale: Math.round(parseInt(box.querySelector('#_stUIScale_n').value)||100) / 100, voidColor: box.querySelector('#_stVoidColor').value || '#000000' });
+        const readSettings = () => ({ nickFontSize: parseInt(box.querySelector('#_stNick_n').value)||20, chatFontSize: parseInt(box.querySelector('#_stChat_n').value)||20, uiFont: box.querySelector('#_stUIFont').value, uiFontSize: parseInt(box.querySelector('#_stUIFontSize_n').value)||12, uiFontStyle: box.querySelector('#_stUIFontStyle').value, uiScale: Math.round(parseInt(box.querySelector('#_stUIScale_n').value)||100) / 100, voidColor: box.querySelector('#_stVoidColor').value || '#000000' });
         const syncSlider = (id) => {
             const r = box.querySelector(`#${id}_r`), n = box.querySelector(`#${id}_n`);
             r.addEventListener('input', () => { n.value = r.value; const ns = readSettings(); this._saveSettings(ns); this._applyUISettings(ns); this.requestRender(); });
@@ -4305,6 +4426,7 @@ class LevelEditor {
         this._mobileStickDir = null; this._mobileStickVal = {x:0,y:0}; this._mobileControlsEl = null; this._mobileKnobs = null; this._mobileRelease = null;
         this._removeMobileControls();
         this._chatOpen = false; this._playerChat = null;
+        this._clearPlayGifLayer();
         this.$('_playChatBar')?.remove();
         if (this._chatCanvasClick) this.canvas.removeEventListener('mousedown', this._chatCanvasClick);
         if (this._playMouseMove) this.canvas.removeEventListener('mousemove', this._playMouseMove);
@@ -4319,13 +4441,11 @@ class LevelEditor {
         const tw = this.level.tileWidth || 16, th = this.level.tileHeight || 16;
         const tx = Math.floor(wx / tw), ty = Math.floor(wy / th);
         if (tx < 0 || ty < 0 || tx >= this.level.width || ty >= this.level.height) return 22;
-        const tilesPerRow = Math.floor((this.level.tilesetImage?.width || 512) / tw);
+        const tileTypeLookup = this._getTileTypeLookup();
         for (let layer = 0; layer < this.level.layers.length; layer++) {
             const idx = this.level.getTile(layer, tx, ty);
             if (idx < 0) continue;
-            const col = idx % tilesPerRow, row = Math.floor(idx / tilesPerRow);
-            const typeId = Math.floor(col / 16) * 512 + (col % 16) + row * 16;
-            const t = TILE_TYPES.TYPE0[typeId] || 0;
+            const t = tileTypeLookup[idx] ?? 0;
             if (t !== 0) return t;
         }
         return 0;
@@ -4860,18 +4980,23 @@ class LevelEditor {
     _registerDefaultLevelLoader() {
         window._defaultDialogLoaders = window._defaultDialogLoaders || {};
         window._defaultDialogLoaders.level = async (container) => {
-            const fallback = ['cave1.zelda','house1.graal','house1.zelda','onlinestartlocal.nw'];
+            const fallback = ['cave1.zelda','house1.graal','house1.zelda','onlinestartlocal.nw','start1.graal'];
             let files = fallback;
             try {
                 if (_isTauri) {
                     const entries = await _tauri.fs.readDir('levels').catch(() => null);
                     if (entries) files = entries.map(e => e.name).filter(n => n && /\.(nw|zelda|graal|gmap)$/i.test(n));
                 } else {
-                    let r = await fetch('levels/index.json').catch(() => null);
+                    let r = await fetch(`levels/index.json?_=${Date.now()}`, { cache: 'no-store' }).catch(() => null);
                     if (!r?.ok) r = await fetch('levels/').catch(() => null);
-                    if (r?.ok) { const d = await r.json().catch(() => null); if (Array.isArray(d)) files = d; }
+                    if (r?.ok) {
+                        const d = await r.json().catch(() => null);
+                        const manifestFiles = Array.isArray(d) ? d : Array.isArray(d?.files) ? d.files : null;
+                        if (manifestFiles) files = manifestFiles;
+                    }
                 }
             } catch(e) {}
+            files = [...new Set(files.filter(n => n && /\.(nw|zelda|graal|gmap)$/i.test(n)))];
             container.innerHTML = '';
             files.forEach(fileName => {
                 const item = document.createElement('div');
@@ -5906,6 +6031,22 @@ class LevelEditor {
         }
     }
 
+    _getObjectSortFeetY(obj, th) {
+        if (!obj) return 0;
+        if (obj.type === 'npc' || obj.type === 'baddy') {
+            const scaleY = Math.abs((obj._stretchy ?? 1) * (obj._npcZoom ?? 1)) || 1;
+            const height = (obj._imgH ?? 48) * scaleY;
+            return obj.y * th + ((obj._yOff || 0) * th) + (obj._ganiOY ?? 0) + height;
+        }
+        return obj.y * th + th;
+    }
+
+    _getPlayerSortFeetY() {
+        const p = this._player;
+        if (!p) return 0;
+        return p.y + (p._ganiOY ?? 0) + Math.abs(p._imgH ?? 48);
+    }
+
     drawObjects() {
         const tw = this.level.tileWidth || 16;
         const th = this.level.tileHeight || 16;
@@ -5921,14 +6062,10 @@ class LevelEditor {
             if (obj.type === 'link' && !visLinks) return;
             if (obj.type === 'sign' && !visSigns) return;
             if (obj.type === 'chest' && !visChests) return;
-            const sortY = (obj.type === 'npc' || obj.type === 'baddy')
-                ? obj.y * th + (obj._ganiOY ?? 0) + (obj._imgH ?? 48)
-                : obj.y * th + th;
-            _drawItems.push({ obj, sortY });
+            _drawItems.push({ obj, sortY: this._getObjectSortFeetY(obj, th) });
         });
         if (this._playMode && this._player) {
-            const _p = this._player;
-            _drawItems.push({ isPlayer: true, sortY: _p.y + (_p._ganiOY ?? 0) + (_p._imgH ?? 48) });
+            _drawItems.push({ isPlayer: true, sortY: this._getPlayerSortFeetY() });
             _drawItems.sort((a, b) => a.sortY - b.sortY);
         }
         for (const _item of _drawItems) {
@@ -6020,10 +6157,13 @@ class LevelEditor {
             else { fetch(`images/${name}`).then(r => r.arrayBuffer()).then(_mngLoad2).catch(() => {}); }
             return placeholder;
         }
-        if (this._ganiImgCache.has(name)) return this._ganiImgCache.get(name);
         if (!this._fcLower && this.fileCache?.images?.size) this._fcLower = new Map([...this.fileCache.images.keys()].map(k => [k.toLowerCase(), k]));
         const _resolvedName = this.fileCache?.images?.has(name) ? name : (this._fcLower?.get(name.toLowerCase()) || name);
         const cached = this.fileCache?.images?.get(_resolvedName);
+        if (this._playMode && name.toLowerCase().endsWith('.gif')) {
+            return this._getLiveGifImage(`gani:${name}`, cached || `images/${name}`);
+        }
+        if (this._ganiImgCache.has(name)) return this._ganiImgCache.get(name);
         if (!cached && _isTauri && name) {
             _tauri.core.invoke('resolve_path', { name }).then(fp => {
                 if (fp) this.loadImageFromPath(fp, name).then(() => { this._fcLower = null; this._ganiImgCache.delete(name); this.requestRender(); }).catch(() => {});
@@ -6043,6 +6183,22 @@ class LevelEditor {
         }
         const img = new Image(); img.src = fallbackSrc;
         this._ganiImgCache.set(name, img);
+        return img;
+    }
+
+    _getLiveGifImage(cacheKey, src) {
+        if (!this._liveGifCache) this._liveGifCache = new Map();
+        let img = this._liveGifCache.get(cacheKey);
+        if (img && img._src === src) return img;
+        if (img?.parentNode) img.parentNode.removeChild(img);
+        img = document.createElement('img');
+        img._src = src;
+        img.src = src;
+        img.decoding = 'sync';
+        img.alt = '';
+        img.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;opacity:0.01;pointer-events:none;z-index:-1;';
+        document.body.appendChild(img);
+        this._liveGifCache.set(cacheKey, img);
         return img;
     }
 
@@ -6175,6 +6331,9 @@ class LevelEditor {
                 return;
             }
             const _ip = obj._imgpart;
+            if (this._playMode && imgName.toLowerCase().endsWith('.gif')) {
+                cached = this._getLiveGifImage(`npc:${imgName}`, src);
+            }
             const _drawImg = (img, sx, sy, sw, sh, dx, dy) => {
                 const _sx = obj._stretchx ?? 1, _sy = obj._stretchy ?? 1;
                 const _ce = obj._coloreffect;
@@ -6202,15 +6361,15 @@ class LevelEditor {
             if (sp.nick || sp.chat) {
                 const _gs2 = this._getSettings();
                 const _nSz = Math.max(_gs2.nickFontSize * this.zoom, 8), _cSz = Math.max(_gs2.chatFontSize * this.zoom, 8);
-                const _wcx = x + tw;
-                const _wHeadY = y + (obj._ganiOY ?? 0);
-                const _wFeetY = y + (obj._ganiOY ?? 0) + (obj._imgH ?? 48);
+                const _wcx = _ox + (obj._ganiOX ?? 0) + ((obj._imgW ?? (tw * 2)) / 2);
+                const _wHeadY = _oy + (obj._ganiOY ?? 0);
+                const _wFeetY = _oy + (obj._ganiOY ?? 0) + (obj._imgH ?? 48);
                 const _scx = _wcx * this.zoom + this.panX;
                 this.ctx.save(); this.ctx.setTransform(1, 0, 0, 1, 0, 0);
                 this.ctx.textAlign = 'center';
                 this.ctx.shadowColor = 'rgba(20,40,200,1)'; this.ctx.shadowOffsetX = 2; this.ctx.shadowOffsetY = 2; this.ctx.shadowBlur = 0;
                 if (sp.chat) { this.ctx.font = `bold ${_cSz}px 'TempusSansITC','Tempus Sans ITC',sans-serif`; this.ctx.fillStyle = '#fff'; this.ctx.fillText(sp.chat, _scx, _wHeadY * this.zoom + this.panY - 16); }
-                if (sp.nick) { this.ctx.font = `bold ${_nSz}px 'TempusSansITC','Tempus Sans ITC',sans-serif`; this.ctx.fillStyle = '#fff'; this.ctx.fillText(sp.nick + (sp.guild ? ` (${sp.guild})` : ''), _scx, _wFeetY * this.zoom + this.panY + _nSz + 4); }
+                if (sp.nick) { this.ctx.font = `bold ${_nSz}px 'TempusSansITC','Tempus Sans ITC',sans-serif`; this.ctx.fillStyle = '#fff'; this.ctx.fillText(sp.nick + (sp.guild ? ` (${sp.guild})` : ''), _scx, _wFeetY * this.zoom + this.panY + _nSz - 4); }
                 this.ctx.shadowColor = 'transparent'; this.ctx.shadowOffsetX = 0; this.ctx.shadowOffsetY = 0; this.ctx.textAlign = 'left'; this.ctx.restore();
             }
             return;
@@ -6529,14 +6688,21 @@ class LevelEditor {
     _fromB64(b64) { const s = atob(b64); const a = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a.buffer; }
     saveSession() {
         try {
-            if (!this.levels.length) return;
+            if (this._saveTimer) {
+                clearTimeout(this._saveTimer);
+                this._saveTimer = null;
+            }
+            if (!this.levels.length) {
+                localStorage.removeItem('levelEditorSession');
+                return;
+            }
             const data = {
                 formatVersion: 3,
                 levels: this.levels.map(l => l.gmapText
-                    ? { ...this._serializeGmapEntry(l), tiledefs: l.level._tiledefs || [] }
+                    ? { ...this._serializeGmapEntry(l), fullPath: l.fullPath || '', tiledefs: l.level._tiledefs || [] }
                     : (l.level._sourceFormat === 'graal' || l.level._sourceFormat === 'zelda')
-                        ? { graalBinary: this._b64(l.level.saveToGraal(l.level._sourceFormat === 'zelda')), name: l.name, tilesetName: l.level.tilesetName || 'pics1.png', modified: l.modified, sourceFormat: l.level._sourceFormat, tiledefs: l.level._tiledefs || [] }
-                        : { nw: l.level.saveToNW(), name: l.name, tilesetName: l.level.tilesetName || 'pics1.png', modified: l.modified, sourceFormat: l.level._sourceFormat || null, tiledefs: l.level._tiledefs || [] }),
+                        ? { graalBinary: this._b64(l.level.saveToGraal(l.level._sourceFormat === 'zelda')), name: l.name, fullPath: l.fullPath || '', tilesetName: l.level.tilesetName || 'pics1.png', modified: l.modified, sourceFormat: l.level._sourceFormat, tiledefs: l.level._tiledefs || [] }
+                        : { nw: l.level.saveToNW(), name: l.name, fullPath: l.fullPath || '', tilesetName: l.level.tilesetName || 'pics1.png', modified: l.modified, sourceFormat: l.level._sourceFormat || null, tiledefs: l.level._tiledefs || [] }),
                 currentLevelIndex: this.currentLevelIndex,
                 zoom: this.zoomLevel,
                 panX: this.panX,
@@ -7609,7 +7775,7 @@ class LevelEditor {
                     <button id="levelCssApply" style="background:#1a6b1a;color:#fff;border:1px solid #0a0a0a;border-top:1px solid #2a8a2a;padding:7px 14px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;">Apply</button>
                     <button id="levelCssImport" style="background:#1a1a1a;color:#e0e0e0;border:1px solid #0a0a0a;border-top:1px solid #404040;padding:7px 14px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;">Import</button>
                     <button id="levelCssExport" style="background:#1a1a1a;color:#e0e0e0;border:1px solid #0a0a0a;border-top:1px solid #404040;padding:7px 14px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;">Export</button>
-                    <a id="levelCssExample" href="example-theme.css" download style="background:#1a1a1a;color:#4a9eff;border:1px solid #0a0a0a;border-top:1px solid #404040;padding:7px 14px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;text-decoration:none;">Example</a>
+                    <button id="levelCssExample" type="button" style="background:#1a1a1a;color:#4a9eff;border:1px solid #0a0a0a;border-top:1px solid #404040;padding:7px 14px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;">Example</button>
                     <div style="flex:1;"></div>
                     <button id="levelCssClear" style="background:#6b1a1a;color:#fff;border:1px solid #0a0a0a;border-top:1px solid #8a2a2a;padding:7px 14px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;">Clear</button>
                     <button id="levelCssClose" style="background:#1a1a1a;color:#e0e0e0;border:1px solid #0a0a0a;border-top:1px solid #404040;padding:7px 14px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;">Close</button>
@@ -7659,6 +7825,55 @@ class LevelEditor {
             const blob = new Blob([getValue()], {type:'text/css'});
             const a = Object.assign(document.createElement('a'), {href:URL.createObjectURL(blob), download:'level-custom-theme.css'});
             a.click(); URL.revokeObjectURL(a.href);
+        };
+        overlay.querySelector('#levelCssExample').onclick = async () => {
+            let exampleCSS = '';
+            try {
+                const res = await fetch('example-theme.css', { cache: 'no-store' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                exampleCSS = await res.text();
+            } catch (err) {
+                console.warn('[levelCssExample fetch failed]', err);
+                alert('Could not load example-theme.css');
+                return;
+            }
+            const choice = document.createElement('div');
+            choice.className = 'dialog-overlay';
+            choice.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10001;display:flex;justify-content:center;align-items:center;';
+            choice.innerHTML = `
+                <div class="dialog-content" style="background:#2b2b2b;border:2px solid #1a1a1a;min-width:280px;max-width:90vw;padding:16px;display:flex;flex-direction:column;gap:10px;color:#e0e0e0;font-family:'chevyray',monospace;font-size:12px;box-shadow:0 4px 16px rgba(0,0,0,0.9);">
+                    <div style="font-size:13px;color:#c0c0c0;">Example Theme</div>
+                    <div style="color:#999;line-height:1.4;">Open the bundled example into the editor, or save a copy to disk.</div>
+                    <div style="display:flex;gap:8px;justify-content:flex-end;">
+                        <button id="levelCssExampleOpen" style="background:#1a1a1a;color:#e0e0e0;border:1px solid #0a0a0a;border-top:1px solid #404040;padding:7px 12px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;">Open</button>
+                        <button id="levelCssExampleSave" style="background:#1a1a1a;color:#4a9eff;border:1px solid #0a0a0a;border-top:1px solid #404040;padding:7px 12px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;">Save As</button>
+                        <button id="levelCssExampleCancel" style="background:#1a1a1a;color:#e0e0e0;border:1px solid #0a0a0a;border-top:1px solid #404040;padding:7px 12px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;">Cancel</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(choice);
+            const closeChoice = () => { if (choice.parentNode) document.body.removeChild(choice); };
+            choice.onclick = e => { if (e.target === choice) closeChoice(); };
+            choice.querySelector('#levelCssExampleCancel').onclick = closeChoice;
+            choice.querySelector('#levelCssExampleOpen').onclick = () => {
+                setValue(exampleCSS);
+                closeChoice();
+            };
+            choice.querySelector('#levelCssExampleSave').onclick = async () => {
+                if (_isTauri && _tauri?.dialog?.save && _tauri?.fs?.writeTextFile) {
+                    const path = await _tauri.dialog.save({
+                        defaultPath: 'example-theme.css',
+                        title: 'Save Example CSS',
+                        filters: [{ name: 'CSS', extensions: ['css'] }]
+                    }).catch(() => null);
+                    if (path) await _tauri.fs.writeTextFile(path, exampleCSS).catch(err => console.warn('[levelCssExample save failed]', err));
+                } else {
+                    const blob = new Blob([exampleCSS], { type: 'text/css' });
+                    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'example-theme.css' });
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                }
+                closeChoice();
+            };
         };
     }
 

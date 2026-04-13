@@ -24,8 +24,11 @@
 <script src="js/mnglib.js"></script>
 <link rel="stylesheet" href="css/global.css">
 <style>
-.editor-root { width: 100%; height: 100%; }
+.editor-root { width: 100%; height: 100%; min-width: 0; min-height: 0; flex: 1 1 auto; }
 .editor-root.hidden { display: none !important; }
+
+#editorContainer { width: 100%; min-width: 0; flex: 1 1 auto; overflow: hidden; }
+#levelRoot, #ganiRoot { width: 100%; min-width: 0; }
 
 .tab-ctx-menu { position: fixed; background: #2b2b2b; border: 1px solid #404040; box-shadow: 0 2px 8px rgba(0,0,0,0.5); z-index: 100000; min-width: 140px; font-family: 'chevyray',monospace; font-size: 12px; color: #e0e0e0; }
 .tab-ctx-item { padding: 6px 12px; cursor: pointer; }
@@ -215,11 +218,13 @@
             ganiRoot.style.height = '0';
             levelRoot.style.display = 'flex';
             levelRoot.style.flex = '1';
+            levelRoot.style.width = '100%';
             levelRoot.style.height = '';
             const levelMc = levelRoot.querySelector('.main-container');
             const levelToolbar = document.getElementById('levelToolbar');
             if (suiteTabs && levelMc && levelToolbar) levelMc.insertBefore(suiteTabs, levelToolbar);
             if (levelMc) {
+                levelMc.style.width = '100%';
                 levelMc.style.height = '';
                 levelMc.style.overflow = '';
                 levelMc.querySelectorAll(':scope > .toolbar, :scope > #levelToolbar, :scope > #levelArea, :scope > .status-bar').forEach(el => el.style.display = '');
@@ -578,6 +583,11 @@
                     </div>
                 </div>
             </div>
+            <div style="display:${_isTauri ? 'none' : 'inline-flex'};align-items:center;gap:0;">
+                <button title="Setshape2 Editor" id="${p}btnSetshape2" onclick="typeof SetshapeEditor!=='undefined'&&SetshapeEditor.open()"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAACbUlEQVQ4y52P20uTcRzGn9972MEdHBvOw1JZZk4dTjyXhGEGUgkWFJH1P3QTQXgVne6UThCEFxVBYWVgWCCBQ6IM0cBkouLxTbc5NJzv67b39/66SG2pQfXcfPnC83y/n4fgP1RZd8JAeJ4nIDH+X8OFpQdyKE2063T6S5QmwgIAVNUdE0yWVCMhAGMbTgYQAjAAK5FwS2Zm5sGhgf6LvCC0rq4s3fBV13Z+HRwAceXuE1PtzisAvAD5/R0BwBisNkfxKbfsGdHcseHRQF35oYbHfW9ePZweH2kTIqEFc15Rme/chTOKOz+/eiMFgDCAEQBsKbzk6H/WQWrNU3pDZUW3v7fnqiJH72mUMmHzGdVojijq8vCrAQAgHoth/EMv0uk3+OfNpMwxnDbrSi9YNJrIwuwk45KJ2bYZi63jXVcXrMHPWLSWYH/jWfi/u+LrTGyKhCQOAITtlTcnpRSTYxNw5XkgGS1objyCGSmMZUXt9fe8OOnM2KPuOJAsjufg8RZCmplDia8IgigCAHhB0ADEQ4vzP327hdkGB8fxyHbnQhBFKLKMdUUBRzh9fVOLbtO7KwHZtklzEtpv3eyU12QZYLA50i+X1tRfH/74XtuVIJkkGo3iwe07jxi0+0Vl5a8bmk+vBr586jNZbW1bBIQQHiA81bQdB1SVQlW1YNXho63dTzuOuwuK07wVNXaAtwOAoFFKOY7kTEwHfRPTwR0UaiIBg8nsefv8ybW9Hm+9McWUPTo0GLLY7IGtunpDSkaK2VL4pyrOrNzzdmeWh+O4OGOANDX2UllbvRtamGUEfyczCDEk7ctgjALAD3gS6nZ20OQgAAAAAElFTkSuQmCC" width="14" height="14"></button>
+                <button title="Gmap Generator" id="${p}btnGmapGen" onclick="typeof GmapGenerator!=='undefined'&&GmapGenerator.open()"><img src="icons/gmapgen.ico" width="14" height="14" style="image-rendering:pixelated;"></button>
+                <div class="tb-sep"></div>
+            </div>
             <button ${p === 'level-' ? `id="${p}btnPlayerSetup"` : ''} class="tb-level-only" title="Player Settings" style="margin-left:auto;display:flex;align-items:center;gap:5px;background:#353535;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#fff;padding:4px 10px;cursor:pointer;font-family:chevyray,monospace;font-size:12px;white-space:nowrap;"><i class="fas fa-user"></i> Player</button>
             <button ${p === 'level-' ? `id="${p}btnPlay"` : ''} class="tb-level-only" title="Play Mode (F4)" style="display:flex;align-items:center;gap:5px;background:#353535;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#e0e0e0;padding:4px 12px;cursor:pointer;font-family:chevyray,monospace;font-size:12px;white-space:nowrap;">&#9654; Play</button>
         </div>`; }
@@ -847,6 +857,13 @@
                         <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;"><span id="settingsShowGridCheckbox" class="custom-checkbox">✓</span><span>Show Grid</span></label>
                         <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;"><span id="settingsGifAnimationsCheckbox" class="custom-checkbox">✓</span><span>GIF Animations</span></label>
                         <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;"><span id="settingsLightEffectsCheckbox" class="custom-checkbox">✓</span><span>Light Effects</span></label>
+                    </div>
+                    <div id="settingsSystemGroup" style="display:none;margin-bottom:16px;border-top:1px solid #0a0a0a;padding-top:16px;">
+                        <div style="margin-bottom:12px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;">System:</div>
+                        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                            <button id="settingsRegisterAssoc" style="padding:5px 12px;">Register File Associations</button>
+                            <span id="settingsRegisterAssocStatus" style="font-family:'chevyray',monospace;font-size:11px;color:#6c6;"></span>
+                        </div>
                     </div>
                 </div>
                 <div id="settingsCanvasPanel" style="display:none;flex:1;overflow-y:auto;padding-right:8px;min-height:0;padding-top:16px;">

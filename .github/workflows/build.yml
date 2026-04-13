@@ -1,4 +1,4 @@
-name: Build GraalSuite
+name: Build GSuite
 
 on:
   push:
@@ -71,7 +71,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.event.inputs.version || github.ref_name }}
-          releaseName: GraalSuite ${{ github.event.inputs.version || github.ref_name }}
+          releaseName: GSuite ${{ github.event.inputs.version || github.ref_name }}
           releaseBody: See changelog for details.
           releaseDraft: false
           prerelease: false

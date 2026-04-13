@@ -1,5 +1,31 @@
 [
   {
+    "version": "0.1.43",
+    "date": "2026-04-13",
+    "tag": "GSuite",
+    "changes": [
+      "Default level list now refreshes from levels/index.json correctly in web mode instead of showing a stale cached list",
+      "Level editor NPC nicknames now align more cleanly under the actual drawn character",
+      "Level editor play-mode nick/chat font size defaults are now 20 and the settings sliders use the shared custom slider styling",
+      "Level editor debug overlay 2 now shows type 0 tiles instead of skipping normal non-blocking tiles",
+      "Level editor tiletype debug overlay now uses cached tile-type lookups to cut per-frame overhead",
+      "Gani editor settings now include the Tauri Register File Associations action too",
+      "Web mode now shows the Setshape2 and Gmap Generator buttons on the right side of the shared in-page toolbar, while Tauri keeps them in the title bar",
+      "Closing the last suite tabs now clears the saved level/gani/tab session state instead of restoring stale tabs on restart",
+      "Tab close actions now force an immediate session save so stale pre-close tab state is less likely to come back on restart",
+      "Startup session restore now only reopens level/gani tabs that still exist in the shared suite tab list"
+    ]
+  },
+  {
+    "version": "0.1.42",
+    "date": "2026-04-13",
+    "tag": "GSuite",
+    "changes": [
+      "Fixed the level editor startup canvas gap/green void so the viewport fills correctly on load",
+      "Fixed the stray blank gani/Untitled.gani startup case so a gani tab is no longer auto-created when none should open"
+    ]
+  },
+  {
     "version": "0.1.41",
     "date": "2026-04-12",
     "tag": "GSuite",

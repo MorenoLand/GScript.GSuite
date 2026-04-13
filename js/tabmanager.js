@@ -51,6 +51,10 @@ const TabManager = {
 
     saveState() {
         try {
+            if (!this._tabs.length) {
+                this.clearState();
+                return;
+            }
             const state = this._tabs.map(t => ({ type: t.type, name: t.name, data: this._serializeTabData(t) }));
             localStorage.setItem('graalSuiteTabs', JSON.stringify(state));
         } catch (e) { console.warn('[TabManager saveState] failed:', e); }

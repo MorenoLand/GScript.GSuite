@@ -3186,6 +3186,11 @@ function updateSpriteEditor() {
     spriteEditPanel.style.display = "block";
     spriteID.value = spriteTargets.map(sprite => sprite.index).join(", ");
     spriteSource.value = primarySprite.type;
+    const spriteSourceWrapper = spriteSource?.closest(".custom-dropdown-wrapper");
+    if (spriteSourceWrapper) {
+        const buttonText = spriteSourceWrapper.querySelector(".custom-dropdown-button span");
+        if (buttonText) buttonText.textContent = primarySprite.type;
+    }
     spriteImage.value = primarySprite.customImageName;
     spriteComment.value = primarySprite.comment;
     const xscale = primarySprite.xscale !== undefined ? primarySprite.xscale : 1.0;
@@ -3546,7 +3551,7 @@ function moveSelectedPieces(dx, dy) {
     redraw();
     updateItemsCombo();
     updateItemSettings();
-    saveSession();
+    saveSession(true);
 }
 
 function updateFrameInfo() {
@@ -4868,6 +4873,10 @@ function saveSession(immediate = false) {
     }
     const doSave = () => {
         try {
+            if (!animations.length) {
+                localStorage.removeItem("ganiEditorSession");
+                return;
+            }
             const session = {
                 animations: animations.map((ani, idx) => {
                     const content = saveGani(ani);
@@ -4901,7 +4910,18 @@ async function restoreSession() {
     try {
         const sessionData = localStorage.getItem("ganiEditorSession");
         if (!sessionData) return false;
+        const sharedTabsRaw = localStorage.getItem("graalSuiteTabs");
+        if (!sharedTabsRaw) return false;
         const session = JSON.parse(sessionData);
+        let allowedSharedTabs = [];
+        try {
+            const parsedSharedTabs = JSON.parse(sharedTabsRaw);
+            if (!Array.isArray(parsedSharedTabs) || !parsedSharedTabs.length) return false;
+            allowedSharedTabs = parsedSharedTabs.filter(t => t?.type === "gani");
+            if (!allowedSharedTabs.length) return false;
+        } catch (e) {
+            return false;
+        }
         const restoredCurrentTabIndex = Math.max(0, session.currentTabIndex || 0);
         if (session.workingDirectory) {
             workingDirectory = session.workingDirectory;
@@ -4921,6 +4941,16 @@ async function restoreSession() {
                 const tip = keysSwapped ? "Arrows=Direction, WASD=Move — click to restore" : "WASD=Direction, Arrows=Move — click to swap";
                 if (_btn.hasAttribute("data-title")) _btn.dataset.title = tip; else _btn.title = tip;
             }
+        }
+        if (session.animations && session.animations.length > 0) {
+            const allowedByPath = new Set(allowedSharedTabs.map(t => t?.data?.fullPath).filter(Boolean));
+            const allowedByName = new Set(allowedSharedTabs.map(t => t?.data?.fileName || t?.name).filter(Boolean));
+            session.animations = session.animations.filter(aniData => {
+                if (!aniData) return false;
+                if (aniData.fullPath && allowedByPath.has(aniData.fullPath)) return true;
+                const name = aniData.fileName || "";
+                return !!name && allowedByName.has(name);
+            });
         }
         if (session.animations && session.animations.length > 0) {
             animations = [];
@@ -4957,11 +4987,12 @@ async function restoreSession() {
                     }
                 }
             }
-            if (animations.length === 0) {
-                initNewAnimation();
-            } else {
+            if (animations.length > 0) {
                 currentTabIndex = Math.min(restoredCurrentTabIndex, animations.length - 1);
                 currentAnimation = animations[currentTabIndex];
+            } else {
+                currentTabIndex = -1;
+                currentAnimation = null;
             }
             if (window.tabManager && typeof tabManager.addTab === 'function') {
                 for (let i = 0; i < animations.length; i++) {
@@ -5275,9 +5306,11 @@ window.addEventListener("load", async () => {
     resizeCanvas();
     const restored = await restoreSession();
     if (!restored) {
-        if (animations.length === 0) initNewAnimation();
         updateTabs();
         updateUIVisibility();
+        if (animations.length === 0 && window.tabManager?.getTabsByType?.('level')?.length === 0) {
+            window.showEmptyEditorState?.();
+        }
     } else {
         updateUIVisibility();
         restoreCurrentFrame();
@@ -9044,12 +9077,16 @@ window.addEventListener("load", async () => {
     const settingsShowGrid = $("settingsShowGridCheckbox");
     const settingsGifAnimations = $("settingsGifAnimationsCheckbox");
     const settingsLightEffects = $("settingsLightEffectsCheckbox");
+    const settingsSystemGroup = $("settingsSystemGroup");
+    const settingsRegisterAssoc = $("settingsRegisterAssoc");
+    const settingsRegisterAssocStatus = $("settingsRegisterAssocStatus");
     const settingsSelectionBorderColor = $("settingsSelectionBorderColor");
     const settingsSelectionBorderThickness = $("settingsSelectionBorderThickness");
     const settingsSelectionBorderThicknessNumber = $("settingsSelectionBorderThicknessNumber");
     const settingsSelectionBorderOpacity = $("settingsSelectionBorderOpacity");
     const settingsSelectionBorderOpacityLabel = $("settingsSelectionBorderOpacityLabel");
     if (btnSettings && settingsDialog) {
+        if (settingsSystemGroup) settingsSystemGroup.style.display = _isTauri ? "" : "none";
         const settingsFont = $("settingsFont");
         const settingsFontSize = $("settingsFontSize");
         const settingsFontStyle = $("settingsFontStyle");
@@ -9407,6 +9444,28 @@ window.addEventListener("load", async () => {
             settingsAutoSave.onclick = () => {
                 const newValue = settingsAutoSave.textContent.trim() !== "✓";
                 settingsAutoSave.textContent = newValue ? "✓" : " ";
+            };
+        }
+        if (_isTauri && settingsRegisterAssoc) {
+            settingsRegisterAssoc.onclick = async () => {
+                settingsRegisterAssoc.disabled = true;
+                if (settingsRegisterAssocStatus) {
+                    settingsRegisterAssocStatus.style.color = "#aaa";
+                    settingsRegisterAssocStatus.textContent = "Registering...";
+                }
+                try {
+                    const msg = await _tauri.core.invoke("register_file_associations");
+                    if (settingsRegisterAssocStatus) {
+                        settingsRegisterAssocStatus.style.color = "#6c6";
+                        settingsRegisterAssocStatus.textContent = msg;
+                    }
+                } catch (e) {
+                    if (settingsRegisterAssocStatus) {
+                        settingsRegisterAssocStatus.style.color = "#f66";
+                        settingsRegisterAssocStatus.textContent = String(e);
+                    }
+                }
+                settingsRegisterAssoc.disabled = false;
             };
         }
         if (settingsSelectionBorderColor) {
