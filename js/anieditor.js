@@ -256,7 +256,7 @@ class Animation {
         return this.defaultImages.get(name.toUpperCase()) || "";
     }
 }
-const _GANI_PREFIXED_IDS = new Set(['btnAbout','btnCenterView','btnCloseAll','btnColorScheme','btnCustomCSS','btnGmapGen','btnNew','btnOpen','btnOpenDefault','btnPlay','btnRedo','btnReset','btnSave','btnSaveAll','btnSaveAs','btnSetshape2','btnSettings','btnUndo','btnWorkingDir','colorSchemeDropdown','fileInput','folderInput','imageInput','mainCanvas','mainSplitter','switchBtn','zoomSlider','btnCollab','collabDropdown','collabToggleTrack','collabToggleThumb','collabStatus','collabDisconnect','collabPeers','collabCodeSection','collabMyCode','collabCopy','collabJoinCode','collabJoin']);
+const _GANI_PREFIXED_IDS = new Set(['btnAbout','btnBeautify','btnCenterView','btnCloseAll','btnColorScheme','btnCustomCSS','btnGmapGen','btnNew','btnOpen','btnOpenDefault','btnPlay','btnRedo','btnReset','btnSave','btnSaveAll','btnSaveAs','btnSetshape2','btnSettings','btnUndo','btnWorkingDir','colorSchemeDropdown','fileInput','folderInput','imageInput','mainCanvas','mainSplitter','switchBtn','zoomSlider','btnCollab','collabDropdown','collabToggleTrack','collabToggleThumb','collabStatus','collabDisconnect','collabPeers','collabCodeSection','collabMyCode','collabCopy','collabJoinCode','collabJoin']);
 function $(id) { return document.getElementById(_GANI_PREFIXED_IDS.has(id) ? 'gani-' + id : id); }
 
 const SPRITE_INDEX_STRING = -21374783;
@@ -1255,7 +1255,8 @@ function redraw() {
             ctx.beginPath();
             ctx.rect(quadX, quadY, quadWidth, quadHeight);
             ctx.clip();
-            if (_dragMoveIndicator && isDragging) {
+            const indicatorDir = _dragMoveIndicator?.dir;
+            if (_dragMoveIndicator && isDragging && (indicatorDir === undefined || indicatorDir === null || indicatorDir === i)) {
                 ctx.save();
                 ctx.translate(quadX + quadWidth / 2 + panX, quadY + quadHeight / 2 + panY);
                 ctx.scale(scale, scale);
@@ -5302,6 +5303,9 @@ if (window.require) {
 } else {
     monacoReady = Promise.resolve(null);
 }
+if (window.initGraalMonaco) {
+    monacoReady = window.initGraalMonaco({ disableCssValidation: true });
+}
 function getMonacoTheme() {
     const v = getComputedStyle(document.documentElement).getPropertyValue('--monaco-theme').trim().replace(/['"]/g, '');
     return v || 'graal-default';
@@ -8407,6 +8411,7 @@ async function initGaniEditorStartup() {
                 timelineCanvas.style.background = "";
             }
             localStorage.setItem("editorColorScheme", scheme);
+            window.refreshUtilityToolTheme?.();
             return;
         }
         const schemes = {
@@ -8776,6 +8781,7 @@ async function initGaniEditorStartup() {
             timelineCanvas.style.background = colors.panel;
         }
         localStorage.setItem("editorColorScheme", scheme);
+        window.refreshUtilityToolTheme?.();
     }
     const btnColorScheme = $("btnColorScheme");
     const colorSchemeDropdown = $("colorSchemeDropdown");
@@ -11315,7 +11321,7 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
                         for (const p of selectedPieces) {
                             pieceInitialPositions.set(p, {x: p.xoffset, y: p.yoffset});
                         }
-                        _dragMoveIndicator = { startPositions: new Map(pieceInitialPositions), pieces: Array.from(selectedPieces) };
+                        _dragMoveIndicator = { startPositions: new Map(pieceInitialPositions), pieces: Array.from(selectedPieces), dir: actualDir };
                         mainCanvas.style.cursor = "grabbing";
                         document.body.style.cursor = "grabbing";
                         found = true;
@@ -11371,7 +11377,7 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
                             for (const p of selectedPieces) {
                                 pieceInitialPositions.set(p, {x: p.xoffset, y: p.yoffset});
                             }
-                            _dragMoveIndicator = { startPositions: new Map(pieceInitialPositions), pieces: Array.from(selectedPieces) };
+                            _dragMoveIndicator = { startPositions: new Map(pieceInitialPositions), pieces: Array.from(selectedPieces), dir: actualDir };
                             mainCanvas.style.cursor = "grabbing";
                             found = true;
                             if (splitViewEnabled && !currentAnimation.singleDir) {

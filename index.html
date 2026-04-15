@@ -22,6 +22,7 @@
 <script src="js/tabmanager.js"></script>
 <script src="js/tiletypes.js"></script>
 <script src="js/mnglib.js"></script>
+<script src="js/gmonaco.js"></script>
 <link rel="stylesheet" href="css/global.css">
 <style>
 .editor-root { width: 100%; height: 100%; min-width: 0; min-height: 0; flex: 1 1 auto; }
@@ -44,6 +45,7 @@
   <div class="tb-trailing" data-tauri-drag-region>
     <button id="tbShapesBtn" title="Setshape2 Editor" onclick="typeof SetshapeEditor!=='undefined'&&SetshapeEditor.open()"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAACbUlEQVQ4y52P20uTcRzGn9972MEdHBvOw1JZZk4dTjyXhGEGUgkWFJH1P3QTQXgVne6UThCEFxVBYWVgWCCBQ6IM0cBkouLxTbc5NJzv67b39/66SG2pQfXcfPnC83y/n4fgP1RZd8JAeJ4nIDH+X8OFpQdyKE2063T6S5QmwgIAVNUdE0yWVCMhAGMbTgYQAjAAK5FwS2Zm5sGhgf6LvCC0rq4s3fBV13Z+HRwAceXuE1PtzisAvAD5/R0BwBisNkfxKbfsGdHcseHRQF35oYbHfW9ePZweH2kTIqEFc15Rme/chTOKOz+/eiMFgDCAEQBsKbzk6H/WQWrNU3pDZUW3v7fnqiJH72mUMmHzGdVojijq8vCrAQAgHoth/EMv0uk3+OfNpMwxnDbrSi9YNJrIwuwk45KJ2bYZi63jXVcXrMHPWLSWYH/jWfi/u+LrTGyKhCQOAITtlTcnpRSTYxNw5XkgGS1objyCGSmMZUXt9fe8OOnM2KPuOJAsjufg8RZCmplDia8IgigCAHhB0ADEQ4vzP327hdkGB8fxyHbnQhBFKLKMdUUBRzh9fVOLbtO7KwHZtklzEtpv3eyU12QZYLA50i+X1tRfH/74XtuVIJkkGo3iwe07jxi0+0Vl5a8bmk+vBr586jNZbW1bBIQQHiA81bQdB1SVQlW1YNXho63dTzuOuwuK07wVNXaAtwOAoFFKOY7kTEwHfRPTwR0UaiIBg8nsefv8ybW9Hm+9McWUPTo0GLLY7IGtunpDSkaK2VL4pyrOrNzzdmeWh+O4OGOANDX2UllbvRtamGUEfyczCDEk7ctgjALAD3gS6nZ20OQgAAAAAElFTkSuQmCC" width="14" height="14"></button>
     <button id="tbGmapBtn" title="Gmap Generator" onclick="typeof GmapGenerator!=='undefined'&&GmapGenerator.open()" style="border-left:none;display:inline-flex;align-items:center;gap:4px;"><img src="icons/gmapgen.ico" width="14" height="14" style="image-rendering:pixelated;"></button>
+    <button id="tbBeautifyBtn" title="Code Beautify" onclick="typeof BeautifyTool!=='undefined'&&BeautifyTool.open()" style="border-left:none;display:inline-flex;align-items:center;justify-content:center;padding:8px;"><img src="icons/code.svg" width="14" height="14" style="display:block;image-rendering:pixelated;filter:brightness(0) invert(1);background:transparent;"></button>
     <button id="tbAboutBtn" title="About GSuite" style="border-left:none;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path fill="currentColor" fill-rule="evenodd" d="M12 23a11 11 0 1 0 0-22 11 11 0 0 0 0 22Zm-.28-16c-.98 0-1.81.47-2.27 1.14A1 1 0 1 1 7.8 7.01 4.73 4.73 0 0 1 11.72 5c2.5 0 4.65 1.88 4.65 4.38 0 2.1-1.54 3.77-3.52 4.24l.14 1a1 1 0 0 1-1.98.27l-.28-2a1 1 0 0 1 .99-1.14c1.54 0 2.65-1.14 2.65-2.38 0-1.23-1.1-2.37-2.65-2.37ZM13 17.88a1.13 1.13 0 1 1-2.25 0 1.13 1.13 0 0 1 2.25 0Z" clip-rule="evenodd"/></svg></button>
     <button class="tb-winbtn" id="tbMin" title="Minimize"><svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor"/></svg></button>
     <button class="tb-winbtn" id="tbMax" title="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x=".5" y=".5" width="9" height="9" stroke="currentColor"/></svg></button>
@@ -53,6 +55,8 @@
 <div id="editorContainer" style="display:flex;flex-direction:column;">
     <div id="levelRoot" class="editor-root" style="flex:1;min-height:0;height:0;"></div>
     <div id="ganiRoot" class="editor-root" style="display:none;flex:1;min-height:0;height:0;"></div>
+    <div id="beautifyRoot" class="editor-root" style="display:none;flex:1;min-height:0;height:0;"></div>
+    <div id="setshapeRoot" class="editor-root" style="display:none;flex:1;min-height:0;height:0;"></div>
 </div>
     <div id="infoDialog" class="dialog-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:transparent;z-index:10000;justify-content:center;align-items:center;">
     <div class="dialog-content" style="border:2px solid #1a1a1a;width:600px;max-width:92vw;height:420px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 4px 16px rgba(0,0,0,0.9);">
@@ -104,6 +108,7 @@
 (function() {
     const _isTauri = !!window.__TAURI__;
     let _currentApp = null;
+    let _utilityShellApp = 'level';
 
     let _changelogData = null;
     window.openInfoDialog = function(tab) {
@@ -245,6 +250,16 @@
         document.getElementById('tbAboutBtn').onclick = () => window.openInfoDialog('about');
     }
 
+    function setAppTitle(title) {
+        const nextTitle = title || 'GSuite';
+        document.title = nextTitle;
+        const tbTitle = document.getElementById('tbTitle');
+        if (tbTitle) tbTitle.textContent = nextTitle;
+        if (_isTauri) {
+            window.__TAURI__?.window?.getCurrentWindow?.().setTitle(nextTitle).catch?.(() => {});
+        }
+    }
+
     function destroyCurrent() {
         const c = document.getElementById('editorContainer');
         c.innerHTML = '';
@@ -254,18 +269,147 @@
         window._aniEditorInstance = null;
     }
 
+    function setUtilityToolbarState(shellApp, enabled) {
+        const prefix = shellApp === 'gani' ? 'gani-' : 'level-';
+        const disableIds = shellApp === 'gani'
+            ? [`${prefix}btnCollab`, `${prefix}btnSave`, `${prefix}btnSaveAll`, `${prefix}btnSaveAs`]
+            : [`${prefix}btnLevelCollab`, `${prefix}btnSave`, `${prefix}btnSaveAll`, `${prefix}btnSaveAs`];
+        const hideIds = shellApp === 'level'
+            ? [`${prefix}btnPlayerSetup`, `${prefix}btnPlay`]
+            : [];
+        disableIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.disabled = !enabled;
+            el.style.opacity = enabled ? '' : '0.45';
+            el.style.pointerEvents = enabled ? '' : 'none';
+        });
+        hideIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.style.display = enabled ? '' : 'none';
+        });
+    }
+
+    function showUtilityRoot(type, title) {
+        const suiteTabs = document.getElementById('suiteTabs');
+        const ganiRoot = document.getElementById('ganiRoot');
+        const levelRoot = document.getElementById('levelRoot');
+        const beautifyRoot = document.getElementById('beautifyRoot');
+        const setshapeRoot = document.getElementById('setshapeRoot');
+        const utilityRoot = type === 'setshape' ? setshapeRoot : beautifyRoot;
+        const otherRoot = type === 'setshape' ? beautifyRoot : setshapeRoot;
+
+        _utilityShellApp = _currentApp === 'gani' ? 'gani' : 'level';
+        setUtilityToolbarState('gani', true);
+        setUtilityToolbarState('level', true);
+        ganiRoot.style.display = 'none';
+        ganiRoot.style.flex = '';
+        ganiRoot.style.height = '0';
+        levelRoot.style.display = 'none';
+        levelRoot.style.flex = '';
+        levelRoot.style.height = '0';
+        if (otherRoot) {
+            otherRoot.style.display = 'none';
+            otherRoot.style.flex = '';
+            otherRoot.style.height = '0';
+        }
+
+        if (_utilityShellApp === 'gani') {
+            ganiRoot.style.display = 'flex';
+            ganiRoot.style.flex = '0 0 auto';
+            ganiRoot.style.height = 'auto';
+            ganiRoot.style.position = 'relative';
+            ganiRoot.style.zIndex = '140';
+            const ganiMc = ganiRoot.querySelector('.main-container');
+            const ganiToolbar = ganiMc?.querySelector(':scope > .toolbar');
+            const ganiContent = ganiMc?.querySelector('.content-area');
+            if (ganiToolbar) {
+                ganiToolbar.style.display = 'flex';
+                ganiToolbar.style.position = 'relative';
+                ganiToolbar.style.zIndex = '120';
+            }
+            if (ganiContent) ganiContent.style.display = 'none';
+            setUtilityToolbarState('gani', false);
+        } else {
+            levelRoot.style.display = 'flex';
+            levelRoot.style.flex = '0 0 auto';
+            levelRoot.style.height = 'auto';
+            levelRoot.style.position = 'relative';
+            levelRoot.style.zIndex = '140';
+            const levelMc = levelRoot.querySelector('.main-container');
+            if (levelMc) {
+                levelMc.style.height = 'auto';
+                levelMc.style.overflow = 'visible';
+                const toolbar = levelMc.querySelector(':scope > .toolbar');
+                const levelToolbar = document.getElementById('levelToolbar');
+                const levelArea = document.getElementById('levelArea');
+                const statusBar = levelMc.querySelector(':scope > .status-bar');
+                if (toolbar) {
+                    toolbar.style.display = 'flex';
+                    toolbar.style.position = 'relative';
+                    toolbar.style.zIndex = '120';
+                }
+                if (levelToolbar) levelToolbar.style.display = 'none';
+                if (levelArea) levelArea.style.display = 'none';
+                if (statusBar) statusBar.style.display = 'none';
+            }
+            setUtilityToolbarState('level', false);
+        }
+
+        utilityRoot.style.display = 'flex';
+        utilityRoot.style.flex = '1';
+        utilityRoot.style.height = '';
+        utilityRoot.style.position = 'relative';
+        utilityRoot.style.zIndex = '1';
+        const utilityMc = utilityRoot.querySelector('.main-container');
+        const utilityContent = utilityMc?.querySelector('.content-area');
+        if (suiteTabs && utilityMc && utilityContent) utilityMc.insertBefore(suiteTabs, utilityContent);
+        _currentApp = type;
+        setAppTitle(title);
+        window.refreshUtilityToolTheme?.();
+        document.dispatchEvent(new CustomEvent('editorvisible', { detail: { type } }));
+    }
+
+    window.refreshUtilityToolTheme = function() {
+        window.BeautifyTool?.applyTheme?.();
+        window.BeautifyTool?._inputEditor?.layout?.();
+        window.BeautifyTool?._outputEditor?.layout?.();
+        window.SetshapeEditor?.applyTheme?.();
+        window.__setshapeEditorInstance?._render?.();
+    };
+
     function switchToTab(type) {
         const suiteTabs = document.getElementById('suiteTabs');
         const ganiRoot = document.getElementById('ganiRoot');
         const levelRoot = document.getElementById('levelRoot');
+        const beautifyRoot = document.getElementById('beautifyRoot');
         if (type === 'gani') {
+            setUtilityToolbarState('gani', true);
+            setUtilityToolbarState('level', true);
             levelRoot.style.display = 'none';
+            beautifyRoot.style.display = 'none';
+            beautifyRoot.style.flex = '';
+            beautifyRoot.style.height = '0';
+            levelRoot.style.position = '';
+            levelRoot.style.zIndex = '';
+            const setshapeRoot = document.getElementById('setshapeRoot');
+            if (setshapeRoot) {
+                setshapeRoot.style.display = 'none';
+                setshapeRoot.style.flex = '';
+                setshapeRoot.style.height = '0';
+            }
             ganiRoot.style.display = '';
             ganiRoot.style.flex = '1';
             ganiRoot.style.height = '';
+            ganiRoot.style.position = '';
+            ganiRoot.style.zIndex = '';
             const ganiMc = ganiRoot.querySelector('.main-container');
             const ganiContent = ganiMc?.querySelector('.content-area');
             if (suiteTabs && ganiMc && ganiContent) ganiMc.insertBefore(suiteTabs, ganiContent);
+            if (ganiContent) ganiContent.style.display = 'flex';
+            const ganiToolbar = ganiMc?.querySelector(':scope > .toolbar');
+            if (ganiToolbar) ganiToolbar.style.display = 'flex';
             const ms = document.getElementById('gani-mainSplitter');
             if (ms) { ms.style.height = ''; ms.style.maxHeight = ''; }
             const lp = ganiRoot.querySelector('.left-panel');
@@ -281,13 +425,32 @@
             setTimeout(() => { if (typeof resizeCanvas === 'function') resizeCanvas(); }, 50);
             setTimeout(() => { if (typeof resizeCanvas === 'function') resizeCanvas(); }, 200);
         } else {
+            if (type === 'beautify' || type === 'setshape') {
+                showUtilityRoot(type, type === 'beautify' ? 'Code Beautify' : 'Setshape2');
+                return;
+            }
+            setUtilityToolbarState('gani', true);
+            setUtilityToolbarState('level', true);
             ganiRoot.style.display = 'none';
             ganiRoot.style.flex = '';
             ganiRoot.style.height = '0';
+            ganiRoot.style.position = '';
+            ganiRoot.style.zIndex = '';
+            beautifyRoot.style.display = 'none';
+            beautifyRoot.style.flex = '';
+            beautifyRoot.style.height = '0';
+            const setshapeRoot = document.getElementById('setshapeRoot');
+            if (setshapeRoot) {
+                setshapeRoot.style.display = 'none';
+                setshapeRoot.style.flex = '';
+                setshapeRoot.style.height = '0';
+            }
             levelRoot.style.display = 'flex';
             levelRoot.style.flex = '1';
             levelRoot.style.width = '100%';
             levelRoot.style.height = '';
+            levelRoot.style.position = '';
+            levelRoot.style.zIndex = '';
             const levelMc = levelRoot.querySelector('.main-container');
             const levelToolbar = document.getElementById('levelToolbar');
             if (suiteTabs && levelMc && levelToolbar) levelMc.insertBefore(suiteTabs, levelToolbar);
@@ -314,13 +477,25 @@
         const suiteTabs = document.getElementById('suiteTabs');
         const ganiRoot = document.getElementById('ganiRoot');
         const levelRoot = document.getElementById('levelRoot');
-        const keepType = _currentApp === 'gani' ? 'gani' : 'level';
+        const beautifyRoot = document.getElementById('beautifyRoot');
+        const setshapeRoot = document.getElementById('setshapeRoot');
+        const keepType = _currentApp === 'gani' ? 'gani' : ((_currentApp === 'beautify' || _currentApp === 'setshape') ? _utilityShellApp : 'level');
         if (suiteTabs) suiteTabs.style.display = 'none';
         if (keepType === 'gani') {
             if (levelRoot) {
                 levelRoot.style.display = 'none';
                 levelRoot.style.flex = '';
                 levelRoot.style.height = '0';
+            }
+            if (beautifyRoot) {
+                beautifyRoot.style.display = 'none';
+                beautifyRoot.style.flex = '';
+                beautifyRoot.style.height = '0';
+            }
+            if (setshapeRoot) {
+                setshapeRoot.style.display = 'none';
+                setshapeRoot.style.flex = '';
+                setshapeRoot.style.height = '0';
             }
             if (ganiRoot) {
                 ganiRoot.style.display = '';
@@ -337,6 +512,16 @@
                 ganiRoot.style.display = 'none';
                 ganiRoot.style.flex = '';
                 ganiRoot.style.height = '0';
+            }
+            if (beautifyRoot) {
+                beautifyRoot.style.display = 'none';
+                beautifyRoot.style.flex = '';
+                beautifyRoot.style.height = '0';
+            }
+            if (setshapeRoot) {
+                setshapeRoot.style.display = 'none';
+                setshapeRoot.style.flex = '';
+                setshapeRoot.style.height = '0';
             }
             if (levelRoot) {
                 levelRoot.style.display = 'flex';
@@ -384,8 +569,61 @@
             }, 300);
             if (!document.querySelector('script[src="js/setshape2editor.js"]')) { const ss2s = document.createElement('script'); ss2s.src = 'js/setshape2editor.js'; document.head.appendChild(ss2s); }
             if (!document.querySelector('script[src="js/gmapgenerator.js"]')) { const gmgs = document.createElement('script'); gmgs.src = 'js/gmapgenerator.js'; document.head.appendChild(gmgs); }
+            if (!document.querySelector('script[src="js/beautifytool.js"]')) { const bts = document.createElement('script'); bts.src = 'js/beautifytool.js'; document.head.appendChild(bts); }
         };
         document.head.appendChild(s);
+    }
+
+    function injectBeautify() {
+        const beautifyRoot = document.getElementById('beautifyRoot');
+        if (beautifyRoot.querySelector('.main-container')) return;
+        beautifyRoot.innerHTML = `
+        <div class="main-container">
+            <div class="content-area">
+                <div id="beautifyTabHost" style="flex:1;min-height:0;display:flex;flex-direction:column;background:#1e1e1e;"></div>
+            </div>
+        </div>`;
+        beautifyRoot.style.display = 'none';
+        if (!document.querySelector('script[src="js/beautifytool.js"]')) {
+            const bts = document.createElement('script');
+            bts.src = 'js/beautifytool.js';
+            bts.onload = () => {
+                if (typeof BeautifyTool !== 'undefined') {
+                    BeautifyTool.mountInto(document.getElementById('beautifyTabHost'));
+                    window.refreshUtilityToolTheme?.();
+                }
+            };
+            document.head.appendChild(bts);
+        } else if (typeof BeautifyTool !== 'undefined') {
+            BeautifyTool.mountInto(document.getElementById('beautifyTabHost'));
+            window.refreshUtilityToolTheme?.();
+        }
+    }
+
+    function injectSetshape() {
+        const setshapeRoot = document.getElementById('setshapeRoot');
+        if (setshapeRoot.querySelector('.main-container')) return;
+        setshapeRoot.innerHTML = `
+        <div class="main-container">
+            <div class="content-area">
+                <div id="setshapeTabHost" style="flex:1;min-height:0;display:flex;flex-direction:column;background:#1e1e1e;"></div>
+            </div>
+        </div>`;
+        setshapeRoot.style.display = 'none';
+        if (!document.querySelector('script[src="js/setshape2editor.js"]')) {
+            const ss2s = document.createElement('script');
+            ss2s.src = 'js/setshape2editor.js';
+            ss2s.onload = () => {
+                if (typeof SetshapeEditor !== 'undefined') {
+                    SetshapeEditor.mountInto(document.getElementById('setshapeTabHost'));
+                    window.refreshUtilityToolTheme?.();
+                }
+            };
+            document.head.appendChild(ss2s);
+        } else if (typeof SetshapeEditor !== 'undefined') {
+            SetshapeEditor.mountInto(document.getElementById('setshapeTabHost'));
+            window.refreshUtilityToolTheme?.();
+        }
     }
 
     function injectLevel() {
@@ -417,6 +655,7 @@
             window._editor = window.levelEditor = new LevelEditor();
             if (!document.querySelector('script[src="js/setshape2editor.js"]')) { const ss2s = document.createElement('script'); ss2s.src = 'js/setshape2editor.js'; document.head.appendChild(ss2s); }
             if (!document.querySelector('script[src="js/gmapgenerator.js"]')) { const gmgs = document.createElement('script'); gmgs.src = 'js/gmapgenerator.js'; document.head.appendChild(gmgs); }
+            if (!document.querySelector('script[src="js/beautifytool.js"]')) { const bts = document.createElement('script'); bts.src = 'js/beautifytool.js'; document.head.appendChild(bts); }
             if (_isTauri) { const ra = document.getElementById('btnRegisterAssoc'); if (ra) ra.style.display = ''; }
             if (_isTauri) {
                 setTimeout(async () => {
@@ -438,6 +677,7 @@
                 });
                 window.__TAURI__.event.listen('tauri://drag-drop', async e => {
                     const paths = e.payload?.paths || [];
+                    if (await _routeSetshapeTauriDrop(paths)) return;
                     for (const fp of paths) _tauriOpenFile(fp);
                 });
             }
@@ -521,9 +761,60 @@
         }
     }
 
+    function _setshapeIsOpen() {
+        const ss2 = document.getElementById('_ss2Dialog');
+        if (ss2 && ss2.style.display !== 'none') return true;
+        if (window.tabManager?.getActiveTab?.()?.type === 'setshape') return true;
+        const host = document.getElementById('setshapeTabHost');
+        return !!(host && host.children.length);
+    }
+
+    function _isCommonImageName(name) {
+        return /\.(png|gif|mng|webp|jpg|jpeg|bmp)$/i.test(name || '');
+    }
+
+    async function _routeSetshapeWebDrop(files) {
+        if (!_setshapeIsOpen()) return false;
+        const editor = window.__setshapeEditorInstance;
+        if (!editor || typeof editor._importImageFile !== 'function') return false;
+        const imageFile = [...(files || [])].find(f => _isCommonImageName(f.name) || (f.type && f.type.startsWith('image/')));
+        if (!imageFile) return false;
+        editor._importImageFile(imageFile);
+        return true;
+    }
+
+    async function _routeSetshapeTauriDrop(paths) {
+        if (!_setshapeIsOpen()) return false;
+        const editor = window.__setshapeEditorInstance;
+        if (!editor || typeof editor._importImagePath !== 'function') return false;
+        const imagePath = (paths || []).find(fp => _isCommonImageName(fp));
+        if (!imagePath) return false;
+        editor._importImagePath(imagePath);
+        return true;
+    }
+
     document.addEventListener('dragenter', e => e.preventDefault(), true);
-    document.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }, true);
+    document.addEventListener('dragover', e => {
+        const files = [...(e.dataTransfer?.files || [])];
+        const hasImage = files.some(f => _isCommonImageName(f.name) || (f.type && f.type.startsWith('image/')));
+        if (_setshapeIsOpen() && hasImage) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation?.();
+            e.dataTransfer.dropEffect = 'copy';
+            return;
+        }
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+    }, true);
     document.addEventListener('drop', async e => {
+        const allFiles = [...(e.dataTransfer?.files || [])];
+        if (await _routeSetshapeWebDrop(allFiles)) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation?.();
+            return;
+        }
         e.preventDefault();
         e.stopPropagation();
         const files = [...(e.dataTransfer.files||[])].filter(f => /\.(nw|zelda|graal|gmap|gani)$/i.test(f.name));
@@ -544,6 +835,8 @@
         const init = () => {
             injectLevel();
             injectGani();
+            injectBeautify();
+            injectSetshape();
             switchToTab('level');
         };
         if (_isTauri) {
@@ -657,6 +950,7 @@
             <div style="display:${_isTauri ? 'none' : 'inline-flex'};align-items:center;gap:0;">
                 <button title="Setshape2 Editor" id="${p}btnSetshape2" onclick="typeof SetshapeEditor!=='undefined'&&SetshapeEditor.open()"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAACbUlEQVQ4y52P20uTcRzGn9972MEdHBvOw1JZZk4dTjyXhGEGUgkWFJH1P3QTQXgVne6UThCEFxVBYWVgWCCBQ6IM0cBkouLxTbc5NJzv67b39/66SG2pQfXcfPnC83y/n4fgP1RZd8JAeJ4nIDH+X8OFpQdyKE2063T6S5QmwgIAVNUdE0yWVCMhAGMbTgYQAjAAK5FwS2Zm5sGhgf6LvCC0rq4s3fBV13Z+HRwAceXuE1PtzisAvAD5/R0BwBisNkfxKbfsGdHcseHRQF35oYbHfW9ePZweH2kTIqEFc15Rme/chTOKOz+/eiMFgDCAEQBsKbzk6H/WQWrNU3pDZUW3v7fnqiJH72mUMmHzGdVojijq8vCrAQAgHoth/EMv0uk3+OfNpMwxnDbrSi9YNJrIwuwk45KJ2bYZi63jXVcXrMHPWLSWYH/jWfi/u+LrTGyKhCQOAITtlTcnpRSTYxNw5XkgGS1objyCGSmMZUXt9fe8OOnM2KPuOJAsjufg8RZCmplDia8IgigCAHhB0ADEQ4vzP327hdkGB8fxyHbnQhBFKLKMdUUBRzh9fVOLbtO7KwHZtklzEtpv3eyU12QZYLA50i+X1tRfH/74XtuVIJkkGo3iwe07jxi0+0Vl5a8bmk+vBr586jNZbW1bBIQQHiA81bQdB1SVQlW1YNXho63dTzuOuwuK07wVNXaAtwOAoFFKOY7kTEwHfRPTwR0UaiIBg8nsefv8ybW9Hm+9McWUPTo0GLLY7IGtunpDSkaK2VL4pyrOrNzzdmeWh+O4OGOANDX2UllbvRtamGUEfyczCDEk7ctgjALAD3gS6nZ20OQgAAAAAElFTkSuQmCC" width="14" height="14"></button>
                 <button title="Gmap Generator" id="${p}btnGmapGen" onclick="typeof GmapGenerator!=='undefined'&&GmapGenerator.open()"><img src="icons/gmapgen.ico" width="14" height="14" style="image-rendering:pixelated;"></button>
+                <button title="Code Beautify" id="${p}btnBeautify" onclick="typeof BeautifyTool!=='undefined'&&BeautifyTool.open()"><img src="icons/code.svg" width="14" height="14" style="display:block;image-rendering:pixelated;filter:brightness(0) invert(1);background:transparent;"></button>
                 <div class="tb-sep"></div>
             </div>
             <button ${p === 'level-' ? `id="${p}btnPlayerSetup"` : ''} class="tb-level-only" title="Player Settings" style="margin-left:auto;display:flex;align-items:center;gap:5px;background:#353535;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#fff;padding:4px 10px;cursor:pointer;font-family:chevyray,monospace;font-size:12px;white-space:nowrap;"><i class="fas fa-user"></i> Player</button>
@@ -1030,10 +1324,10 @@
             <div class="splitter horizontal" id="level-mainSplitter" style="flex:1;overflow:hidden;position:relative;">
                 <div class="object-library-panel">
                     <div class="left-panel-tabs">
-                        <button class="left-tab active" data-panel="workdir">Workdir</button>
-                        <button class="left-tab" data-panel="objects">Objects</button>
+                        <button class="left-tab" data-panel="workdir" style="display:none;">Workdir</button>
+                        <button class="left-tab active" data-panel="objects">Objects</button>
                     </div>
-                    <div class="left-panel-content" id="leftPanelWorkdir">
+                    <div class="left-panel-content" id="leftPanelWorkdir" style="display:none;">
                         <div class="object-library-header">
                             <input type="text" id="objectsDir" readonly placeholder="No workspaces">
                             <button id="btnBrowseObjectsDir" title="Add workspace"><i class="fas fa-folder-plus"></i></button>
@@ -1042,7 +1336,7 @@
                             <div id="objectTree" style="border:1px solid #555;min-height:200px;background:#1a1a1a;padding:8px;color:#888;"></div>
                         </div>
                     </div>
-                    <div class="left-panel-content" id="leftPanelObjects" style="display:none;">
+                    <div class="left-panel-content" id="leftPanelObjects">
                         <div class="object-library-header">
                             <input type="text" id="objectsLibDir" readonly placeholder="No folder loaded" style="min-width:0;flex:1;">
                             <button id="btnBrowseObjectsLib" title="Load objects folder"><i class="fas fa-folder-plus"></i></button>

@@ -1,5 +1,20 @@
 [
   {
+    "version": "0.1.46",
+    "date": "2026-04-15",
+    "tag": "GSuite",
+    "changes": [
+      "Gani editor split-view drag origin indicator now only shows in the active direction quadrant instead of all four directions while dragging",
+      "Setshape2/setimgpart editor now keeps the yellow setimgpart box editable after selection so you can move or resize it before opening the output, with Shift-to-snap support",
+      "When the Setshape2/setimgpart editor is open, dropping common image files in web or Tauri mode now imports them into the tool instead of falling through to suite tab/file drop handling",
+      "Code Beautify and Setshape2 now open as suite tabs, update the app title correctly, and keep the shared color scheme dropdown usable above the tab strip",
+      "Suite tabs now show type-specific icons for levels and utility tools",
+      "The Setshape2/setimgpart and Code Beautify dialogs can now be resized directly from the window corner",
+      "Monaco-based editors now share a single Graal script syntax/highlighting setup so colorization stays consistent across level editor, gani editor, and code beautify",
+      "Monaco autocomplete rows now keep their icons aligned correctly instead of overlapping suggestion text"
+    ]
+  },
+  {
     "version": "0.1.45",
     "date": "2026-04-14",
     "tag": "GSuite",

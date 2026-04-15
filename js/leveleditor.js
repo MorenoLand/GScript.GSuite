@@ -572,7 +572,7 @@ class Level {
 }
 
 class LevelEditor {
-    static _PREFIXED_IDS = new Set(['bgColorInput','btnAbout','btnCenterView','btnCloseAll','btnColorScheme','btnCustomCSS','btnGmapGen','btnNew','btnOpen','btnOpenDefault','btnPlay','btnPlayerSetup','btnRedo','btnReset','btnSave','btnSaveAll','btnSaveAs','btnSetshape2','btnSettings','btnUndo','btnWorkingDir','colorSchemeDropdown','fileInput','folderInput','imageInput','mainCanvas','mainSplitter','switchBtn','zoomSlider']);
+    static _PREFIXED_IDS = new Set(['bgColorInput','btnAbout','btnBeautify','btnCenterView','btnCloseAll','btnColorScheme','btnCustomCSS','btnGmapGen','btnNew','btnOpen','btnOpenDefault','btnPlay','btnPlayerSetup','btnRedo','btnReset','btnSave','btnSaveAll','btnSaveAs','btnSetshape2','btnSettings','btnUndo','btnWorkingDir','colorSchemeDropdown','fileInput','folderInput','imageInput','mainCanvas','mainSplitter','switchBtn','zoomSlider']);
     $(id) { return document.getElementById(LevelEditor._PREFIXED_IDS.has(id) ? 'level-' + id : id); }
     constructor() {
         this.levels = [];
@@ -7062,6 +7062,10 @@ class LevelEditor {
     }
 
     initMonaco() {
+        if (window.initGraalMonaco) {
+            window.monacoReady = window.initGraalMonaco({ disableCssValidation: true });
+            return;
+        }
         if (!window.require) { window.monacoReady = Promise.resolve(null); return; }
         window.require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs' } });
         window.monacoReady = new Promise(resolve => {
@@ -7943,7 +7947,7 @@ class LevelEditor {
             document.body.style.background = ''; document.body.style.color = '';
             const tb = this.$('tauriBar'); if (tb) { tb.style.background = ''; tb.style.borderColor = ''; }
             this._schemeColors = null;
-            localStorage.setItem('editorColorScheme', scheme); this._updateSchemeDropdown(scheme); return;
+            localStorage.setItem('editorColorScheme', scheme); this._updateSchemeDropdown(scheme); window.refreshUtilityToolTheme?.(); return;
         }
         const c = schemes[scheme];
         if (!c) return;
@@ -8075,15 +8079,11 @@ class LevelEditor {
             #layers-tab > div:first-child { background: ${c.hover} !important; border-color: ${c.border} !important; }
             #btnAddLayer, #btnDeleteLayer { background: ${bBg} !important; color: ${bTxt} !important; border-color: ${c.border} !important; }
             #btnAddLayer:hover, #btnDeleteLayer:hover { background: ${bHov} !important; }
-            #zoomSlider { accent-color: #4a9eff !important; }
-            #zoomSlider::-webkit-slider-runnable-track { background: ${c.border} !important; box-shadow: none !important; }
-            #zoomSlider::-moz-range-track { background: ${c.border} !important; box-shadow: none !important; }
-            #zoomSlider::-webkit-slider-thumb { background: ${c.panel} !important; box-shadow: 0 1px 3px rgba(0,0,0,0.4) !important; border: 1px solid ${c.border} !important; }
-            #zoomSlider::-moz-range-thumb { background: ${c.panel} !important; box-shadow: 0 1px 3px rgba(0,0,0,0.4) !important; border: 1px solid ${c.border} !important; }
-            #tilesetZoomSlider::-webkit-slider-runnable-track { background: ${c.border} !important; box-shadow: none !important; }
-            #tilesetZoomSlider::-moz-range-track { background: ${c.border} !important; box-shadow: none !important; }
-            #tilesetZoomSlider::-webkit-slider-thumb { background: ${c.panel} !important; box-shadow: 0 1px 3px rgba(0,0,0,0.4) !important; border: 1px solid ${c.border} !important; }
-            #tilesetZoomSlider::-moz-range-thumb { background: ${c.panel} !important; box-shadow: 0 1px 3px rgba(0,0,0,0.4) !important; border: 1px solid ${c.border} !important; }
+            #zoomSlider, #tilesetZoomSlider, #level-zoomSlider { accent-color: #4a9eff !important; }
+            #zoomSlider::-webkit-slider-runnable-track, #tilesetZoomSlider::-webkit-slider-runnable-track, #level-zoomSlider::-webkit-slider-runnable-track { background: ${c.border} !important; box-shadow: none !important; }
+            #zoomSlider::-moz-range-track, #tilesetZoomSlider::-moz-range-track, #level-zoomSlider::-moz-range-track { background: ${c.border} !important; box-shadow: none !important; }
+            #zoomSlider::-webkit-slider-thumb, #tilesetZoomSlider::-webkit-slider-thumb, #level-zoomSlider::-webkit-slider-thumb { background: ${c.panel} !important; box-shadow: 0 1px 3px rgba(0,0,0,0.4) !important; border: 1px solid ${c.border} !important; }
+            #zoomSlider::-moz-range-thumb, #tilesetZoomSlider::-moz-range-thumb, #level-zoomSlider::-moz-range-thumb { background: ${c.panel} !important; box-shadow: 0 1px 3px rgba(0,0,0,0.4) !important; border: 1px solid ${c.border} !important; }
             #settingsUIScale, #settingsSelectionBorderThickness, #settingsSelectionBorderOpacity { accent-color: #4a9eff !important; }
             #settingsUIScale::-webkit-slider-runnable-track, #settingsSelectionBorderThickness::-webkit-slider-runnable-track, #settingsSelectionBorderOpacity::-webkit-slider-runnable-track { background: ${c.border} !important; box-shadow: none !important; }
             #settingsUIScale::-moz-range-track, #settingsSelectionBorderThickness::-moz-range-track, #settingsSelectionBorderOpacity::-moz-range-track { background: ${c.border} !important; box-shadow: none !important; }
@@ -8191,6 +8191,7 @@ class LevelEditor {
         this._schemeColors = c;
         localStorage.setItem('editorColorScheme', scheme);
         this._updateSchemeDropdown(scheme);
+        window.refreshUtilityToolTheme?.();
     }
 
     _updateSchemeDropdown(scheme) {
