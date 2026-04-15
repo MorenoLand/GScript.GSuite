@@ -1,5 +1,15 @@
 [
   {
+    "version": "0.1.45",
+    "date": "2026-04-14",
+    "tag": "GSuite",
+    "changes": [
+      "Right-click canceling a tile-object stamp now clears reliably, including repeated Use as Stamp and cancel cycles without falling through to draw-mode tile picking",
+      "GIF images now animate in play mode and display as a static first frame in editor mode, matching MNG behavior",
+      ".graal and .zelda files now save correctly as binary instead of plain text"
+    ]
+  },
+  {
     "version": "0.1.44",
     "date": "2026-04-14",
     "tag": "GSuite",

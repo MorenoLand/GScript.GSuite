@@ -117,6 +117,112 @@ const _SIGN_SYMS = 'ABXYudlrhxyz#4.';
 const _SIGN_CTAB = [91,92,93,94,77,78,79,80,74,75,71,72,73,86,86,87,88,67];
 const _SIGN_CTABI = [0,1,2,3,4,5,6,7,8,10,11,12,13,15,17];
 const _SIGN_CTABL = [1,1,1,1,1,1,1,1,2,1,1,1,2,2,1];
+function _gifLZW(minSize, data) {
+    const CLEAR = 1 << minSize, EOI = CLEAR + 1;
+    let tbl = []; for (let i = 0; i <= EOI; i++) tbl.push(i < CLEAR ? [i] : []);
+    let csz = minSize + 1, out = [], buf = 0, bl = 0, dp = 0, prev = -1;
+    while (dp < data.length || bl >= csz) {
+        while (bl < csz && dp < data.length) { buf |= data[dp++] << bl; bl += 8; }
+        if (bl < csz) break;
+        const code = buf & ((1 << csz) - 1); buf >>= csz; bl -= csz;
+        if (code === CLEAR) { tbl = []; for (let i = 0; i <= EOI; i++) tbl.push(i < CLEAR ? [i] : []); csz = minSize + 1; prev = -1; continue; }
+        if (code === EOI) break;
+        let e;
+        if (code < tbl.length) e = tbl[code];
+        else if (code === tbl.length && prev >= 0) e = [...tbl[prev], tbl[prev][0]];
+        else break;
+        for (const v of e) out.push(v);
+        if (prev >= 0 && tbl.length < 4096) { tbl.push([...tbl[prev], e[0]]); if (tbl.length === (1 << csz) && csz < 12) csz++; }
+        prev = code;
+    }
+    return out;
+}
+function _gifPlay(buffer) {
+    const d = new Uint8Array(buffer);
+    let p = 0;
+    const r8 = () => d[p++];
+    const r16 = () => { const v = d[p] | (d[p+1] << 8); p += 2; return v; };
+    const rn = n => { const v = d.subarray(p, p + n); p += n; return v; };
+    const skipSubs = () => { let n; while ((n = r8()) > 0) p += n; };
+    p = 6;
+    const sw = r16(), sh = r16(), pk = r8(); r8(); r8();
+    const gct = (pk >> 7) ? rn(3 * (2 << (pk & 7))) : null;
+    const frames = [];
+    let gDelay = 10, gTrans = -1, gDisp = 0;
+    while (p < d.length) {
+        const b = r8();
+        if (b === 0x3B) break;
+        if (b === 0x21) {
+            const e = r8();
+            if (e === 0xF9) { r8(); const fp = r8(); gDisp = (fp >> 2) & 7; gDelay = r16(); const ti = r8(); r8(); gTrans = (fp & 1) ? ti : -1; }
+            else skipSubs();
+        } else if (b === 0x2C) {
+            const fl = r16(), ft = r16(), fw = r16(), fh = r16(), ip = r8();
+            const interlaced = (ip >> 6) & 1;
+            const lct = (ip >> 7) ? rn(3 * (2 << (ip & 7))) : null;
+            const ct = lct || gct;
+            const lmin = r8();
+            const raw = []; let sn; while ((sn = r8()) > 0) { for (let i = 0; i < sn; i++) raw.push(d[p++]); }
+            const px = _gifLZW(lmin, raw);
+            const rgba = new Uint8ClampedArray(fw * fh * 4);
+            let rows = null;
+            if (interlaced) {
+                rows = [];
+                for (const [start, step] of [[0,8],[4,8],[2,4],[1,2]]) for (let r = start; r < fh; r += step) rows.push(r);
+            }
+            for (let i = 0; i < fw * fh; i++) {
+                const ci = px[i];
+                const pi = interlaced ? (rows[Math.floor(i / fw)] * fw + (i % fw)) : i;
+                if (ci === gTrans) { rgba[pi*4+3] = 0; }
+                else if (ct) { const o = ci * 3; rgba[pi*4] = ct[o]; rgba[pi*4+1] = ct[o+1]; rgba[pi*4+2] = ct[o+2]; rgba[pi*4+3] = 255; }
+            }
+            frames.push({ left: fl, top: ft, width: fw, height: fh, delay: Math.max(gDelay * 10, 20), disposal: gDisp, rgba });
+            gDelay = 10; gTrans = -1; gDisp = 0;
+        }
+    }
+    if (!frames.length) return null;
+    // Pre-bake each frame as its own canvas for drawImage alpha-compositing
+    const fCanvases = frames.map(f => {
+        const fc = document.createElement('canvas'); fc.width = f.width; fc.height = f.height;
+        fc.getContext('2d').putImageData(new ImageData(f.rgba, f.width, f.height), 0, 0);
+        return fc;
+    });
+    // Pre-compute complete composite snapshot for each frame so the tick loop
+    // never has to reason about disposal — it just blits the right snapshot.
+    const compC = document.createElement('canvas'); compC.width = sw; compC.height = sh;
+    const compX = compC.getContext('2d');
+    const snapshots = [];
+    const saveC = document.createElement('canvas'); saveC.width = sw; saveC.height = sh;
+    const saveX = saveC.getContext('2d');
+    let prevDisp = -1, prevL = 0, prevT = 0, prevW = sw, prevH = sh;
+    for (let i = 0; i < frames.length; i++) {
+        const f = frames[i];
+        // Apply previous frame's disposal before drawing this frame
+        if (i > 0) {
+            if (prevDisp === 2) { compX.clearRect(prevL, prevT, prevW, prevH); }
+            else if (prevDisp === 3) { compX.clearRect(0, 0, sw, sh); compX.drawImage(saveC, 0, 0); }
+            }
+        if (f.disposal === 3) { saveX.clearRect(0, 0, sw, sh); saveX.drawImage(compC, 0, 0); }
+        compX.drawImage(fCanvases[i], f.left, f.top);
+        const snap = document.createElement('canvas'); snap.width = sw; snap.height = sh;
+        snap.getContext('2d').drawImage(compC, 0, 0);
+        snapshots.push(snap);
+        prevDisp = f.disposal; prevL = f.left; prevT = f.top; prevW = f.width; prevH = f.height;
+    }
+    // Animate: tick just blits the pre-computed snapshot for the current frame
+    const c = document.createElement('canvas'); c.width = sw; c.height = sh;
+    const ctx = c.getContext('2d');
+    let fi = 0;
+    const tick = () => {
+        const f = frames[fi];
+        ctx.clearRect(0, 0, sw, sh);
+        ctx.drawImage(snapshots[fi], 0, 0);
+        fi = (fi + 1) % frames.length;
+        setTimeout(tick, f.delay);
+    };
+    tick();
+    return c;
+}
 function _decodeSign(enc) {
     let r = '';
     for (let i = 0; i < enc.length; i++) { const ch = enc.charCodeAt(i) - 32; const ci = _SIGN_CTAB.indexOf(ch); if (ci !== -1) { const si = _SIGN_CTABI.indexOf(ci); if (si !== -1) r += '#' + _SIGN_SYMS[si]; } else r += _SIGN_TEXT[ch] || ''; }
@@ -437,7 +543,7 @@ class Level {
     saveToGraal(isZelda = false) {
         const header = isZelda ? 'Z3-V1.04' : 'GR-V1.03';
         const bits = isZelda ? 12 : 13, hasNPCs = !isZelda, hasChests = !isZelda;
-        const TROW = this.tilesetImage ? Math.floor(this.tilesetImage.width / this.tileWidth) : 128;
+        const TROW = 128;
         const result = [...header].map(c => c.charCodeAt(0));
         let buf = 0, bc = 0;
         const flush = () => { while (bc >= 8) { result.push(buf & 0xFF); buf >>>= 8; bc -= 8; } };
@@ -726,7 +832,10 @@ class LevelEditor {
         this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
         this.canvas.addEventListener('mouseup', (e) => this.handleMouseUp(e));
         this.canvas.addEventListener('wheel', (e) => this.handleWheel(e));
-        this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+        this.canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            if (this.selectedTilesetTiles) this._clearSelectedTileStampPreview();
+        });
 
         this._touches = new Map();
         this._pinchDist = null; this._pinchMidX = null; this._pinchMidY = null;
@@ -826,7 +935,12 @@ class LevelEditor {
                 document.body.style.userSelect = 'none';
             });
         });
-        this.canvas.addEventListener('auxclick', (e) => { if (e.button === 2) e.preventDefault(); });
+        this.canvas.addEventListener('auxclick', (e) => {
+            if (e.button === 2) {
+                e.preventDefault();
+                if (this.selectedTilesetTiles) this._clearSelectedTileStampPreview();
+            }
+        });
 
         this.$('btnNew').addEventListener('click', () => this.newLevel());
         this.$('btnOpen').addEventListener('click', () => this.openLevel());
@@ -1160,6 +1274,11 @@ class LevelEditor {
         }
 
         if (e.button === 2) {
+            if (this.selectedTilesetTiles) {
+                this._clearSelectedTileStampPreview();
+                e.preventDefault();
+                return;
+            }
             if (this.currentTool === 'draw' && coords.x >= 0 && coords.x < this.level.width && coords.y >= 0 && coords.y < this.level.height) {
                 const tileIndex = this.level.getTile(this.currentLayer, coords.x, coords.y);
                 if (tileIndex >= 0) {
@@ -1186,14 +1305,6 @@ class LevelEditor {
                     e.preventDefault(); return;
                 }
                 this.handleCanvasDblClick(e); e.preventDefault(); return;
-            }
-            if (this.selectedTilesetTiles) {
-                this.selectedTilesetTiles = null;
-                this.isDraggingTileSelection = false;
-                this.updateSelectedTileDisplay();
-                this.requestRender();
-                e.preventDefault();
-                return;
             }
             if (this.hasSelection()) {
                 if (this.isPointInSelection(coords.x, coords.y)) {
@@ -1652,6 +1763,10 @@ class LevelEditor {
             this.isPanning = false;
             return;
         }
+        if (e.button === 2 && this.selectedTilesetTiles) {
+            this._clearSelectedTileStampPreview();
+            return;
+        }
 
         if (e.button === 0 && this.isDraggingFromTileset && this.isDrawing) {
             this.isDrawing = false;
@@ -1814,6 +1929,18 @@ class LevelEditor {
                     this.level.setTile(this.currentLayer, tx, ty, t);
             }
         }
+        this.render();
+    }
+
+    _clearSelectedTileStampPreview() {
+        this.selectedTilesetTiles = null;
+        this.isDraggingTileSelection = false;
+        this._tileUndoPushed = false;
+        this.tileSelectionDragX = -1;
+        this.tileSelectionDragY = -1;
+        this.dragMouseX = -1;
+        this.dragMouseY = -1;
+        this.updateSelectedTileDisplay();
         this.render();
     }
 
@@ -4632,7 +4759,8 @@ class LevelEditor {
         if (btn) btn.innerHTML = '&#9654; Play';
         this.canvas.parentElement?.classList.remove('play-mode');
         (this._hiddenEls || []).forEach(([el, disp]) => el.style.display = disp);
-        this._hiddenEls = null; this._player = null; this._playKeys = {}; this._playNoclip = false; this._mngAnimCache = null;
+        this._hiddenEls = null; this._player = null; this._playKeys = {}; this._playNoclip = false; this._mngAnimCache = null; this._gifAnimCache = null;
+        if (this._liveGifCache) { for (const [, e] of this._liveGifCache) { if (e.wrapper?.parentNode) e.wrapper.parentNode.removeChild(e.wrapper); } this._liveGifCache = null; }
         this._mobileStickDir = null; this._mobileStickVal = {x:0,y:0}; this._mobileControlsEl = null; this._mobileKnobs = null; this._mobileRelease = null;
         this._removeMobileControls();
         this._chatOpen = false; this._playerChat = null;
@@ -5295,8 +5423,9 @@ class LevelEditor {
     }
 
     async _writeTauriFile(path, content) {
-        if (content instanceof Blob) { const buf = await content.arrayBuffer(); await _tauri.fs.writeBinaryFile(path, new Uint8Array(buf)).catch(() => {}); }
-        else if (content instanceof ArrayBuffer) { await _tauri.fs.writeBinaryFile(path, new Uint8Array(content)).catch(() => {}); }
+        if (content instanceof Blob) { const buf = await content.arrayBuffer(); await _tauri.fs.writeFile(path, new Uint8Array(buf)).catch(() => {}); }
+        else if (content instanceof ArrayBuffer) { await _tauri.fs.writeFile(path, new Uint8Array(content)).catch(() => {}); }
+        else if (ArrayBuffer.isView(content)) { await _tauri.fs.writeFile(path, content instanceof Uint8Array ? content : new Uint8Array(content.buffer, content.byteOffset, content.byteLength)).catch(() => {}); }
         else { await _tauri.fs.writeTextFile(path, content).catch(() => {}); }
     }
 
@@ -5892,7 +6021,7 @@ class LevelEditor {
             tmpCanvas.toBlob(async blob => {
                 const buf = await blob.arrayBuffer();
                 const path = await _tauri.dialog.save({ defaultPath: filename, filters: [{ name: 'PNG', extensions: ['png'] }] });
-                if (path) await _tauri.fs.writeBinaryFile(path, new Uint8Array(buf));
+                if (path) await _tauri.fs.writeFile(path, new Uint8Array(buf));
             }, 'image/png');
         } else {
             const a = document.createElement('a');
@@ -6454,7 +6583,13 @@ class LevelEditor {
         const _resolvedName = this.fileCache?.images?.has(name) ? name : (this._fcLower?.get(name.toLowerCase()) || name);
         const cached = this.fileCache?.images?.get(_resolvedName);
         if (this._playMode && name.toLowerCase().endsWith('.gif')) {
-            return this._getLiveGifImage(`gani:${name}`, cached || `images/${name}`);
+            if (!this._gifAnimCache) this._gifAnimCache = new Map();
+            if (this._gifAnimCache.has(name)) return this._gifAnimCache.get(name);
+            const placeholder = document.createElement('canvas'); placeholder.width = 1; placeholder.height = 1;
+            this._gifAnimCache.set(name, placeholder);
+            const gifSrc = cached || `images/${name}`;
+            fetch(gifSrc).then(r => r.arrayBuffer()).then(buf => { const c = _gifPlay(buf); if (c) { this._gifAnimCache.set(name, c); this.requestRender(); } }).catch(() => {});
+            return placeholder;
         }
         if (this._ganiImgCache.has(name)) return this._ganiImgCache.get(name);
         if (!cached && _isTauri && name) {
@@ -6474,6 +6609,21 @@ class LevelEditor {
             }).catch(() => {});
             return img;
         }
+        if (name.toLowerCase().endsWith('.gif')) {
+            const placeholder = new Image();
+            this._ganiImgCache.set(name, placeholder);
+            const tmpImg = new Image();
+            tmpImg.onload = () => {
+                const c = document.createElement('canvas');
+                c.width = tmpImg.naturalWidth; c.height = tmpImg.naturalHeight;
+                c.getContext('2d').drawImage(tmpImg, 0, 0);
+                const staticImg = new Image();
+                staticImg.onload = () => { this._ganiImgCache.set(name, staticImg); this.requestRender(); };
+                staticImg.src = c.toDataURL('image/png');
+            };
+            tmpImg.src = fallbackSrc;
+            return placeholder;
+        }
         const img = new Image(); img.src = fallbackSrc;
         this._ganiImgCache.set(name, img);
         return img;
@@ -6481,17 +6631,17 @@ class LevelEditor {
 
     _getLiveGifImage(cacheKey, src) {
         if (!this._liveGifCache) this._liveGifCache = new Map();
-        let img = this._liveGifCache.get(cacheKey);
-        if (img && img._src === src) return img;
-        if (img?.parentNode) img.parentNode.removeChild(img);
-        img = document.createElement('img');
-        img._src = src;
-        img.src = src;
-        img.decoding = 'sync';
-        img.alt = '';
-        img.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;opacity:0.01;pointer-events:none;z-index:-1;';
-        document.body.appendChild(img);
-        this._liveGifCache.set(cacheKey, img);
+        const existing = this._liveGifCache.get(cacheKey);
+        if (existing && existing._src === src) return existing.img;
+        if (existing?.wrapper?.parentNode) existing.wrapper.parentNode.removeChild(existing.wrapper);
+        // Wrapper must be a painted 1x1 element in the viewport so Chrome advances GIF frames
+        const wrapper = document.createElement('div');
+        wrapper.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;overflow:hidden;pointer-events:none;z-index:-1;';
+        const img = document.createElement('img');
+        img._src = src; img.alt = ''; img.style.maxWidth = 'none'; img.src = src;
+        wrapper.appendChild(img);
+        document.body.appendChild(wrapper);
+        this._liveGifCache.set(cacheKey, { img, wrapper, _src: src });
         return img;
     }
 
@@ -6610,6 +6760,23 @@ class LevelEditor {
                 return;
             }
             let cached = this._objImgCache.get(imgName);
+            if (!this._playMode && imgName.toLowerCase().endsWith('.gif')) {
+                if (!cached || cached._src !== src) {
+                    const placeholder = new Image(); placeholder._src = src;
+                    this._objImgCache.set(imgName, placeholder);
+                    const tmpImg = new Image();
+                    tmpImg.onload = () => {
+                        const c = document.createElement('canvas');
+                        c.width = tmpImg.naturalWidth; c.height = tmpImg.naturalHeight;
+                        c.getContext('2d').drawImage(tmpImg, 0, 0);
+                        const staticImg = new Image(); staticImg._src = src;
+                        staticImg.onload = () => { this._objImgCache.set(imgName, staticImg); this.requestRender(); };
+                        staticImg.src = c.toDataURL('image/png');
+                    };
+                    tmpImg.src = src;
+                    cached = placeholder;
+                }
+            }
             if (src.toLowerCase().endsWith('.mng') && !cached?._mngDone) {
                 if (!cached) { cached = new Image(); cached._src = src; this._objImgCache.set(imgName, cached); }
                 if (!cached._mngFetching) {
@@ -6625,7 +6792,26 @@ class LevelEditor {
             }
             const _ip = obj._imgpart;
             if (this._playMode && imgName.toLowerCase().endsWith('.gif')) {
-                cached = this._getLiveGifImage(`npc:${imgName}`, src);
+                if (!this._gifAnimCache) this._gifAnimCache = new Map();
+                if (!this._gifAnimCache.has(imgName)) {
+                    const placeholder = document.createElement('canvas'); placeholder.width = 1; placeholder.height = 1;
+                    this._gifAnimCache.set(imgName, placeholder);
+                    fetch(src).then(r => r.arrayBuffer()).then(buf => { const c = _gifPlay(buf); if (c) { this._gifAnimCache.set(imgName, c); obj._imgW = c.width; obj._imgH = c.height; this.requestRender(); } }).catch(() => {});
+                }
+                const gc = this._gifAnimCache.get(imgName);
+                if (gc.width > 1) {
+                    obj._imgW = _ip ? _ip.w : gc.width; obj._imgH = _ip ? _ip.h : gc.height;
+                    const _sx = obj._stretchx ?? 1, _sy = obj._stretchy ?? 1;
+                    if (_sx < 0 || _sy < 0) {
+                        this.ctx.save();
+                        this.ctx.translate(_ox + (_sx < 0 ? gc.width : 0), _oy + (_sy < 0 ? gc.height : 0));
+                        this.ctx.scale(_sx < 0 ? -1 : 1, _sy < 0 ? -1 : 1);
+                        this.ctx.drawImage(gc, _ip ? _ip.x : 0, _ip ? _ip.y : 0, obj._imgW, obj._imgH, 0, 0, obj._imgW, obj._imgH);
+                        this.ctx.restore();
+                    } else { this.ctx.drawImage(gc, _ip ? _ip.x : 0, _ip ? _ip.y : 0, obj._imgW, obj._imgH, _ox, _oy, obj._imgW, obj._imgH); }
+                    return;
+                }
+                return;
             }
             const _drawImg = (img, sx, sy, sw, sh, dx, dy) => {
                 const _sx = obj._stretchx ?? 1, _sy = obj._stretchy ?? 1;
