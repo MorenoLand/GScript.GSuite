@@ -8319,9 +8319,6 @@ async function initGaniEditorStartup() {
         if (scheme === "default") {
             const oldStyle = $("colorSchemeStyle");
             if (oldStyle) oldStyle.remove();
-            const customTag = $("customUserCSS");
-            if (customTag) customTag.remove();
-            localStorage.removeItem("gsuite_customCSS");
             document.body.style.background = "";
             document.body.style.color = "";
             const _tb = $('tauriBar'); if (_tb) { _tb.style.background = ''; _tb.style.borderColor = ''; }
@@ -8807,6 +8804,11 @@ async function initGaniEditorStartup() {
             item.onclick = (e) => {
                 e.stopPropagation();
                 const scheme = item.getAttribute("data-scheme");
+                const customTag = $("gsuiteCustomUserCSS");
+                if (customTag) customTag.remove();
+                const legacyCustomTag = $("customUserCSS");
+                if (legacyCustomTag) legacyCustomTag.remove();
+                localStorage.removeItem("gsuite_customCSS");
                 applyColorScheme(scheme);
                 const schemes = {
                     "fusion-light": { hover: "#e8e8e8" },
@@ -8866,6 +8868,14 @@ async function initGaniEditorStartup() {
     })();
     function openCustomCSSDialog() {
         const fontFamily = getFontFamily(localStorage.getItem("editorFont") || "chevyray");
+        window.openSharedCustomCSSDialog({
+            styleTagId: "gsuiteCustomUserCSS",
+            downloadName: "custom-theme.css",
+            fontFamily,
+            applyCurrentTheme: () => applyColorScheme(localStorage.getItem("editorColorScheme") || "default"),
+            afterApply: () => requestAnimationFrame(syncCanvasBgFromCSS)
+        });
+        return;
         const current = ($("customUserCSS") || {}).textContent || "";
         const overlay = document.createElement("div");
         overlay.className = "dialog-overlay";
@@ -8914,8 +8924,8 @@ async function initGaniEditorStartup() {
                 requestAnimationFrame(syncCanvasBgFromCSS);
                 return;
             }
-            let tag = $("customUserCSS");
-            if (!tag) { tag = document.createElement("style"); tag.id = "customUserCSS"; document.head.appendChild(tag); }
+            let tag = $("gsuiteCustomUserCSS");
+            if (!tag) { tag = document.createElement("style"); tag.id = "gsuiteCustomUserCSS"; document.head.appendChild(tag); }
             tag.textContent = css;
             localStorage.setItem("gsuite_customCSS", css);
             requestAnimationFrame(syncCanvasBgFromCSS);

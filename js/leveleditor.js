@@ -830,9 +830,10 @@ class LevelEditor {
     resizeCanvas() {
         const container = this.canvas.parentElement;
         if (container) {
-            const rect = container.getBoundingClientRect();
-            this.canvas.width = rect.width;
-            this.canvas.height = rect.height;
+            const width = Math.max(1, Math.floor(container.clientWidth || container.getBoundingClientRect().width || 1));
+            const height = Math.max(1, Math.floor(container.clientHeight || container.getBoundingClientRect().height || 1));
+            this.canvas.width = width;
+            this.canvas.height = height;
         }
         if (this.level) {
             const lw = this.level.width * (this.level.tileWidth || 16) * this.zoom;
@@ -2839,7 +2840,7 @@ class LevelEditor {
 
     drawDraggedTile() {
         if (!this.level.tilesetImage) return;
-        const rect = this.canvas.getBoundingClientRect();
+        const { rect, scaleX, scaleY } = this._canvasRect();
         const tileWidth = this.level.tileWidth || 16;
         const tileHeight = this.level.tileHeight || 16;
         this.ctx.save();
@@ -2852,9 +2853,9 @@ class LevelEditor {
             const tilesPerRow = Math.floor(this.level.tilesetImage.width / tileWidth);
             const selWidth = this.selectedTilesetTiles[0].length;
             const selHeight = this.selectedTilesetTiles.length;
-            const mouseX = (this.isDraggingTileSelection ? this.tileSelectionDragX : this.dragMouseX) - rect.left;
-            const mouseY = (this.isDraggingTileSelection ? this.tileSelectionDragY : this.dragMouseY) - rect.top;
-            if (mouseX < 0 || mouseX > rect.width || mouseY < 0 || mouseY > rect.height) { this.ctx.restore(); return; }
+            const mouseX = ((this.isDraggingTileSelection ? this.tileSelectionDragX : this.dragMouseX) - rect.left) * scaleX;
+            const mouseY = ((this.isDraggingTileSelection ? this.tileSelectionDragY : this.dragMouseY) - rect.top) * scaleY;
+            if (mouseX < 0 || mouseX > this.canvas.width || mouseY < 0 || mouseY > this.canvas.height) { this.ctx.restore(); return; }
             const worldX = (mouseX - snapPanX) / this.zoom;
             const worldY = (mouseY - snapPanY) / this.zoom;
             const tileDrawX = Math.floor(worldX / tileWidth) * tileWidth;
@@ -2881,8 +2882,8 @@ class LevelEditor {
             const tilesPerRow = Math.floor(this.level.tilesetImage.width / tileWidth);
             const tileX = (this.draggedTileIndex % tilesPerRow) * tileWidth;
             const tileY = Math.floor(this.draggedTileIndex / tilesPerRow) * tileHeight;
-            const drawX = this.dragMouseX - rect.left - (tileWidth * this.zoom) / 2;
-            const drawY = this.dragMouseY - rect.top - (tileHeight * this.zoom) / 2;
+            const drawX = ((this.dragMouseX - rect.left) * scaleX) - (tileWidth * this.zoom) / 2;
+            const drawY = ((this.dragMouseY - rect.top) * scaleY) - (tileHeight * this.zoom) / 2;
             this.ctx.drawImage(
                 this.level.tilesetImage,
                 tileX, tileY, tileWidth, tileHeight,
@@ -4325,20 +4326,58 @@ class LevelEditor {
         if (!this._editorSettings) { try { this._editorSettings = JSON.parse(localStorage.getItem('graal_editorSettings') || 'null'); } catch(e) {} }
         if (!this._editorSettings) this._editorSettings = {};
         const d = this._editorSettings;
-        return { nickFontSize: d.nickFontSize ?? 20, chatFontSize: d.chatFontSize ?? 20, uiFont: d.uiFont ?? 'chevyray', uiFontSize: d.uiFontSize ?? 12, uiFontStyle: d.uiFontStyle ?? 'normal', uiScale: d.uiScale ?? 1, voidColor: d.voidColor ?? '#000000' };
+        return {
+            nickFontSize: d.nickFontSize ?? 20,
+            chatFontSize: d.chatFontSize ?? 20,
+            uiFont: d.uiFont ?? localStorage.getItem('editorFont') ?? 'chevyray',
+            uiFontSize: d.uiFontSize ?? (parseInt(localStorage.getItem('editorFontSize') || '12', 10) || 12),
+            uiFontStyle: d.uiFontStyle ?? localStorage.getItem('editorFontStyle') ?? 'normal',
+            uiScale: d.uiScale ?? 1,
+            voidColor: d.voidColor ?? '#000000'
+        };
     }
-    _saveSettings(s) { this._editorSettings = s; localStorage.setItem('graal_editorSettings', JSON.stringify(s)); const bi = this.$('bgColorInput'); if (bi && s.voidColor) bi.value = s.voidColor; }
+    _saveSettings(s) {
+        this._editorSettings = s;
+        localStorage.setItem('graal_editorSettings', JSON.stringify(s));
+        localStorage.setItem('editorFont', s.uiFont ?? 'chevyray');
+        localStorage.setItem('editorFontSize', String(s.uiFontSize ?? 12));
+        localStorage.setItem('editorFontStyle', s.uiFontStyle ?? 'normal');
+        const bi = this.$('bgColorInput');
+        if (bi && s.voidColor) bi.value = s.voidColor;
+    }
     _applyUISettings(s) {
-        const _fonts = { chevyray:'"chevyray",monospace', chevyrayOeuf:'"chevyrayOeuf",monospace', Silkscreen:'"Silkscreen",monospace', PressStart2P:'"PressStart2P",monospace', monospace:'monospace' };
-        const ff = _fonts[s.uiFont] || '"chevyray",monospace';
+        const _fonts = {
+            chevyray:'"chevyray",monospace',
+            chevyrayOeuf:'"chevyrayOeuf",monospace',
+            Silkscreen:'"Silkscreen",monospace',
+            PressStart2P:'"PressStart2P",monospace',
+            'MesloLGS NF':'"MesloLGS NF",monospace',
+            'Tempus Sans ITC':'"Tempus Sans ITC",sans-serif',
+            monospace:'monospace'
+        };
+        const ff = _fonts[s.uiFont] || (s.uiFont?.includes(' ') ? `"${s.uiFont}",sans-serif` : `"${s.uiFont || 'chevyray'}",sans-serif`);
         const fw = (s.uiFontStyle||'normal').includes('bold') ? 'bold' : 'normal';
         const fi = (s.uiFontStyle||'normal').includes('italic') ? 'italic' : 'normal';
         const sz = (s.uiFontSize||12) + 'px';
         let tag = this.$('_lvUIStyle');
         if (!tag) { tag = document.createElement('style'); tag.id = '_lvUIStyle'; document.head.appendChild(tag); }
-        tag.textContent = `#editorContainer button,#editorContainer .left-tab,#editorContainer select,#editorContainer label,#editorContainer .combo-label,#editorContainer .panel-section-title{font-family:${ff}!important;font-size:${sz}!important;font-weight:${fw}!important;font-style:${fi}!important;}`;
+        tag.textContent = `
+            body, button, input, select, textarea, label, span, .tab, .custom-dropdown-button, .custom-dropdown-item,
+            #editorContainer button, #editorContainer .left-tab, #editorContainer select, #editorContainer label,
+            #editorContainer .combo-label, #editorContainer .panel-section-title, #tauriBar .tb-title span,
+            #tauriBar button, .dialog-titlebar span {
+                font-family:${ff} !important;
+                font-size:${sz} !important;
+                font-weight:${fw} !important;
+                font-style:${fi} !important;
+            }
+            #tauriBar .tb-title span {
+                line-height:1 !important;
+            }
+        `;
         const ec = this.$('editorContainer');
-        if (ec) ec.style.zoom = String(s.uiScale ?? 1);
+        if (ec) ec.style.zoom = String(Math.max(0.5, parseFloat(s.uiScale ?? 1) || 1));
+        if (this.canvas) requestAnimationFrame(() => this.resizeCanvas());
     }
     _getKeybinds() {
         if (!this._keybinds) { this._keybinds = { ..._DEFAULT_KB }; try { const k = localStorage.getItem('graal_editorKeybinds'); if (k) Object.assign(this._keybinds, JSON.parse(k)); } catch(e) {} }
@@ -4376,8 +4415,13 @@ class LevelEditor {
         box.classList.add('ed-dialog-box');
         const _btnStyle = (a) => `padding:6px 16px;cursor:pointer;background:${a?'#252525':'transparent'};color:${a?'#4a9eff':'#888'};border:none;border-bottom:2px solid ${a?'#4a9eff':'transparent'};font-family:chevyray,monospace;font-size:12px;`;
         const _numStyle = 'width:55px;background:#1a1a1a;color:#e0e0e0;border:1px solid #555;padding:3px 6px;font-family:chevyray,monospace;font-size:12px;text-align:center;';
+        const _selStyle = 'flex:1;background:#1a1a1a;color:#e0e0e0;border:1px solid #555;padding:3px 6px;font-family:chevyray,monospace;font-size:12px;';
         const _lblStyle = 'min-width:130px;flex-shrink:0;font-size:13px;color:#aaa;';
         const sliderRow = (lbl,id,val,mn,mx) => `<label style="display:flex;align-items:center;gap:8px;"><span style="${_lblStyle}">${lbl}</span><input type="range" class="settings-slider" id="${id}_r" min="${mn}" max="${mx}" value="${val}" style="flex:1;"><input type="number" id="${id}_n" value="${val}" min="${mn}" max="${mx}" style="${_numStyle}"></label>`;
+        const _fontOptions = ["chevyray", "chevyrayOeuf", "MesloLGS NF", "PressStart2P", "Silkscreen", "Arial", "Comic Sans MS", "Courier New", "Georgia", "Helvetica", "Impact", "monospace", "Tahoma", "Tempus Sans ITC", "Times New Roman", "Trebuchet MS", "Verdana"];
+        const _fontLabel = (font) => font === 'PressStart2P' ? 'Press Start 2P' : font === 'monospace' ? 'Monospace' : font;
+        const _fontOptionMarkup = _fontOptions.map(font => `<option value="${font}">${_fontLabel(font)}</option>`).join('');
+        const _fontSizeOptions = [8, 10, 12, 14, 16, 18, 20, 22, 24].map(size => `<option value="${size}">${size}px</option>`).join('');
         const _kbActions = [
             { section: 'Editor' },
             { key:'undo', label:'Undo' }, { key:'redo', label:'Redo' }, { key:'save', label:'Save' },
@@ -4408,9 +4452,9 @@ class LevelEditor {
             </div>
             <div id="_stGeneral" style="padding:14px 16px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;">
                 <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">UI</div>
-                <label style="display:flex;align-items:center;gap:8px;"><span style="${_lblStyle}">Font</span><select id="_stUIFont" style="flex:1;background:#1a1a1a;color:#e0e0e0;border:1px solid #555;padding:3px 6px;font-family:chevyray,monospace;font-size:12px;"><option value="chevyray">Chevyray</option><option value="chevyrayOeuf">Chevyray Oeuf</option><option value="Silkscreen">Silkscreen</option><option value="PressStart2P">Press Start 2P</option><option value="monospace">Monospace</option></select></label>
-                <label style="display:flex;align-items:center;gap:8px;"><span style="${_lblStyle}">Font Style</span><select id="_stUIFontStyle" style="flex:1;background:#1a1a1a;color:#e0e0e0;border:1px solid #555;padding:3px 6px;font-family:chevyray,monospace;font-size:12px;"><option value="normal">Normal</option><option value="bold">Bold</option><option value="italic">Italic</option><option value="bold italic">Bold Italic</option></select></label>
-                ${sliderRow('Font Size','_stUIFontSize',s.uiFontSize??12,8,24)}
+                <label style="display:flex;align-items:center;gap:8px;"><span style="${_lblStyle}">Font</span><select id="_stUIFont" style="${_selStyle}">${_fontOptionMarkup}</select></label>
+                <label style="display:flex;align-items:center;gap:8px;"><span style="${_lblStyle}">Font Style</span><select id="_stUIFontStyle" style="${_selStyle}"><option value="normal">Normal</option><option value="bold">Bold</option><option value="italic">Italic</option><option value="bold italic">Bold Italic</option></select></label>
+                <label style="display:flex;align-items:center;gap:8px;"><span style="${_lblStyle}">Font Size</span><select id="_stUIFontSize" style="${_selStyle}">${_fontSizeOptions}</select></label>
                 ${sliderRow('UI Scale %','_stUIScale',Math.round((s.uiScale??1)*100),50,200)}
                 <div style="border-top:1px solid #1a1a1a;padding-top:10px;font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">Editor</div>
                 <label style="display:flex;align-items:center;gap:8px;"><span style="${_lblStyle}">Void Color</span><input type="color" id="_stVoidColor" value="${s.voidColor ?? '#000000'}" style="width:60px;height:35px;border:1px solid #555;cursor:pointer;"></label>
@@ -4424,21 +4468,53 @@ class LevelEditor {
                 ${kbRows}
             </div>
             <div style="padding:8px 12px;background:#353535;border-top:1px solid #1a1a1a;display:flex;gap:8px;justify-content:flex-end;flex-shrink:0;">
+                <button id="_stDefaults" style="padding:4px 12px;cursor:pointer;background:#333;color:#e0e0e0;border:1px solid #555;font-family:chevyray,monospace;font-size:13px;margin-right:auto;">Defaults</button>
                 <button id="_stOk" style="padding:4px 16px;cursor:pointer;background:#4472C4;color:#fff;border:1px solid #3060a0;font-family:chevyray,monospace;font-size:13px;">OK</button>
                 <button id="_stCancel" style="padding:4px 12px;cursor:pointer;background:#444;color:#e0e0e0;border:1px solid #555;font-family:chevyray,monospace;font-size:13px;">Cancel</button>
             </div>`;
         document.body.appendChild(box);
         box.querySelector('#_stUIFont').value = s.uiFont ?? 'chevyray';
+        box.querySelector('#_stUIFontSize').value = String(s.uiFontSize ?? 12);
         box.querySelector('#_stUIFontStyle').value = s.uiFontStyle ?? 'normal';
-        const readSettings = () => ({ nickFontSize: parseInt(box.querySelector('#_stNick_n').value)||20, chatFontSize: parseInt(box.querySelector('#_stChat_n').value)||20, uiFont: box.querySelector('#_stUIFont').value, uiFontSize: parseInt(box.querySelector('#_stUIFontSize_n').value)||12, uiFontStyle: box.querySelector('#_stUIFontStyle').value, uiScale: Math.round(parseInt(box.querySelector('#_stUIScale_n').value)||100) / 100, voidColor: box.querySelector('#_stVoidColor').value || '#000000' });
+        const readSettings = () => ({ nickFontSize: parseInt(box.querySelector('#_stNick_n').value)||20, chatFontSize: parseInt(box.querySelector('#_stChat_n').value)||20, uiFont: box.querySelector('#_stUIFont').value, uiFontSize: parseInt(box.querySelector('#_stUIFontSize').value)||12, uiFontStyle: box.querySelector('#_stUIFontStyle').value, uiScale: Math.round(parseInt(box.querySelector('#_stUIScale_n').value)||100) / 100, voidColor: box.querySelector('#_stVoidColor').value || '#000000' });
         const syncSlider = (id) => {
             const r = box.querySelector(`#${id}_r`), n = box.querySelector(`#${id}_n`);
             r.addEventListener('input', () => { n.value = r.value; const ns = readSettings(); this._saveSettings(ns); this._applyUISettings(ns); this.requestRender(); });
             n.addEventListener('input', () => { r.value = n.value; const ns = readSettings(); this._saveSettings(ns); this._applyUISettings(ns); this.requestRender(); });
         };
-        syncSlider('_stNick'); syncSlider('_stChat'); syncSlider('_stUIFontSize'); syncSlider('_stUIScale');
-        ['#_stUIFont','#_stUIFontStyle'].forEach(sel => box.querySelector(sel).addEventListener('change', () => { const ns = readSettings(); this._saveSettings(ns); this._applyUISettings(ns); }));
+        syncSlider('_stNick'); syncSlider('_stChat'); syncSlider('_stUIScale');
+        ['#_stUIFont','#_stUIFontSize','#_stUIFontStyle'].forEach(sel => box.querySelector(sel).addEventListener('change', () => { const ns = readSettings(); this._saveSettings(ns); this._applyUISettings(ns); }));
         box.querySelector('#_stVoidColor').addEventListener('input', () => { const ns = readSettings(); this._saveSettings(ns); this.requestRender(); });
+        box.querySelector('#_stDefaults').onclick = () => {
+            const defaults = {
+                nickFontSize: 20,
+                chatFontSize: 20,
+                uiFont: 'chevyray',
+                uiFontSize: 12,
+                uiFontStyle: 'normal',
+                uiScale: 1,
+                voidColor: '#000000'
+            };
+            box.querySelector('#_stNick_r').value = defaults.nickFontSize;
+            box.querySelector('#_stNick_n').value = defaults.nickFontSize;
+            box.querySelector('#_stChat_r').value = defaults.chatFontSize;
+            box.querySelector('#_stChat_n').value = defaults.chatFontSize;
+            box.querySelector('#_stUIFont').value = defaults.uiFont;
+            box.querySelector('#_stUIFontSize').value = String(defaults.uiFontSize);
+            box.querySelector('#_stUIFontStyle').value = defaults.uiFontStyle;
+            box.querySelector('#_stUIScale_r').value = 100;
+            box.querySelector('#_stUIScale_n').value = 100;
+            box.querySelector('#_stVoidColor').value = defaults.voidColor;
+            this._saveSettings(defaults);
+            this._applyUISettings(defaults);
+            box.querySelectorAll('select').forEach(select => {
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+            box.querySelectorAll('input[type="range"], input[type="number"], input[type="color"]').forEach(input => {
+                input.dispatchEvent(new Event(input.type === 'color' ? 'input' : 'change', { bubbles: true }));
+            });
+            this.requestRender();
+        };
         if (_isTauri) { const regBtn = box.querySelector('#_stRegAssoc'); if (regBtn) regBtn.onclick = async () => { regBtn.disabled = true; const st = box.querySelector('#_stRegAssocStatus'); st.style.color = '#aaa'; st.textContent = 'Registering...'; try { const msg = await _tauri.core.invoke('register_file_associations'); st.style.color = '#6c6'; st.textContent = msg; } catch(e) { st.style.color = '#f66'; st.textContent = String(e); } regBtn.disabled = false; }; }
         box.querySelectorAll('._stTab').forEach(btn => btn.addEventListener('click', () => {
             box.querySelectorAll('._stTab').forEach((b,_i,arr) => { const a = b===btn; b.style.cssText = _btnStyle(a); });
@@ -7298,7 +7374,7 @@ class LevelEditor {
         const dialog = document.createElement('div');
         dialog.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:transparent;z-index:10000;display:flex;justify-content:center;align-items:center;';
         const box = document.createElement('div');
-        box.style.cssText = 'width:680px;max-width:95vw;height:55vh;display:flex;flex-direction:column;background:#2b2b2b;border:2px solid #1a1a1a;'; box.classList.add('ed-dialog-box');
+        box.style.cssText = 'width:680px;max-width:95vw;height:55vh;min-width:420px;min-height:280px;display:flex;flex-direction:column;background:#2b2b2b;border:2px solid #1a1a1a;resize:both;overflow:hidden;'; box.classList.add('ed-dialog-box');
         box.innerHTML = `
             <div id="npcTitlebar" style="padding:8px 12px;background:#353535;display:flex;align-items:center;gap:8px;flex-shrink:0;user-select:none;">
                 <img src="images/npc.png" style="width:16px;height:16px;image-rendering:pixelated;flex-shrink:0;">
@@ -7990,11 +8066,6 @@ class LevelEditor {
     applyColorScheme(scheme) {
         const oldStyle = this.$('colorSchemeStyle');
         if (oldStyle) oldStyle.remove();
-        if (scheme === 'default') {
-            const tag = this.$('levelEditorCustomUserCSS');
-            if (tag) tag.remove();
-            localStorage.removeItem('gsuite_customCSS');
-        }
         const schemes = {
             'fusion-light': { bg:'#f5f5f5', panel:'#ffffff', border:'#d0d0d0', text:'#1a1a1a', hover:'#e8e8e8', button:'#ffffff', buttonText:'#1a1a1a', buttonHover:'#f0f0f0', tabActive:'#ffffff', inputBg:'#ffffff' },
             'fusion-dark':  { bg:'#1e1e1e', panel:'#2d2d2d', border:'#0f0f0f', text:'#e8e8e8', hover:'#3d3d3d' },
@@ -8281,7 +8352,16 @@ class LevelEditor {
         if (!btn || !drop) return;
         btn.onclick = (e) => { e.stopPropagation(); drop.style.display = drop.style.display === 'none' ? 'block' : 'none'; };
         drop.querySelectorAll('.color-scheme-item').forEach(item => {
-            item.onclick = (e) => { e.stopPropagation(); this.applyColorScheme(item.dataset.scheme); drop.style.display = 'none'; };
+            item.onclick = (e) => {
+                e.stopPropagation();
+                const tag = this.$('gsuiteCustomUserCSS');
+                if (tag) tag.remove();
+                const legacyTag = this.$('levelEditorCustomUserCSS');
+                if (legacyTag) legacyTag.remove();
+                localStorage.removeItem('gsuite_customCSS');
+                this.applyColorScheme(item.dataset.scheme);
+                drop.style.display = 'none';
+            };
         });
         const btnCustomCSS = this.$('btnCustomCSS');
         if (btnCustomCSS) {
@@ -8297,12 +8377,19 @@ class LevelEditor {
     initCustomCSS() {
         const saved = localStorage.getItem('gsuite_customCSS');
         if (!saved) return;
-        let tag = this.$('levelEditorCustomUserCSS');
-        if (!tag) { tag = document.createElement('style'); tag.id = 'levelEditorCustomUserCSS'; document.head.appendChild(tag); }
+        let tag = this.$('gsuiteCustomUserCSS');
+        if (!tag) { tag = document.createElement('style'); tag.id = 'gsuiteCustomUserCSS'; document.head.appendChild(tag); }
         tag.textContent = saved;
     }
 
     openCustomCSSDialog() {
+        window.openSharedCustomCSSDialog({
+            styleTagId: 'gsuiteCustomUserCSS',
+            downloadName: 'level-custom-theme.css',
+            fontFamily: "'chevyray', monospace",
+            applyCurrentTheme: () => this.applyColorScheme(localStorage.getItem('editorColorScheme') || 'default')
+        });
+        return;
         const current = (this.$('levelEditorCustomUserCSS') || {}).textContent || '';
         const overlay = document.createElement('div');
         overlay.className = 'dialog-overlay';

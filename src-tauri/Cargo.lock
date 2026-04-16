@@ -4,7 +4,7 @@ version = 3
 
 [[package]]
 name = "GSuite"
-version = "0.1.47"
+version = "0.1.49"
 dependencies = [
  "log",
  "serde",

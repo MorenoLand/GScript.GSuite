@@ -898,6 +898,143 @@
                     <div class="color-scheme-item" data-scheme="dracula">Dracula</div>
                     <div style="height:1px;background:#404040;margin:4px 0;"></div>`;
     const _updateSVG = `<svg width="12" height="12" viewBox="0 0 512 512" fill="currentColor"><path d="M105.1 202.6c7.7-21.8 20.2-42.3 37.8-59.8c62.5-62.5 163.8-62.5 226.3 0L386.3 160H352c-17.7 0-32 14.3-32 32s14.3 32 32 32H463.5c0 0 0 0 0 0h.4c17.7 0 32-14.3 32-32V80c0-17.7-14.3-32-32-32s-32 14.3-32 32v35.2L414.4 97.6c-87.5-87.5-229.3-87.5-316.8 0C73.2 122 55.6 150.7 44.8 181.4c-5.9 16.7 2.9 34.9 19.5 40.8s34.9-2.9 40.8-19.5zM39 289.3c-5 1.5-9.8 4.2-13.7 8.2c-4 4-6.7 8.8-8.1 14c-.3 1.2-.6 2.5-.8 3.8c-.3 1.7-.4 3.4-.4 5.1V432c0 17.7 14.3 32 32 32s32-14.3 32-32V396.9l17.6 17.5 0 0c87.5 87.4 229.3 87.4 316.7 0c24.4-24.4 42.1-53.1 52.9-83.7c5.9-16.7-2.9-34.9-19.5-40.8s-34.9 2.9-40.8 19.5c-7.7 21.8-20.2 42.3-37.8 59.8c-62.5 62.5-163.8 62.5-226.3 0l-.1-.1L125.6 352H160c17.7 0 32-14.3 32-32s-14.3-32-32-32H48.4c-1.6 0-3.2 .1-4.8 .3s-3.1 .5-4.6 1z"/></svg>`;
+    window.openSharedCustomCSSDialog = function(options = {}) {
+        const { styleTagId = 'customUserCSS', downloadName = 'custom-theme.css', fontFamily = "'chevyray', monospace", applyCurrentTheme = null, afterApply = null } = options;
+        const current = (document.getElementById(styleTagId) || {}).textContent || '';
+        const overlay = document.createElement('div');
+        overlay.className = 'dialog-overlay';
+        overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;display:flex;justify-content:center;align-items:center;';
+        overlay.innerHTML = `
+            <div class="dialog-content" style="background:#2b2b2b;border:2px solid #1a1a1a;width:660px;max-width:92vw;height:80vh;display:flex;flex-direction:column;box-shadow:0 4px 16px rgba(0,0,0,0.9);">
+                <div class="dialog-titlebar" style="background:#1e1e1e;border-bottom:2px solid #0a0a0a;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+                    <span style="display:flex;align-items:center;gap:8px;"><i class="fas fa-palette" style="flex-shrink:0;display:block;"></i><span style="font-family:${fontFamily};font-size:13px;color:#c0c0c0;user-select:none;line-height:16px;">Custom CSS</span></span>
+                    <span style="font-family:${fontFamily};font-size:11px;color:#666;user-select:none;">injected after all themes - overrides anything</span>
+                </div>
+                <div data-css-editor-container style="flex:1;min-height:0;position:relative;overflow:hidden;"></div>
+                <div style="padding:10px 14px;display:flex;gap:8px;align-items:center;border-top:1px solid #0a0a0a;flex-shrink:0;">
+                    <button data-css-apply style="background:#1a6b1a;color:#fff;border:1px solid #0a0a0a;border-top:1px solid #2a8a2a;padding:7px 14px;cursor:pointer;font-family:${fontFamily};font-size:12px;">Apply</button>
+                    <button data-css-import style="background:#1a1a1a;color:#e0e0e0;border:1px solid #0a0a0a;border-top:1px solid #404040;padding:7px 14px;cursor:pointer;font-family:${fontFamily};font-size:12px;">Import</button>
+                    <button data-css-export style="background:#1a1a1a;color:#e0e0e0;border:1px solid #0a0a0a;border-top:1px solid #404040;padding:7px 14px;cursor:pointer;font-family:${fontFamily};font-size:12px;">Export</button>
+                    <button data-css-example type="button" style="background:#1a1a1a;color:#4a9eff;border:1px solid #0a0a0a;border-top:1px solid #404040;padding:7px 14px;cursor:pointer;font-family:${fontFamily};font-size:12px;">Example</button>
+                    <div style="flex:1;"></div>
+                    <button data-css-clear style="background:#6b1a1a;color:#fff;border:1px solid #0a0a0a;border-top:1px solid #8a2a2a;padding:7px 14px;cursor:pointer;font-family:${fontFamily};font-size:12px;">Clear</button>
+                    <button data-css-close style="background:#1a1a1a;color:#e0e0e0;border:1px solid #0a0a0a;border-top:1px solid #404040;padding:7px 14px;cursor:pointer;font-family:${fontFamily};font-size:12px;">Close</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        const container = overlay.querySelector('[data-css-editor-container]');
+        let ed = null, fb = null;
+        const getValue = () => ed ? ed.getValue() : (fb ? fb.value : '');
+        const setValue = v => { if (ed) ed.setValue(v); else if (fb) fb.value = v; };
+        const runApplyTheme = () => { if (typeof applyCurrentTheme === 'function') applyCurrentTheme(); };
+        const runAfterApply = () => { if (typeof afterApply === 'function') afterApply(); };
+        const closeDialog = () => { if (ed) ed.dispose(); if (overlay.parentNode) document.body.removeChild(overlay); };
+        const mkFallback = () => {
+            fb = document.createElement('textarea');
+            fb.spellcheck = false;
+            fb.value = current;
+            fb.style.cssText = 'width:100%;height:100%;background:#1a1a1a;color:#e0e0e0;border:none;padding:12px;font-family:monospace;font-size:12px;line-height:1.5;resize:none;outline:none;box-sizing:border-box;';
+            container.appendChild(fb);
+        };
+        if (window.monacoReady) {
+            window.monacoReady.then(mc => {
+                if (!mc) { mkFallback(); return; }
+                const monacoTheme = getComputedStyle(document.documentElement).getPropertyValue('--monaco-theme').trim() || 'graal-active';
+                ed = mc.editor.create(container, { value: current, language: 'css', theme: monacoTheme, minimap:{enabled:false}, scrollBeyondLastLine:false, fontSize:12, fontFamily:'monospace', automaticLayout:true });
+            });
+        } else {
+            mkFallback();
+        }
+        const applyCSS = () => {
+            const css = getValue();
+            if (!css.trim()) {
+                const tag = document.getElementById(styleTagId);
+                if (tag) tag.remove();
+                localStorage.removeItem('gsuite_customCSS');
+                runApplyTheme();
+                runAfterApply();
+                return;
+            }
+            let tag = document.getElementById(styleTagId);
+            if (!tag) { tag = document.createElement('style'); tag.id = styleTagId; document.head.appendChild(tag); }
+            tag.textContent = css;
+            localStorage.setItem('gsuite_customCSS', css);
+            runAfterApply();
+        };
+        overlay.querySelector('[data-css-apply]').onclick = applyCSS;
+        overlay.querySelector('[data-css-close]').onclick = closeDialog;
+        overlay.onclick = e => { if (e.target === overlay) closeDialog(); };
+        overlay.querySelector('[data-css-clear]').onclick = () => {
+            setValue('');
+            const tag = document.getElementById(styleTagId);
+            if (tag) tag.remove();
+            localStorage.removeItem('gsuite_customCSS');
+            runApplyTheme();
+            runAfterApply();
+        };
+        overlay.querySelector('[data-css-import]').onclick = () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.css,text/css';
+            input.onchange = e => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = ev => { setValue(ev.target.result); applyCSS(); };
+                reader.readAsText(file);
+            };
+            input.click();
+        };
+        overlay.querySelector('[data-css-export]').onclick = () => {
+            const blob = new Blob([getValue()], {type:'text/css'});
+            const a = Object.assign(document.createElement('a'), {href:URL.createObjectURL(blob), download:downloadName});
+            a.click();
+            URL.revokeObjectURL(a.href);
+        };
+        overlay.querySelector('[data-css-example]').onclick = async () => {
+            let exampleCSS = '';
+            try {
+                const res = await fetch('example-theme.css', { cache: 'no-store' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                exampleCSS = await res.text();
+            } catch (err) {
+                console.warn('[sharedCssExample fetch failed]', err);
+                alert('Could not load example-theme.css');
+                return;
+            }
+            const choice = document.createElement('div');
+            choice.className = 'dialog-overlay';
+            choice.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10001;display:flex;justify-content:center;align-items:center;';
+            choice.innerHTML = `
+                <div class="dialog-content" style="background:#2b2b2b;border:2px solid #1a1a1a;min-width:280px;max-width:90vw;padding:16px;display:flex;flex-direction:column;gap:10px;color:#e0e0e0;font-family:${fontFamily};font-size:12px;box-shadow:0 4px 16px rgba(0,0,0,0.9);">
+                    <div style="font-size:13px;color:#c0c0c0;">Example Theme</div>
+                    <div style="color:#999;line-height:1.4;">Open the bundled example into the editor, or save a copy to disk.</div>
+                    <div style="display:flex;gap:8px;justify-content:flex-end;">
+                        <button data-css-example-open style="background:#1a1a1a;color:#e0e0e0;border:1px solid #0a0a0a;border-top:1px solid #404040;padding:7px 12px;cursor:pointer;font-family:${fontFamily};font-size:12px;">Open</button>
+                        <button data-css-example-save style="background:#1a1a1a;color:#4a9eff;border:1px solid #0a0a0a;border-top:1px solid #404040;padding:7px 12px;cursor:pointer;font-family:${fontFamily};font-size:12px;">Save As</button>
+                        <button data-css-example-cancel style="background:#1a1a1a;color:#e0e0e0;border:1px solid #0a0a0a;border-top:1px solid #404040;padding:7px 12px;cursor:pointer;font-family:${fontFamily};font-size:12px;">Cancel</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(choice);
+            const closeChoice = () => { if (choice.parentNode) document.body.removeChild(choice); };
+            choice.onclick = e => { if (e.target === choice) closeChoice(); };
+            choice.querySelector('[data-css-example-cancel]').onclick = closeChoice;
+            choice.querySelector('[data-css-example-open]').onclick = () => { setValue(exampleCSS); closeChoice(); };
+            choice.querySelector('[data-css-example-save]').onclick = async () => {
+                const _tauri = window.__TAURI__;
+                if (_tauri?.dialog?.save && _tauri?.fs?.writeTextFile) {
+                    const path = await _tauri.dialog.save({ defaultPath: 'example-theme.css', title: 'Save Example CSS', filters: [{ name: 'CSS', extensions: ['css'] }] }).catch(() => null);
+                    if (path) await _tauri.fs.writeTextFile(path, exampleCSS).catch(err => console.warn('[sharedCssExample save failed]', err));
+                } else {
+                    const blob = new Blob([exampleCSS], { type: 'text/css' });
+                    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'example-theme.css' });
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                }
+                closeChoice();
+            };
+        };
+    };
     function makeToolbarHTML(p) { return `
         <div class="toolbar">
             <button title="New — create a blank file" id="${p}btnNew"><i class="fas fa-file"></i></button>

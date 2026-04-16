@@ -1,5 +1,18 @@
 [
   {
+    "version": "0.1.49",
+    "date": "2026-04-16",
+    "tag": "GSuite",
+    "changes": [
+      "Gani editor and level editor now share the same Custom CSS dialog flow, including the working Example open/save behavior",
+      "Custom CSS now persists correctly across app restart instead of being wiped when the saved color scheme reapplies on startup",
+      "Choosing a built-in color scheme now clears the saved custom CSS cleanly instead of leaving old overrides behind",
+      "Suite tabs now show a floating preview thumbnail while you drag them, similar to browser tab dragging",
+      "Level editor settings now use the full gani font list, share the same saved font choices, and use a font-size dropdown instead of a slider",
+      "Level editor NPC script editor can now be resized directly from the window corner"
+    ]
+  },
+  {
     "version": "0.1.48",
     "date": "2026-04-16",
     "tag": "GSuite",

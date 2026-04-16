@@ -16,6 +16,104 @@ const TabManager = {
         try { console.debug('[TabManager]', ...args); } catch (e) {}
     },
 
+    _getRootElementForTab(tab) {
+        if (!tab) return null;
+        const rootId = tab.type === 'gani'
+            ? 'ganiRoot'
+            : tab.type === 'beautify'
+                ? 'beautifyRoot'
+                : tab.type === 'setshape'
+                    ? 'setshapeRoot'
+                    : 'levelRoot';
+        const root = document.getElementById(rootId);
+        if (!root) return null;
+        return root.querySelector('.main-container') || root.firstElementChild || root;
+    },
+
+    _clonePreviewContent(source) {
+        const clone = source.cloneNode(true);
+        clone.querySelectorAll?.('[id]').forEach(el => el.removeAttribute('id'));
+        clone.querySelectorAll?.('input, textarea, select').forEach(el => {
+            el.setAttribute('disabled', 'disabled');
+            el.tabIndex = -1;
+        });
+        const srcCanvases = source.querySelectorAll('canvas');
+        const cloneCanvases = clone.querySelectorAll('canvas');
+        srcCanvases.forEach((srcCanvas, i) => {
+            const dstCanvas = cloneCanvases[i];
+            if (!dstCanvas) return;
+            if (!(srcCanvas.width > 0 && srcCanvas.height > 0)) {
+                dstCanvas.width = Math.max(0, srcCanvas.width || 0);
+                dstCanvas.height = Math.max(0, srcCanvas.height || 0);
+                dstCanvas.style.width = srcCanvas.style.width;
+                dstCanvas.style.height = srcCanvas.style.height;
+                return;
+            }
+            dstCanvas.width = srcCanvas.width;
+            dstCanvas.height = srcCanvas.height;
+            dstCanvas.style.width = srcCanvas.style.width;
+            dstCanvas.style.height = srcCanvas.style.height;
+            const ctx = dstCanvas.getContext('2d');
+            if (ctx) ctx.drawImage(srcCanvas, 0, 0);
+        });
+        return clone;
+    },
+
+    _captureCanvasSnapshots(node) {
+        return Array.from(node.querySelectorAll('canvas')).map(canvas => {
+            try {
+                return {
+                    width: canvas.width,
+                    height: canvas.height,
+                    styleWidth: canvas.style.width || '',
+                    styleHeight: canvas.style.height || '',
+                    dataUrl: canvas.width > 0 && canvas.height > 0 ? canvas.toDataURL('image/png') : ''
+                };
+            } catch (e) {
+                return null;
+            }
+        });
+    },
+
+    _rehydrateCanvasSnapshots(node, snapshots) {
+        if (!node || !Array.isArray(snapshots) || !snapshots.length) return;
+        const canvases = node.querySelectorAll('canvas');
+        canvases.forEach((canvas, i) => {
+            const snap = snapshots[i];
+            if (!snap || !snap.dataUrl) return;
+            if (!(snap.width > 0 && snap.height > 0)) return;
+            canvas.width = snap.width || canvas.width;
+            canvas.height = snap.height || canvas.height;
+            if (snap.styleWidth) canvas.style.width = snap.styleWidth;
+            if (snap.styleHeight) canvas.style.height = snap.styleHeight;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+            const img = new Image();
+            img.onload = () => ctx.drawImage(img, 0, 0);
+            img.src = snap.dataUrl;
+        });
+    },
+
+    _captureTabPreview(tab) {
+        const source = this._getRootElementForTab(tab);
+        if (!source) return;
+        const rect = source.getBoundingClientRect();
+        const width = Math.round(rect.width);
+        const height = Math.round(rect.height);
+        if (width <= 0 || height <= 0) return;
+        const previewNode = this._clonePreviewContent(source);
+        previewNode.style.width = `${width}px`;
+        previewNode.style.height = `${height}px`;
+        previewNode.style.minHeight = `${height}px`;
+        previewNode.style.maxHeight = `${height}px`;
+        previewNode.style.overflow = 'hidden';
+        previewNode.style.flex = '0 0 auto';
+        tab._previewNode = previewNode;
+        tab._previewWidth = width;
+        tab._previewHeight = height;
+        tab._previewCanvasSnapshots = this._captureCanvasSnapshots(previewNode);
+    },
+
     init() {
         this._barEl = document.getElementById('suiteTabs');
         if (!this._listEl) return false;
@@ -144,6 +242,7 @@ const TabManager = {
         if (!tab) { return; }
         const prev = this._tabs.find(t => t.id === this._activeTabId);
         if (prev) {
+            this._captureTabPreview(prev);
             if (prev.type === 'gani' && typeof window.deactivateGaniTab === 'function') window.deactivateGaniTab(prev);
             else if (prev.type === 'level' && window.levelEditor && typeof window.levelEditor.deactivateLevelTab === 'function') window.levelEditor.deactivateLevelTab(prev);
             else if (prev.type === 'beautify' && typeof window.deactivateBeautifyTab === 'function') window.deactivateBeautifyTab(prev);
@@ -170,6 +269,7 @@ const TabManager = {
         }
         this._updateHighlight();
         this._scrollTabIntoView(id);
+        requestAnimationFrame(() => this._captureTabPreview(tab));
         document.dispatchEvent(new CustomEvent('tabswitch', { detail: tab }));
     },
 
@@ -393,7 +493,7 @@ const TabManager = {
     },
 
     _setupDrag() {
-        let dragId = null, startX = 0, startY = 0, dragging = false, dragEl = null;
+        let dragId = null, startX = 0, startY = 0, dragging = false, dragEl = null, dragPreviewEl = null;
         const clearIndicators = () => {
             this._listEl?.querySelectorAll('.tab').forEach(t => t.classList.remove('drag-over-left', 'drag-over-right'));
         };
@@ -413,6 +513,78 @@ const TabManager = {
             dragEl.style.transform = '';
             dragEl.style.zIndex = '';
             dragEl.style.pointerEvents = '';
+        };
+        const removeDragPreview = () => {
+            if (!dragPreviewEl) return;
+            dragPreviewEl.remove();
+            dragPreviewEl = null;
+        };
+        const getPreviewSource = () => {
+            const tab = this._tabs.find(t => t.id === dragId);
+            if (!tab) return null;
+            if (tab.id === this._activeTabId) {
+                const source = this._getRootElementForTab(tab);
+                if (!source) return null;
+                const rect = source.getBoundingClientRect();
+                return {
+                    node: this._clonePreviewContent(source),
+                    width: Math.round(rect.width),
+                    height: Math.round(rect.height)
+                };
+            }
+            if (tab._previewNode && tab._previewWidth > 0 && tab._previewHeight > 0) {
+                const node = tab._previewNode.cloneNode(true);
+                this._rehydrateCanvasSnapshots(node, tab._previewCanvasSnapshots);
+                return {
+                    node,
+                    width: tab._previewWidth,
+                    height: tab._previewHeight
+                };
+            }
+            return null;
+        };
+        const ensureDragPreview = (x, y) => {
+            if (!dragEl || dragPreviewEl) return;
+            const header = dragEl.cloneNode(true);
+            header.classList.remove('active', 'dragging');
+            header.classList.add('tab-drag-preview-header');
+            const closeBtn = header.querySelector('.tab-close');
+            if (closeBtn) closeBtn.remove();
+            dragPreviewEl = document.createElement('div');
+            dragPreviewEl.className = 'tab-drag-preview';
+            dragPreviewEl.appendChild(header);
+            const previewSource = getPreviewSource();
+            if (previewSource) {
+                const contentClone = previewSource.node;
+                const width = previewSource.width;
+                const height = previewSource.height;
+                if (width > 0 && height > 0) {
+                    const maxWidth = 360;
+                    const maxHeight = 220;
+                    const scale = Math.min(maxWidth / width, maxHeight / height, 1);
+                    const viewport = document.createElement('div');
+                    viewport.className = 'tab-drag-preview-viewport';
+                    viewport.style.width = `${Math.max(1, Math.round(width * scale))}px`;
+                    viewport.style.height = `${Math.max(1, Math.round(height * scale))}px`;
+                    contentClone.classList.add('tab-drag-preview-content');
+                    contentClone.style.width = `${width}px`;
+                    contentClone.style.height = `${height}px`;
+                    contentClone.style.minHeight = `${height}px`;
+                    contentClone.style.maxHeight = `${height}px`;
+                    contentClone.style.overflow = 'hidden';
+                    contentClone.style.flex = '0 0 auto';
+                    contentClone.style.transform = `scale(${scale})`;
+                    viewport.appendChild(contentClone);
+                    dragPreviewEl.appendChild(viewport);
+                }
+            }
+            document.body.appendChild(dragPreviewEl);
+            updateDragPreviewPosition(x, y);
+        };
+        const updateDragPreviewPosition = (x, y) => {
+            if (!dragPreviewEl) return;
+            dragPreviewEl.style.left = `${x + 14}px`;
+            dragPreviewEl.style.top = `${y + 16}px`;
         };
         this._listEl.addEventListener('mousedown', e => {
             if (e.button !== 0) return;
@@ -436,10 +608,12 @@ const TabManager = {
                     dragEl.style.zIndex = '80';
                     dragEl.style.pointerEvents = 'none';
                 }
+                ensureDragPreview(e.clientX, e.clientY);
                 this._debugLog('drag threshold passed', { dragId, x: e.clientX, y: e.clientY });
             }
             if (!dragging) return;
             e.preventDefault();
+            updateDragPreviewPosition(e.clientX, e.clientY);
             const target = getTabAtPoint(e.clientX, e.clientY);
             if (target && target.dataset.tabId !== dragId) {
                 const rect = target.getBoundingClientRect();
@@ -477,6 +651,7 @@ const TabManager = {
             }
             clearIndicators();
             resetDraggedStyles();
+            removeDragPreview();
             document.body.classList.remove('tab-dragging');
             dragId = null;
             dragEl = null;
