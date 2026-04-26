@@ -817,7 +817,7 @@
         }
         e.preventDefault();
         e.stopPropagation();
-        const files = [...(e.dataTransfer.files||[])].filter(f => /\.(nw|zelda|graal|gmap|gani)$/i.test(f.name));
+        const files = [...(e.dataTransfer.files||[])].filter(f => /\.(nw|zelda|graal|gmap)$/i.test(f.name));
         for (const file of files) {
             const ext = file.name.split('.').pop().toLowerCase();
             switchToTab('level');
@@ -1360,6 +1360,7 @@
                         <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;"><span id="settingsShowGridCheckbox" class="custom-checkbox">✓</span><span>Show Grid</span></label>
                         <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;"><span id="settingsGifAnimationsCheckbox" class="custom-checkbox">✓</span><span>GIF Animations</span></label>
                         <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;"><span id="settingsLightEffectsCheckbox" class="custom-checkbox">✓</span><span>Light Effects</span></label>
+                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;"><span id="settingsShowPlaceholdersCheckbox" class="custom-checkbox">✓</span><span>Show Placeholders</span></label>
                     </div>
                     <div id="settingsSystemGroup" style="display:none;margin-bottom:16px;border-top:1px solid #0a0a0a;padding-top:16px;">
                         <div style="margin-bottom:12px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;">System:</div>

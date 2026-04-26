@@ -5448,7 +5448,7 @@ class LevelEditor {
     openFromText(text, name, filePath = null) {
         const ext = name.split('.').pop().toLowerCase();
         if (ext === 'gmap') { this.openGmapText(text, name); return; }
-        if (ext === 'gani') { this.levels.push({ level: null, name, modified: false, isGani: true, ganiText: text, filePath }); this.currentLevelIndex = this.levels.length - 1; this.addLevelTab(this.currentLevelIndex); this.switchLevel(this.currentLevelIndex); this.saveSessionDebounced(); return; }
+        if (ext === 'gani') { window.switchToTab?.('gani'); if (typeof parseGani === 'function' && typeof addTab === 'function') { const ani = parseGani(text); if (ani) { ani.fileName = name; addTab(ani, name); } } return; }
         let level;
         if (ext === 'graal' || ext === 'zelda') { const buf = new TextEncoder().encode(text).buffer; level = Level.loadFromGraal(buf); }
         else level = Level.loadFromNW(text);
@@ -5538,10 +5538,8 @@ class LevelEditor {
                 const ext = file.name.split('.').pop().toLowerCase();
                 if (ext === 'gani') {
                     file.text().then(text => {
-                        this.levels.push({ level: null, name: file.name, modified: false, isGani: true, ganiText: text });
-                        this.addLevelTab(this.levels.length - 1);
-                        this.switchLevel(this.levels.length - 1);
-                        loaded++; // count toward finish without triggering level render
+                        window.switchToTab?.('gani');
+                        if (typeof parseGani === 'function' && typeof addTab === 'function') { const ani = parseGani(text); if (ani) { ani.fileName = file.name; addTab(ani, file.name); } }
                     });
                     return;
                 }

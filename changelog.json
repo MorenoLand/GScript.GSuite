@@ -1,5 +1,28 @@
 [
   {
+    "version": "0.1.52",
+    "date": "2026-04-26",
+    "tag": "GSuite",
+    "changes": [
+      "Setshape2 Setimgpart mode now snaps to the visible grid level (1px/4px/16px) instead of always 16x16"
+    ]
+  },
+  {
+    "version": "0.1.51",
+    "date": "2026-04-26",
+    "tag": "GSuite",
+    "changes": [
+      "Show Placeholders toggle added to Settings dialog — hide the white box/red X for missing sprite images",
+      "Fixed sprite image lazy-load using workspacePathIndex cache before falling back to Rust resolve_path",
+      "Fixed redraw storm causing FPS lag when opening complex ganis with many missing images — loads now coalesce into a single frame",
+      "Failed image loads are now cached to prevent repeated resolve attempts until workspace is reloaded",
+      "Sprite list uses IntersectionObserver for lazy canvas rendering with 50+ sprites — major performance improvement",
+      "Fixed level editor intercepting .gani files and creating fake level tabs — gani files now route to the gani editor properly",
+      "Fixed duplicate tabs when opening a gani file from the level editor's file picker or drop handler",
+      "Added deduplication in TabManager.addTab to prevent duplicate tabs by type+name"
+    ]
+  },
+  {
     "version": "0.1.50",
     "date": "2026-04-26",
     "tag": "GSuite",

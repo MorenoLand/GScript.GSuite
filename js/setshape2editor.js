@@ -438,7 +438,16 @@ class SetshapeEditor {
         this._resizeGrid(Math.ceil(img.width / this.tileSize), Math.ceil(img.height / this.tileSize));
     }
 
-    _snap(wx, wy, force = false) { return (this.snapToGrid || force) ? { x: Math.floor(wx / this.tileSize) * this.tileSize, y: Math.floor(wy / this.tileSize) * this.tileSize } : { x: wx, y: wy }; }
+    _snap(wx, wy, force = false) {
+        if (!this.snapToGrid && !force) return { x: wx, y: wy };
+        let snapSize = this.tileSize;
+        if (this.cutMode) {
+            const pxOnScreen = this.zoomLevel;
+            if (pxOnScreen >= 10) snapSize = 1;
+            else if (pxOnScreen >= 4) snapSize = 4;
+        }
+        return { x: Math.floor(wx / snapSize) * snapSize, y: Math.floor(wy / snapSize) * snapSize };
+    }
 
     _getSelectionHandles() {
         const s = this.currentSelection; if (!s) return [];

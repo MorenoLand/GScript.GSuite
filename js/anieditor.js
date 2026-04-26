@@ -1067,7 +1067,7 @@ function drawSprite(ctx, sprite, x, y, level = 0, drawnSprites = null) {
             ctx.drawImage(img, sprite.left, sprite.top, sprite.width, sprite.height, 0, 0, sprite.width, sprite.height);
         }
         ctx.restore();
-    } else {
+    } else if (!(sprite.type === "CUSTOM" && sprite.customImageName === ".png") && localStorage.getItem("editorShowPlaceholders") !== "false") {
         ctx.save();
         ctx.translate(x, y);
         if (sprite.rotation !== 0 || _sx !== 1 || _sy !== 1) {
@@ -1112,6 +1112,7 @@ function getSpriteImage(sprite) {
             imageKey = defaultName.toLowerCase();
             img = imageLibrary.get(imageKey);
         } else {
+            if (defaultName) imageKey = defaultName.toLowerCase();
     const fallbackNames = {
         "SHIELD": "shield1.png",
         "SWORD": "sword1.png",
@@ -1148,10 +1149,15 @@ function getSpriteImage(sprite) {
             }
         }
     }
-    if (!img && _isTauri && imageKey) {
-        _tauri.core.invoke('resolve_path', { name: imageKey }).then(filePath => {
-            if (filePath) loadImageFromPath(filePath, imageKey).then(() => { imageLibrary.has(imageKey) && requestAnimationFrame(redraw); }).catch(() => {});
-        }).catch(() => {});
+    if (!img && _isTauri && imageKey && !_failedImageLoads.has(imageKey)) {
+        const _wpi = workspacePathIndex.get(imageKey);
+        if (_wpi) {
+            loadImageFromPath(_wpi, imageKey).then(() => { imageLibrary.has(imageKey) && _scheduleRedraw(); }).catch(() => { _failedImageLoads.add(imageKey); });
+        } else {
+            _tauri.core.invoke('resolve_path', { name: imageKey }).then(filePath => {
+                if (filePath) loadImageFromPath(filePath, imageKey).then(() => { imageLibrary.has(imageKey) && _scheduleRedraw(); }).catch(() => { _failedImageLoads.add(imageKey); });
+            }).catch(() => { _failedImageLoads.add(imageKey); });
+        }
     }
     return img;
 }
@@ -2207,6 +2213,7 @@ function parseGani(text) {
     let left = 0, top = 0, right = 0, bottom = 0;
     let dirCount = 4;
     let i = 0;
+    if (lines[0]?.trim() === "GANI0FP4") ani.wasCORRUPT = true;
     while (i < lines.length) {
         const line = lines[i].trim();
         if (!line) { i++; continue; }
@@ -2482,6 +2489,7 @@ function parseGani(text) {
 function isCustomImageType(type) {
     const internalTypes = ["HEAD", "BODY", "SWORD", "SHIELD", "SPRITES", "HORSE", "PICS",
         "ATTR1", "ATTR2", "ATTR3", "ATTR4", "ATTR5", "ATTR6", "ATTR7", "ATTR8", "ATTR9", "ATTR10",
+        "ATTR11", "ATTR12", "ATTR13", "ATTR14", "ATTR15", "ATTR16", "ATTR17", "ATTR18", "ATTR19",
         "PARAM1", "PARAM2", "PARAM3", "PARAM4", "PARAM5", "PARAM6", "PARAM7", "PARAM8", "PARAM9", "PARAM10"];
     return !internalTypes.includes(type);
 }
@@ -2663,6 +2671,9 @@ function loadImage(file) {
 var _isTauri = window.__TAURI__ != null;
 var _tauri = _isTauri ? window.__TAURI__ : null;
 let workspacePathIndex = new Map();
+let _failedImageLoads = new Set();
+let _lazyRedrawPending = false;
+function _scheduleRedraw() { if (!_lazyRedrawPending) { _lazyRedrawPending = true; requestAnimationFrame(() => { _lazyRedrawPending = false; redraw(); }); } }
 async function loadImageFromPath(filePath, name) {
     const data = await _tauri.fs.readFile(filePath);
     const isMng = name.toLowerCase().endsWith('.mng');
@@ -2700,6 +2711,8 @@ async function loadWorkspaceFromDisk(dirPath) {
     localStorage.setItem("ganiEditorLastWorkingDir", lastWorkingDirectory);
     window._tauriLastDir = dirPath;
     workspaceImageKeys.clear();
+    workspacePathIndex = new Map();
+    _failedImageLoads.clear();
     localFileCache = { ganis: [], sounds: [], ganiFiles: [] };
     localFileCache._isTauri = true;
 
@@ -2745,6 +2758,7 @@ async function restoreWorkspaceFromCache() {
     window._tauriLastDir = dirPath;
     workspaceImageKeys.clear();
     workspacePathIndex = new Map();
+    _failedImageLoads.clear();
     localFileCache = { ganis: [], sounds: [], ganiFiles: [] };
     localFileCache._isTauri = true;
     const imageExts = new Set(['png','gif','jpg','jpeg','webp','bmp','mng']);
@@ -2774,342 +2788,137 @@ async function tauriReadTextFile(filePath) {
     return _tauri.fs.readTextFile(filePath);
 }
 
+let _spriteListData = [];
+let _spriteListIO = null;
+
+function _buildSpriteItem(sprite, sortedSprites, skipCanvas) {
+    const item = document.createElement("div");
+    item.className = "sprite-item";
+    item.draggable = false;
+    item.style.position = "relative";
+    item.dataset.spriteIdx = sprite.index;
+    if (editingSprite && editingSprite.index === sprite.index && editingSprite.type === sprite.type) item.classList.add("selected");
+    if (selectedSpritesForDeletion.has(sprite)) { item.classList.add("multi-selected"); item.style.border = "2px solid #ff6600"; }
+    let spriteItemDragStart = null, spriteItemDragging = false;
+    const spriteItemDragHandler = (e) => {
+        if (spriteItemDragStart && !spriteItemDragging) {
+            const dx = e.clientX - spriteItemDragStart.x, dy = e.clientY - spriteItemDragStart.y;
+            if (Math.sqrt(dx*dx+dy*dy) > 5) {
+                spriteItemDragging = true; e.preventDefault(); e.stopPropagation();
+                if (!insertPiece || insertPiece.spriteIndex !== sprite.index) {
+                    insertPiece = new FramePieceSprite(); insertPiece.spriteIndex = sprite.index; insertPiece.spriteName = String(sprite.index); insertPiece.xoffset = -5000; insertPiece.yoffset = -5000;
+                    insertPiece.dragOffset = {x: (sprite.width * sprite.xscale * (sprite._zoom || 1)) / 2, y: (sprite.height * sprite.yscale * (sprite._zoom || 1)) / 2};
+                    insertPieces = [];
+                    for (const sel of selectedSpritesForDeletion) { if (sel.index === sprite.index) continue; const ep = new FramePieceSprite(); ep.spriteIndex = sel.index; ep.spriteName = String(sel.index); ep.xoffset = -5000; ep.yoffset = -5000; ep.dragOffset = {x:0,y:0}; insertPieces.push(ep); }
+                    redraw();
+                }
+            }
+        }
+    };
+    const spriteItemMouseUpHandler = (e) => {
+        if (e.button === 0 && spriteItemDragStart) {
+            document.removeEventListener("mousemove", spriteItemDragHandler); document.removeEventListener("mouseup", spriteItemMouseUpHandler);
+            if (!spriteItemDragging) { selectedSpritesForDeletion.clear(); updateSpritesList(); insertPiece = new FramePieceSprite(); insertPiece.spriteIndex = sprite.index; insertPiece.spriteName = String(sprite.index); insertPiece.xoffset = -5000; insertPiece.yoffset = -5000; insertPiece.dragOffset = {x: (sprite.width * sprite.xscale * (sprite._zoom || 1)) / 2, y: (sprite.height * sprite.yscale * (sprite._zoom || 1)) / 2}; selectSprite(sprite); redraw(); }
+            spriteItemDragStart = null; spriteItemDragging = false;
+        }
+    };
+    item.onmousedown = (e) => {
+        if (e.button === 0) { e.preventDefault(); e.stopPropagation();
+            if (e.ctrlKey || e.metaKey || e.shiftKey) {
+                if (e.shiftKey && selectedSpritesForDeletion.size > 0) {
+                    const spriteIndices = sortedSprites.map(s => s.index), clickedIndex = sprite.index, selArr = Array.from(selectedSpritesForDeletion).map(s => s.index);
+                    for (let i = Math.min(...selArr, clickedIndex); i <= Math.max(...selArr, clickedIndex); i++) { const s = sortedSprites.find(sp => sp.index === i); if (s && !selectedSpritesForDeletion.has(s)) selectedSpritesForDeletion.add(s); }
+                } else if (selectedSpritesForDeletion.has(sprite)) { selectedSpritesForDeletion.delete(sprite); item.classList.remove("multi-selected"); item.style.border = ""; } else { selectedSpritesForDeletion.add(sprite); item.classList.add("multi-selected"); item.style.border = "2px solid #ff6600"; }
+                updateSpritesList(); return;
+            }
+            spriteItemDragStart = {x: e.clientX, y: e.clientY}; spriteItemDragging = false;
+            document.addEventListener("mousemove", spriteItemDragHandler); document.addEventListener("mouseup", spriteItemMouseUpHandler);
+        }
+    };
+    item.ondragstart = (e) => { e.preventDefault(); e.stopPropagation(); return false; };
+    item.ondrag = (e) => { e.preventDefault(); e.stopPropagation(); return false; };
+    item.ondblclick = () => editSprite(sprite);
+    item.oncontextmenu = (e) => { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); showSpriteContextMenu(e, sprite); };
+    let spriteItemTouchTimer = null, spriteItemTouchMoved = false;
+    item.addEventListener("touchstart", (e) => { spriteItemTouchMoved = false; spriteItemTouchTimer = setTimeout(() => { if (!spriteItemTouchMoved) { e.preventDefault(); const rect = item.getBoundingClientRect(); showSpriteContextMenu({clientX: rect.left+rect.width/2,clientY:rect.top+rect.height/2,preventDefault(){},stopPropagation(){},stopImmediatePropagation(){}},sprite); } }, 500); }, {passive: true});
+    item.addEventListener("touchmove", () => { spriteItemTouchMoved = true; if (spriteItemTouchTimer) { clearTimeout(spriteItemTouchTimer); spriteItemTouchTimer = null; } }, {passive: true});
+    item.addEventListener("touchend", () => { if (spriteItemTouchTimer) { clearTimeout(spriteItemTouchTimer); spriteItemTouchTimer = null; } }, {passive: true});
+    if (!skipCanvas) _attachSpriteCanvas(item, sprite);
+    else { item.dataset.needsCanvas = "1"; item.dataset.spriteIdx = sprite.index; }
+    const label = document.createElement("div"); label.textContent = sprite.index; label.style.fontSize = "10px"; item.appendChild(label);
+    return item;
+}
+
+function _attachSpriteCanvas(item, sprite) {
+    const canvas = document.createElement("canvas"); canvas.draggable = false; canvas.ondragstart = (e) => { e.preventDefault(); e.stopPropagation(); return false; };
+    const img = getSpriteImage(sprite);
+    const maxSize = 64;
+    canvas.width = maxSize; canvas.height = maxSize;
+    const itemCtx = canvas.getContext("2d"); itemCtx.imageSmoothingEnabled = false;
+    if (img && sprite.width > 0 && sprite.height > 0) {
+        const _sz = sprite._zoom || 1.0, _sx = Math.abs((sprite.xscale ?? 1.0) * _sz), _sy = Math.abs((sprite.yscale ?? 1.0) * _sz);
+        const r = (sprite.rotation || 0) * Math.PI / 180, cosR = Math.abs(Math.cos(r)), sinR = Math.abs(Math.sin(r));
+        const dispW = Math.max(sprite.width*_sx*cosR+sprite.height*_sy*sinR,1), dispH = Math.max(sprite.width*_sx*sinR+sprite.height*_sy*cosR,1);
+        const scale = Math.min(maxSize/dispW, maxSize/dispH);
+        itemCtx.save(); itemCtx.translate(maxSize/2, maxSize/2); itemCtx.scale(scale, scale); drawSprite(itemCtx, sprite, -sprite.width/2, -sprite.height/2); itemCtx.restore();
+    } else if (localStorage.getItem("editorShowPlaceholders") !== "false") {
+        const pw = sprite.width > 0 ? sprite.width : 32, ph = sprite.height > 0 ? sprite.height : 32;
+        const sc = Math.min(maxSize/pw, maxSize/ph, 1), sw = pw*sc, sh = ph*sc, ox = (canvas.width-sw)/2, oy = (canvas.height-sh)/2;
+        itemCtx.globalAlpha = 0.65; itemCtx.fillStyle = "#ffffff"; itemCtx.fillRect(ox,oy,sw,sh);
+        itemCtx.strokeStyle = "#000000"; itemCtx.lineWidth = 1; itemCtx.strokeRect(ox,oy,sw,sh);
+        itemCtx.strokeStyle = "#ff0000"; itemCtx.beginPath(); itemCtx.moveTo(ox+2,oy+2); itemCtx.lineTo(ox+sw-2,oy+sh-2); itemCtx.moveTo(ox+2,oy+sh-2); itemCtx.lineTo(ox+sw-2,oy+2); itemCtx.stroke();
+        itemCtx.globalAlpha = 1.0;
+    }
+    item.insertBefore(canvas, item.firstChild);
+    delete item.dataset.needsCanvas;
+}
+
 function updateSpritesList() {
     const list = $("spritesList");
     list.innerHTML = "";
-    if (!currentAnimation) return;
+    if (_spriteListIO) { _spriteListIO.disconnect(); _spriteListIO = null; }
+    if (!currentAnimation) { _spriteListData = []; return; }
     const sortedSprites = Array.from(currentAnimation.sprites.values()).sort((a, b) => a.index - b.index);
-    if (sortedSprites.length === 0) {
-        editingSprite = null;
-        updateSpriteEditor();
-        return;
-    }
+    _spriteListData = sortedSprites;
+    if (sortedSprites.length === 0) { editingSprite = null; updateSpriteEditor(); return; }
     let spriteFound = false;
-    if (editingSprite) {
-        for (const sprite of sortedSprites) {
-            if (sprite.index === editingSprite.index && sprite.type === editingSprite.type) {
-                editingSprite = sprite;
-                spriteFound = true;
-                break;
-            }
-        }
-    }
+    if (editingSprite) { for (const sprite of sortedSprites) { if (sprite.index === editingSprite.index && editingSprite.type === editingSprite.type) { editingSprite = sprite; spriteFound = true; break; } } }
     if (!editingSprite || !spriteFound) {
         const savedSpriteIndex = currentAnimation ? localStorage.getItem("ganiEditorSelectedSprite_" + currentAnimation.id) : null;
-        if (savedSpriteIndex !== null) {
-            const savedIndex = parseInt(savedSpriteIndex);
-            for (const sprite of sortedSprites) {
-                if (sprite.index === savedIndex) {
-                    editingSprite = sprite;
-                    spriteFound = true;
-                    break;
-                }
-            }
-        }
-        if (!spriteFound) {
-        editingSprite = sortedSprites[0];
-        }
+        if (savedSpriteIndex !== null) { const savedIndex = parseInt(savedSpriteIndex); for (const sprite of sortedSprites) { if (sprite.index === savedIndex) { editingSprite = sprite; spriteFound = true; break; } } }
+        if (!spriteFound) editingSprite = sortedSprites[0];
         updateSpriteEditor();
     }
-    for (const sprite of sortedSprites) {
-        const item = document.createElement("div");
-        item.className = "sprite-item";
-        item.draggable = false;
-        item.style.position = "relative";
-        if (editingSprite && editingSprite.index === sprite.index && editingSprite.type === sprite.type) item.classList.add("selected");
-        if (selectedSpritesForDeletion.has(sprite)) {
-            item.classList.add("multi-selected");
-            item.style.border = "2px solid #ff6600";
-        }
-        let spriteItemDragStart = null;
-        let spriteItemDragging = false;
-        const spriteItemDragHandler = (e) => {
-            if (spriteItemDragStart && !spriteItemDragging) {
-                const dx = e.clientX - spriteItemDragStart.x;
-                const dy = e.clientY - spriteItemDragStart.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                if (distance > 5) {
-                    spriteItemDragging = true;
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (!insertPiece || insertPiece.spriteIndex !== sprite.index) {
-                        insertPiece = new FramePieceSprite();
-                        insertPiece.spriteIndex = sprite.index;
-                        insertPiece.spriteName = String(sprite.index);
-                        insertPiece.xoffset = -5000;
-                        insertPiece.yoffset = -5000;
-                        insertPiece.dragOffset = {x: (sprite.width * sprite.xscale * (sprite._zoom || 1)) / 2, y: (sprite.height * sprite.yscale * (sprite._zoom || 1)) / 2};
-                        insertPieces = [];
-                        for (const sel of selectedSpritesForDeletion) {
-                            if (sel.index === sprite.index) continue;
-                            const ep = new FramePieceSprite();
-                            ep.spriteIndex = sel.index;
-                            ep.spriteName = String(sel.index);
-                            ep.xoffset = -5000; ep.yoffset = -5000;
-                            ep.dragOffset = {x: 0, y: 0};
-                            insertPieces.push(ep);
-                        }
-                        redraw();
-                    }
-                }
-            }
-        };
-        const spriteItemMouseUpHandler = (e) => {
-            if (e.button === 0 && spriteItemDragStart) {
-                document.removeEventListener("mousemove", spriteItemDragHandler);
-                document.removeEventListener("mouseup", spriteItemMouseUpHandler);
-                if (!spriteItemDragging) {
-                    selectedSpritesForDeletion.clear();
-                    updateSpritesList();
-                    insertPiece = new FramePieceSprite();
-                    insertPiece.spriteIndex = sprite.index;
-                    insertPiece.spriteName = String(sprite.index);
-                    insertPiece.xoffset = -5000;
-                    insertPiece.yoffset = -5000;
-                    insertPiece.dragOffset = {x: (sprite.width * sprite.xscale * (sprite._zoom || 1)) / 2, y: (sprite.height * sprite.yscale * (sprite._zoom || 1)) / 2};
-                    selectSprite(sprite);
-                    redraw();
-                }
-                spriteItemDragStart = null;
-                spriteItemDragging = false;
-            }
-        };
-        item.onmousedown = (e) => {
-            if (e.button === 0) {
-                e.preventDefault();
-                e.stopPropagation();
-                if (e.ctrlKey || e.metaKey || e.shiftKey) {
-                    if (e.shiftKey && selectedSpritesForDeletion.size > 0) {
-                        const spriteIndices = sortedSprites.map(s => s.index);
-                        const clickedIndex = sprite.index;
-                        const selectedIndexArray = Array.from(selectedSpritesForDeletion).map(s => s.index);
-                        const minIndex = Math.min(...selectedIndexArray);
-                        const maxIndex = Math.max(...selectedIndexArray);
-                        const newMinIndex = Math.min(minIndex, clickedIndex);
-                        const newMaxIndex = Math.max(maxIndex, clickedIndex);
-                        for (let i = newMinIndex; i <= newMaxIndex; i++) {
-                            if (spriteIndices.includes(i)) {
-                                const spriteAtIndex = sortedSprites.find(s => s.index === i);
-                                if (spriteAtIndex && !selectedSpritesForDeletion.has(spriteAtIndex)) {
-                                    selectedSpritesForDeletion.add(spriteAtIndex);
-                                }
-                            }
-                        }
-                    } else if (selectedSpritesForDeletion.has(sprite)) {
-                        selectedSpritesForDeletion.delete(sprite);
-                        item.classList.remove("multi-selected");
-                        item.style.border = "";
-                    } else {
-                        selectedSpritesForDeletion.add(sprite);
-                        item.classList.add("multi-selected");
-                        item.style.border = "2px solid #ff6600";
-                    }
-                    updateSpritesList();
-                    return;
-                }
-                spriteItemDragStart = {x: e.clientX, y: e.clientY};
-                spriteItemDragging = false;
-                document.addEventListener("mousemove", spriteItemDragHandler);
-                document.addEventListener("mouseup", spriteItemMouseUpHandler);
-            }
-        };
-        item.ondragstart = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            return false;
-        };
-        item.ondrag = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            return false;
-        };
-        item.ondblclick = () => editSprite(sprite);
-        item.oncontextmenu = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            showSpriteContextMenu(e, sprite);
-        };
-        let spriteItemTouchTimer = null;
-        let spriteItemTouchMoved = false;
-        item.addEventListener("touchstart", (e) => {
-            spriteItemTouchMoved = false;
-            spriteItemTouchTimer = setTimeout(() => {
-                if (!spriteItemTouchMoved) {
-                    e.preventDefault();
-                    const rect = item.getBoundingClientRect();
-                    const fakeEvent = {
-                        clientX: rect.left + rect.width / 2,
-                        clientY: rect.top + rect.height / 2,
-                        preventDefault: () => {},
-                        stopPropagation: () => {},
-                        stopImmediatePropagation: () => {}
-                    };
-                    showSpriteContextMenu(fakeEvent, sprite);
-                }
-            }, 500);
-        }, {passive: true});
-        item.addEventListener("touchmove", () => {
-            spriteItemTouchMoved = true;
-            if (spriteItemTouchTimer) {
-                clearTimeout(spriteItemTouchTimer);
-                spriteItemTouchTimer = null;
-            }
-        }, {passive: true});
-        item.addEventListener("touchend", () => {
-            if (spriteItemTouchTimer) {
-                clearTimeout(spriteItemTouchTimer);
-                spriteItemTouchTimer = null;
-            }
-        }, {passive: true});
-        const canvas = document.createElement("canvas");
-        canvas.draggable = false;
-        canvas.ondragstart = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            return false;
-        };
-        const img = getSpriteImage(sprite);
-        const maxSize = 64;
-        if (img && sprite.width > 0 && sprite.height > 0) {
-            const aspect = sprite.width / sprite.height;
-            if (aspect > 1) {
-                canvas.width = maxSize;
-                canvas.height = Math.min(maxSize, maxSize / aspect);
-            } else {
-                canvas.width = Math.min(maxSize, maxSize * aspect);
-                canvas.height = maxSize;
-            }
-        } else {
-            canvas.width = maxSize;
-            canvas.height = maxSize;
-        }
-        canvas.width = maxSize;
-        canvas.height = maxSize;
-        const itemCtx = canvas.getContext("2d");
-        itemCtx.imageSmoothingEnabled = false;
-        if (img && sprite.width > 0 && sprite.height > 0) {
-            const _sz = sprite._zoom || 1.0;
-            const _sx = Math.abs((sprite.xscale ?? 1.0) * _sz);
-            const _sy = Math.abs((sprite.yscale ?? 1.0) * _sz);
-            const r = (sprite.rotation || 0) * Math.PI / 180;
-            const cosR = Math.abs(Math.cos(r)), sinR = Math.abs(Math.sin(r));
-            const dispW = Math.max(sprite.width * _sx * cosR + sprite.height * _sy * sinR, 1);
-            const dispH = Math.max(sprite.width * _sx * sinR + sprite.height * _sy * cosR, 1);
-            const scale = Math.min(maxSize / dispW, maxSize / dispH);
-            itemCtx.save();
-            itemCtx.translate(maxSize / 2, maxSize / 2);
-            itemCtx.scale(scale, scale);
-            drawSprite(itemCtx, sprite, -sprite.width / 2, -sprite.height / 2);
-            itemCtx.restore();
-        } else {
-            const placeholderWidth = sprite.width > 0 ? sprite.width : 32;
-            const placeholderHeight = sprite.height > 0 ? sprite.height : 32;
-            const scale = Math.min(maxSize / placeholderWidth, maxSize / placeholderHeight, 1);
-            const scaledWidth = placeholderWidth * scale;
-            const scaledHeight = placeholderHeight * scale;
-            const offsetX = (canvas.width - scaledWidth) / 2;
-            const offsetY = (canvas.height - scaledHeight) / 2;
-            itemCtx.globalAlpha = 0.65;
-            itemCtx.fillStyle = "#ffffff";
-            itemCtx.fillRect(offsetX, offsetY, scaledWidth, scaledHeight);
-            itemCtx.strokeStyle = "#000000";
-            itemCtx.lineWidth = 1;
-            itemCtx.strokeRect(offsetX, offsetY, scaledWidth, scaledHeight);
-            itemCtx.strokeStyle = "#ff0000";
-            itemCtx.beginPath();
-            itemCtx.moveTo(offsetX + 2, offsetY + 2);
-            itemCtx.lineTo(offsetX + scaledWidth - 2, offsetY + scaledHeight - 2);
-            itemCtx.moveTo(offsetX + 2, offsetY + scaledHeight - 2);
-            itemCtx.lineTo(offsetX + scaledWidth - 2, offsetY + 2);
-            itemCtx.stroke();
-            itemCtx.globalAlpha = 1.0;
-        }
-        item.appendChild(canvas);
-        const label = document.createElement("div");
-        label.textContent = sprite.index;
-        label.style.fontSize = "10px";
-        item.appendChild(label);
-        list.appendChild(item);
-    }
-    const spritesList = $("spritesList");
-    if (spritesList && !spritesList.hasAttribute("data-context-menu-bound")) {
-        spritesList.setAttribute("data-context-menu-bound", "true");
-        spritesList.setAttribute("tabindex", "0");
-        spritesList.onclick = (e) => {
-            if (e.target === spritesList) {
-                selectedSpritesForDeletion.clear();
-                updateSpritesList();
-            }
-        };
-        spritesList.onkeydown = (e) => {
+    const skipCanvas = sortedSprites.length > 50;
+    const frag = document.createDocumentFragment();
+    for (const sprite of sortedSprites) frag.appendChild(_buildSpriteItem(sprite, sortedSprites, skipCanvas));
+    list.appendChild(frag);
+    _bindSpriteListCtx(list);
+    if (skipCanvas) _setupSpriteListIO(list);
+}
+
+function _bindSpriteListCtx(list) {
+    if (list && !list.hasAttribute("data-context-menu-bound")) {
+        list.setAttribute("data-context-menu-bound", "true");
+        list.setAttribute("tabindex", "0");
+        list.onclick = (e) => { if (e.target === list) { selectedSpritesForDeletion.clear(); updateSpritesList(); } };
+        list.onkeydown = (e) => {
             if (e.key === "Delete" && selectedSpritesForDeletion.size > 0) {
-                e.preventDefault();
-                e.stopPropagation();
+                e.preventDefault(); e.stopPropagation();
                 const oldState = serializeAnimationState();
-                for (const spriteToDelete of selectedSpritesForDeletion) {
-                    currentAnimation.sprites.delete(spriteToDelete.index);
-                }
-                if (editingSprite && selectedSpritesForDeletion.has(editingSprite)) {
-                    editingSprite = null;
-                }
+                for (const spriteToDelete of selectedSpritesForDeletion) { currentAnimation.sprites.delete(spriteToDelete.index); }
+                if (editingSprite && selectedSpritesForDeletion.has(editingSprite)) editingSprite = null;
                 selectedSpritesForDeletion.clear();
                 const newState = serializeAnimationState();
-                addUndoCommand({
-                    description: `Delete ${selectedSpritesForDeletion.size} Sprite${selectedSpritesForDeletion.size > 1 ? 's' : ''}`,
-                    oldState: oldState,
-                    newState: newState,
-                    undo: () => restoreAnimationState(oldState),
-                    redo: () => restoreAnimationState(newState)
-                });
-                updateSpritesList();
-                updateSpriteEditor();
-                redraw();
-                saveSession();
+                addUndoCommand({ description: `Delete Sprites`, oldState, newState, undo: () => restoreAnimationState(oldState), redo: () => restoreAnimationState(newState) });
+                updateSpritesList(); updateSpriteEditor(); redraw(); saveSession();
             }
         };
-        spritesList.oncontextmenu = (e) => {
-            if (e.target === spritesList || e.target.parentElement === spritesList) {
-                e.preventDefault();
-                e.stopPropagation();
-                e.stopImmediatePropagation();
-                showSpritesListContextMenu(e);
-            }
-        };
-        let spritesListTouchTimer = null;
-        let spritesListTouchMoved = false;
-        spritesList.addEventListener("touchstart", (e) => {
-            if (e.target === spritesList || e.target.parentElement === spritesList) {
-                spritesListTouchMoved = false;
-                spritesListTouchTimer = setTimeout(() => {
-                    if (!spritesListTouchMoved) {
-                        e.preventDefault();
-                        const rect = spritesList.getBoundingClientRect();
-                        const fakeEvent = {
-                            clientX: rect.left + rect.width / 2,
-                            clientY: rect.top + rect.height / 2,
-                            preventDefault: () => {},
-                            stopPropagation: () => {},
-                            stopImmediatePropagation: () => {}
-                        };
-                        showSpritesListContextMenu(fakeEvent);
-                    }
-                }, 500);
-            }
-        }, {passive: true});
-        spritesList.addEventListener("touchmove", () => {
-            spritesListTouchMoved = true;
-            if (spritesListTouchTimer) {
-                clearTimeout(spritesListTouchTimer);
-                spritesListTouchTimer = null;
-            }
-        }, {passive: true});
-        spritesList.addEventListener("touchend", () => {
-            if (spritesListTouchTimer) {
-                clearTimeout(spritesListTouchTimer);
-                spritesListTouchTimer = null;
-            }
-        }, {passive: true});
+        list.oncontextmenu = (e) => { if (e.target === list || e.target.parentElement === list) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); showSpritesListContextMenu(e); } };
+        let _slt = null, _slm = false;
+        list.addEventListener("touchstart", (e) => { if (e.target === list || e.target.parentElement === list) { _slm = false; _slt = setTimeout(() => { if (!_slm) { e.preventDefault(); const r = list.getBoundingClientRect(); showSpritesListContextMenu({clientX:r.left+r.width/2,clientY:r.top+r.height/2,preventDefault(){},stopPropagation(){},stopImmediatePropagation(){}}); } }, 500); } }, {passive:true});
+        list.addEventListener("touchmove", () => { _slm = true; if (_slt) { clearTimeout(_slt); _slt = null; } }, {passive:true});
+        list.addEventListener("touchend", () => { if (_slt) { clearTimeout(_slt); _slt = null; } }, {passive:true});
     }
 }
 
@@ -4577,9 +4386,22 @@ function refreshAllAnimationsSprites() {
     }
 }
 
+function showGaniNotice(msg) {
+    const el = document.createElement('div');
+    el.style.cssText = 'position:fixed;bottom:48px;left:50%;transform:translateX(-50%);background:#2a2a2e;color:#e0e0e0;border:1px solid #4a9eff;border-radius:4px;padding:6px 16px;font-size:12px;font-family:chevyray,monospace;z-index:99999;pointer-events:none;opacity:1;transition:opacity 0.4s';
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 420); }, 3000);
+}
+
 function addTab(ani, fileName = "") {
     if (fileName) ani.fileName = fileName;
     ensureShadowSprite(ani);
+    if (ani.wasCORRUPT) showGaniNotice('GANI0FP4 watermark removed — will save as GANI0001');
+    if (ani.fileName) {
+        const dupIdx = animations.findIndex(a => a !== ani && a.fileName === ani.fileName);
+        if (dupIdx >= 0) { switchTab(dupIdx); return; }
+    }
     animations.push(ani);
     switchTab(animations.length - 1);
     updateUIVisibility();
@@ -9129,6 +8951,7 @@ async function initGaniEditorStartup() {
     const settingsShowGrid = $("settingsShowGridCheckbox");
     const settingsGifAnimations = $("settingsGifAnimationsCheckbox");
     const settingsLightEffects = $("settingsLightEffectsCheckbox");
+    const settingsShowPlaceholders = $("settingsShowPlaceholdersCheckbox");
     const settingsSystemGroup = $("settingsSystemGroup");
     const settingsRegisterAssoc = $("settingsRegisterAssoc");
     const settingsRegisterAssocStatus = $("settingsRegisterAssocStatus");
@@ -9397,6 +9220,7 @@ async function initGaniEditorStartup() {
                 showGrid: currentShowGrid,
                 gifAnimations: currentGifAnimations,
                 lightEffects: currentLightEffects,
+                showPlaceholders: localStorage.getItem("editorShowPlaceholders") !== "false",
                 selectionBorderColor: currentSelectionBorderColor,
                 selectionBorderThickness: currentSelectionBorderThickness,
                 selectionBorderOpacity: currentSelectionBorderOpacity
@@ -9414,6 +9238,7 @@ async function initGaniEditorStartup() {
             if (settingsShowGrid) settingsShowGrid.textContent = currentShowGrid ? "✓" : " ";
             if (settingsGifAnimations) settingsGifAnimations.textContent = currentGifAnimations ? "✓" : " ";
             if (settingsLightEffects) settingsLightEffects.textContent = currentLightEffects ? "✓" : " ";
+            if (settingsShowPlaceholders) settingsShowPlaceholders.textContent = localStorage.getItem("editorShowPlaceholders") !== "false" ? "✓" : " ";
             if (settingsSelectionBorderColor) settingsSelectionBorderColor.value = currentSelectionBorderColor;
             if (settingsSelectionBorderThickness) {
                 settingsSelectionBorderThickness.value = currentSelectionBorderThickness;
@@ -9483,6 +9308,11 @@ async function initGaniEditorStartup() {
                 const newValue = settingsGifAnimations.textContent.trim() !== "✓";
                 settingsGifAnimations.textContent = newValue ? "✓" : " ";
                 applyGifAnimations(newValue, false);
+            };
+        }
+        if (settingsShowPlaceholders) {
+            settingsShowPlaceholders.onclick = () => {
+                settingsShowPlaceholders.textContent = settingsShowPlaceholders.textContent.trim() !== "✓" ? "✓" : " ";
             };
         }
         if (settingsLightEffects) {
@@ -9579,6 +9409,7 @@ async function initGaniEditorStartup() {
                 if (settingsShowGrid) applyShowGrid(settingsShowGrid.textContent.trim() === "✓", true);
                 if (settingsGifAnimations) applyGifAnimations(settingsGifAnimations.textContent.trim() === "✓", true);
                 if (settingsLightEffects) applyLightEffects(settingsLightEffects.textContent.trim() === "✓", true);
+                if (settingsShowPlaceholders) { localStorage.setItem("editorShowPlaceholders", settingsShowPlaceholders.textContent.trim() === "✓" ? "true" : "false"); redraw(); }
                 if (settingsSelectionBorderColor) applySelectionBorderColor(settingsSelectionBorderColor.value, true);
                 if (settingsSelectionBorderThickness) applySelectionBorderThickness(parseInt(settingsSelectionBorderThickness.value) || 2, true);
                 if (settingsSelectionBorderOpacity) applySelectionBorderOpacity(parseInt(settingsSelectionBorderOpacity.value), true);
@@ -9682,6 +9513,7 @@ async function initGaniEditorStartup() {
             if (settingsShowGrid) settingsShowGrid.textContent = originalSettings.showGrid ? "✓" : " ";
             if (settingsGifAnimations) settingsGifAnimations.textContent = originalSettings.gifAnimations ? "✓" : " ";
             if (settingsLightEffects) settingsLightEffects.textContent = originalSettings.lightEffects ? "✓" : " ";
+            if (settingsShowPlaceholders) settingsShowPlaceholders.textContent = originalSettings.showPlaceholders ? "✓" : " ";
             if (settingsSelectionBorderColor) settingsSelectionBorderColor.value = originalSettings.selectionBorderColor || "#00ff00";
             if (settingsSelectionBorderThickness) {
                 settingsSelectionBorderThickness.value = (originalSettings.selectionBorderThickness || 2).toString();
@@ -9734,6 +9566,7 @@ async function initGaniEditorStartup() {
                     settingsGifAnimations.textContent = "✓";
                     applyGifAnimations(true, false);
                 }
+                if (settingsShowPlaceholders) settingsShowPlaceholders.textContent = "✓";
                 if (settingsLightEffects) {
                     settingsLightEffects.textContent = "✓";
                     applyLightEffects(true, false);
