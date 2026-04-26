@@ -1,5 +1,4 @@
 
-const APP_VERSION = '1.0.95';
 var _isTauri = window.__TAURI__ != null;
 var _tauri = _isTauri ? window.__TAURI__ : null;
 
@@ -272,6 +271,7 @@ class Level {
         this.objects = [];
         this.tilesetImage = null;
         this.tilesetName = 'pics1.png';
+        this.tilesetType = 0;
         this.tileWidth = 16;
         this.tileHeight = 16;
 
@@ -423,7 +423,7 @@ class Level {
                 out += (npcCode ? npcCode + '\n' : '') + 'NPCEND\n\n';
             }
         }
-        if (this.tilesetName) out += `TILESET ${this.tilesetName}\n`;
+        if (this.tilesetName) out += `TILESET ${this.tilesetName}${this.tilesetType ? ` ${this.tilesetType}` : ''}\n`;
         return out;
     }
 
@@ -444,7 +444,9 @@ class Level {
                 if (blayer < 0) continue;
                 while (blayer >= level.layers.length) level.layers.push(level.createEmptyLayer());
                 for (let ii = 0; ii < bw && ii * 2 + 1 < td.length; ii++) {
-                    const b1 = base64.indexOf(td[ii * 2]), b2 = base64.indexOf(td[ii * 2 + 1]);
+                    const pair = td.substring(ii * 2, ii * 2 + 2);
+                    if (pair === '//') continue;
+                    const b1 = base64.indexOf(pair[0]), b2 = base64.indexOf(pair[1]);
                     if (b1 < 0 || b2 < 0) continue;
                     const g = (b1 << 6) + b2;
                     const tx = (g & 0xF) + 16 * Math.floor((g >> 4) / 32);
@@ -453,6 +455,7 @@ class Level {
                 }
             } else if (cmd === 'TILESET' && words.length >= 2) {
                 level.tilesetName = words[1];
+                level.tilesetType = words.length >= 3 ? parseInt(words[2]) || 0 : 0;
             } else if (cmd === 'CHEST' && words.length >= 5) {
                 const obj = new LevelObject(parseInt(words[1]), parseInt(words[2]), 'chest');
                 obj.properties = { itemName: words[3], signIndex: parseInt(words[4]), layerIndex: words[5] ? parseInt(words[5]) : 0 };
@@ -978,13 +981,21 @@ class LevelEditor {
             } catch (_) {}
         };
         tilesetsCombo.addEventListener('change', (e) => this.selectTileset(e.target.value));
+        this.$('tilesetTypeCombo')?.addEventListener('change', (e) => {
+            if (this.level) {
+                this.level.tilesetType = parseInt(e.target.value) || 0;
+                this._tileTypeLookupCache = null;
+                this._tileTypeLookupCacheKey = null;
+                this.saveSessionDebounced();
+                this.render();
+            }
+        });
         tilesetsCombo.addEventListener('mousedown', openTilesetPicker);
         tilesetsCombo.parentElement?.addEventListener('mousedown', (e) => {
             if (e.target === tilesetsCombo.parentElement) openTilesetPicker(e);
         });
         try { const tc = JSON.parse(localStorage.getItem('levelEditor_tilesetCache')||'{}'); if (tc && typeof tc === 'object') { this._tilesetDataCache = tc; const combo = tilesetsCombo; for (const name of Object.keys(tc)) { if (combo && ![...combo.options].some(o => o.value === name)) { const o = document.createElement('option'); o.value = o.textContent = name; combo.appendChild(o); } } } } catch(e) {}
         this.$('btnRefreshTileset').addEventListener('click', () => this.refreshTileset());
-        this.$('btnNewTileset').addEventListener('click', () => this.newTileset());
         this.$('btnLoadTileset').addEventListener('click', () => this.loadTileset());
         this.$('btnDeleteTileset').addEventListener('click', () => this.deleteTileset());
         this.$('btnEditTileset').addEventListener('click', () => this.editTileset());
@@ -2085,11 +2096,15 @@ class LevelEditor {
     }
 
     floodFill(x, y) {
-        if (this.defaultTile < 0) return;
         if (x < 0 || x >= this.level.width || y < 0 || y >= this.level.height) return;
+        const stamp = this.selectedTilesetTiles;
+        const usePattern = stamp && stamp.length > 0 && stamp[0].length > 0;
+        if (!usePattern && this.defaultTile < 0) return;
         const targetTile = this.level.getTile(this.currentLayer, x, y);
-        const fillTile = this.defaultTile;
-        if (targetTile === fillTile) return;
+        const stampH = usePattern ? stamp.length : 1;
+        const stampW = usePattern ? stamp[0].length : 1;
+        const getTileFill = (cx, cy) => usePattern ? (stamp[cy % stampH]?.[cx % stampW] ?? this.defaultTile) : this.defaultTile;
+        if (!usePattern && targetTile === this.defaultTile) return;
         const stack = [[x, y]];
         const visited = new Uint8Array(this.level.width * this.level.height);
         while (stack.length) {
@@ -2099,7 +2114,7 @@ class LevelEditor {
             if (visited[idx]) continue;
             visited[idx] = 1;
             if (this.level.getTile(this.currentLayer, cx, cy) !== targetTile) continue;
-            this.level.setTile(this.currentLayer, cx, cy, fillTile);
+            this.level.setTile(this.currentLayer, cx, cy, getTileFill(cx, cy));
             stack.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
         }
     }
@@ -2144,8 +2159,9 @@ class LevelEditor {
         this.ctx.scale(this.zoom, this.zoom);
 
         for (let layer = 0; layer < this.level.layers.length; layer++) {
-            if (!this.level.layers[layer].visible) continue;
-            if (this.fadeInactiveLayers && layer !== this.currentLayer) this.ctx.globalAlpha = 0.33;
+            const layerVisible = this.level.layers[layer].visible;
+            if (!layerVisible && !this.fadeInactiveLayers) continue;
+            this.ctx.globalAlpha = (this.fadeInactiveLayers && !layerVisible) ? 0.33 : 1.0;
             this.drawLayer(layer);
             this.ctx.globalAlpha = 1.0;
         }
@@ -2223,7 +2239,10 @@ class LevelEditor {
             const _chatFeetY = p.y + (p._ganiOY ?? 0) + (p._imgH ?? 48);
             if (this._showColDebug) {
                 const _tw2 = this.level.tileWidth || 16, _th2 = this.level.tileHeight || 16;
-                const tileTypeLookup = this._getTileTypeLookup();
+                const _tsetW = this.level.tilesetImage?.width || 2048;
+                const _tpr = Math.max(1, Math.floor(_tsetW / _tw2));
+                const _ttType = this.level.tilesetType || 0;
+                const _ttTable = _ttType ? TILE_TYPES.TYPE1 : TILE_TYPES.TYPE0;
                 const visX0 = Math.floor((-this.panX / this.zoom) / _tw2) - 1;
                 const visY0 = Math.floor((-this.panY / this.zoom) / _th2) - 1;
                 const visX1 = visX0 + Math.ceil(this.canvas.width / this.zoom / _tw2) + 2;
@@ -2243,7 +2262,9 @@ class LevelEditor {
                             const idx = this.level.getTile(layer, tx2, ty2);
                             if (idx < 0) continue;
                             hasTile = true;
-                            tType = tileTypeLookup[idx] ?? 0;
+                            const _tc = idx % _tpr, _tr = Math.floor(idx / _tpr);
+                            const _tg = Math.floor(_tc / 16) * 512 + (_tc % 16) + _tr * 16;
+                            tType = _ttTable[_tg] ?? 0;
                         }
                         if (!hasTile || tType === null) continue;
                         const [fc, sc] = _ttCS[tType] || ['rgba(200,200,200,0.25)', 'rgba(200,200,200,0.8)'];
@@ -3835,6 +3856,8 @@ class LevelEditor {
             if (exists) combo.value = ts;
             else combo.value = 'pics1.png';
         }
+        const typeCombo = this.$('tilesetTypeCombo');
+        if (typeCombo) typeCombo.value = String(this.level.tilesetType || 0);
         this.loadTilesetImage(this.level.tilesetName);
         this.applyTiledefFromNPCs();
         this.render(); if (prevWasGmap && !entry.gmapGrid) this.centerView();
@@ -4306,16 +4329,18 @@ class LevelEditor {
     _getTileTypeLookup() {
         const tw = this.level?.tileWidth || 16;
         const tilesetWidth = this.level?.tilesetImage?.width || 512;
-        const cacheKey = `${tilesetWidth}:${tw}`;
+        const tilesetType = this.level?.tilesetType || 0;
+        const cacheKey = `${tilesetWidth}:${tw}:${tilesetType}`;
         if (this._tileTypeLookupCacheKey === cacheKey && this._tileTypeLookupCache) return this._tileTypeLookupCache;
+        const typeTable = tilesetType ? TILE_TYPES.TYPE1 : TILE_TYPES.TYPE0;
         const tilesPerRow = Math.max(1, Math.floor(tilesetWidth / tw));
         const lookup = [];
-        const tileCount = Math.max(TILE_TYPES.TYPE0.length, tilesPerRow * Math.ceil(TILE_TYPES.TYPE0.length / 16));
+        const tileCount = Math.max(typeTable.length, tilesPerRow * Math.ceil(typeTable.length / 16));
         for (let idx = 0; idx < tileCount; idx++) {
             const col = idx % tilesPerRow;
             const row = Math.floor(idx / tilesPerRow);
             const typeId = Math.floor(col / 16) * 512 + (col % 16) + row * 16;
-            lookup[idx] = TILE_TYPES.TYPE0[typeId] ?? 0;
+            lookup[idx] = typeTable[typeId] ?? 0;
         }
         this._tileTypeLookupCacheKey = cacheKey;
         this._tileTypeLookupCache = lookup;
@@ -4583,7 +4608,7 @@ class LevelEditor {
         const colorLabels = ['Skin','Coat','Sleeves','Shoes','Belt'];
         box.innerHTML = `
             <div id="_pcTitlebar" class="dialog-titlebar" style="padding:8px 12px;background:#353535;font-size:13px;display:flex;align-items:center;justify-content:space-between;user-select:none;flex-shrink:0;cursor:grab;">
-                <span><i class="fas fa-user" style="color:#ffd700;margin-right:6px;"></i>Player Settings</span>
+                <span style="display:flex;align-items:center;gap:6px;"><i class="fas fa-user" style="color:#ffd700;"></i>Player Settings</span>
                 <button id="pcClose" style="background:none;border:none;color:#888;font-size:16px;cursor:pointer;line-height:1;">&#10005;</button>
             </div>
             <div style="display:flex;gap:0;flex:1;overflow:hidden;">
@@ -4873,7 +4898,7 @@ class LevelEditor {
             if (!this._playMode) return;
             const dt = Math.min((ts - last) / 1000, 0.05); last = ts;
             this._updatePlayer(dt);
-            this.render();
+            this.requestRender();
             requestAnimationFrame(this._playRAF);
         };
         requestAnimationFrame(this._playRAF);
@@ -4905,11 +4930,14 @@ class LevelEditor {
         const tw = this.level.tileWidth || 16, th = this.level.tileHeight || 16;
         const tx = Math.floor(wx / tw), ty = Math.floor(wy / th);
         if (tx < 0 || ty < 0 || tx >= this.level.width || ty >= this.level.height) return 22;
-        const tileTypeLookup = this._getTileTypeLookup();
+        const tpr = Math.max(1, Math.floor((this.level.tilesetImage?.width || 2048) / tw));
+        const ttTable = (this.level.tilesetType || 0) ? TILE_TYPES.TYPE1 : TILE_TYPES.TYPE0;
         for (let layer = 0; layer < this.level.layers.length; layer++) {
             const idx = this.level.getTile(layer, tx, ty);
             if (idx < 0) continue;
-            const t = tileTypeLookup[idx] ?? 0;
+            const tc = idx % tpr, tr = Math.floor(idx / tpr);
+            const tg = Math.floor(tc / 16) * 512 + (tc % 16) + tr * 16;
+            const t = ttTable[tg] ?? 0;
             if (t !== 0) return t;
         }
         return 0;
@@ -5095,10 +5123,12 @@ class LevelEditor {
         }
         const ganiData = this._ganiCache?.get(p.gani);
         const totalFrames = ganiData?.frames?.length || 4;
-        const frameWait = ganiData?.frames?.[p.frame]?.wait || 1;
         p.frameTimer += dt;
-        if (p.frameTimer >= frameWait / 22) {
-            p.frameTimer = 0;
+        let frameWait = ganiData?.frames?.[p.frame]?.wait || 1;
+        let frameDuration = Math.max(frameWait / 22, 1 / 120);
+        let frameSafety = 0;
+        while (p.frameTimer >= frameDuration && frameSafety < 8) {
+            p.frameTimer -= frameDuration;
             const nextFrame = p.frame + 1;
             if (nextFrame >= totalFrames) {
                 if (ganiData?.setbackto) { this._setani(ganiData.setbackto); }
@@ -5108,6 +5138,9 @@ class LevelEditor {
             if (frameData?.sound) this._playSound(frameData.sound);
             if (p._attacking && p.frame === 0 && p._attackFrameCount > 0) { p._attacking = false; p._grabbing = false; p._attackFrameCount = 0; }
             if (p._attacking) p._attackFrameCount = (p._attackFrameCount || 0) + 1;
+            frameWait = ganiData?.frames?.[p.frame]?.wait || 1;
+            frameDuration = Math.max(frameWait / 22, 1 / 120);
+            frameSafety++;
         }
         if (!moving && !sitting && !p._attacking && !_pulling && !p._grabbing) { p.frame = 0; p.frameTimer = 0; }
         if (this._playerChatTimer > 0) { this._playerChatTimer -= dt; if (this._playerChatTimer <= 0) this._playerChat = null; }
@@ -5730,7 +5763,7 @@ class LevelEditor {
             row.dataset.layerIdx = i;
             row.draggable = true;
             row.style.cssText = `display:flex;align-items:center;gap:6px;padding:5px 6px;background:${isActive?'#1e3a5f':_rowBg};border:1px solid ${isActive?'#4472C4':_rowBorder};cursor:pointer;user-select:none;border-radius:2px;`;
-            const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = layer.visible !== false; cb.style.cssText = 'cursor:pointer;flex-shrink:0;'; cb.addEventListener('change', e => { e.stopPropagation(); layer.visible = cb.checked; this.render(); });
+            const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = layer.visible !== false; cb.style.cssText = 'cursor:pointer;flex-shrink:0;'; cb.addEventListener('click', e => e.stopPropagation()); cb.addEventListener('change', () => { layer.visible = cb.checked; this.render(); });
             const thumb = document.createElement('canvas'); thumb.width = 64; thumb.height = 64; thumb.style.cssText = `flex-shrink:0;image-rendering:pixelated;background:#111;border:1px solid ${_rowBorder};border-radius:2px;`;
             this._renderLayerThumb(thumb, i);
             const name = document.createElement('span'); name.style.cssText = `flex:1;font-size:12px;font-family:chevyray,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${_txt};`; name.textContent = `Layer ${i}`;
@@ -6182,8 +6215,6 @@ class LevelEditor {
         this.loadTilesetImage(tilesetName, !hasOnlyDataCache);
     }
 
-    newTileset() {
-    }
 
     deleteTileset() {
         const combo = this.$('tilesetsCombo');
@@ -6483,6 +6514,7 @@ class LevelEditor {
         else if (this.selectedObjectType === 'link') obj.properties = { nextLevel: '', width: 2, height: 2, nextX: '0', nextY: '0', nextLayer: 0, layerIndex: 0 };
         else if (this.selectedObjectType === 'chest') obj.properties = { itemName: 'greenrupee', signIndex: 0, layerIndex: 0 };
         this.level.addObject(obj);
+        this.refreshNPCList();
         this.render();
         this.saveSessionDebounced();
         if (!cloneProps) {
@@ -6521,6 +6553,7 @@ class LevelEditor {
         if (obj) {
             this.pushUndo();
             this.level.removeObject(obj);
+            this.refreshNPCList();
             this.syncObjectSelection();
             this.render();
             this.saveSessionDebounced();

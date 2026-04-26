@@ -256,7 +256,7 @@ class Animation {
         return this.defaultImages.get(name.toUpperCase()) || "";
     }
 }
-const _GANI_PREFIXED_IDS = new Set(['btnAbout','btnBeautify','btnCenterView','btnCloseAll','btnColorScheme','btnCustomCSS','btnGmapGen','btnNew','btnOpen','btnOpenDefault','btnPlay','btnRedo','btnReset','btnSave','btnSaveAll','btnSaveAs','btnSetshape2','btnSettings','btnUndo','btnWorkingDir','colorSchemeDropdown','fileInput','folderInput','imageInput','mainCanvas','mainSplitter','switchBtn','zoomSlider','btnCollab','collabDropdown','collabToggleTrack','collabToggleThumb','collabStatus','collabDisconnect','collabPeers','collabCodeSection','collabMyCode','collabCopy','collabJoinCode','collabJoin']);
+const _GANI_PREFIXED_IDS = new Set(['btnAbout','btnBeautify','btnCenterView','btnCloseAll','btnColorScheme','btnCustomCSS','btnGmapGen','btnNew','btnOpen','btnOpenDefault','btnPlay','btnRedo','btnReset','btnSave','btnSaveAll','btnSaveAs','btnSetshape2','btnSettings','btnUndo','btnWorkingDir','colorSchemeDropdown','fileInput','folderInput','imageInput','mainCanvas','mainSplitter','switchBtn','zoomSlider','btnCollab','collabDropdown','collabToggleTrack','collabToggleThumb','collabStatus','collabDisconnect','collabPeers','collabCodeSection','collabMyCode','collabCopy','collabJoinCode','collabJoin','btnExportAnim']);
 function $(id) { return document.getElementById(_GANI_PREFIXED_IDS.has(id) ? 'gani-' + id : id); }
 
 const SPRITE_INDEX_STRING = -21374783;
@@ -292,6 +292,7 @@ volumeIconImg.onload = () => { volumeIconImage = volumeIconImg; };
 volumeIconImg.src = "icons/volume-high.svg";
 const soundLibrary = new Map();
 const activeAudioElements = new Set();
+let _isExportRender = false;
 const DEBUG_MODE = false;
 
 function stopAllSounds() {
@@ -1509,7 +1510,7 @@ function drawFrame(ctx, frame, dir) {
                 }
                 drawSprite(ctx, sprite, piece.xoffset, piece.yoffset);
             }
-        } else if (piece.type === "sound") {
+        } else if (!_isExportRender && piece.type === "sound") {
             ctx.fillStyle = "#ffff00";
             ctx.fillRect(piece.xoffset, piece.yoffset, 16, 16);
             ctx.strokeStyle = "#000000";
@@ -1517,7 +1518,7 @@ function drawFrame(ctx, frame, dir) {
             ctx.strokeRect(piece.xoffset, piece.yoffset, 16, 16);
         }
     }
-    if (frame.sounds && frame.sounds.length > 0) {
+    if (!_isExportRender && frame.sounds && frame.sounds.length > 0) {
         for (const sound of frame.sounds) {
             const isSelected = selectedPieces.has(sound);
             if (volumeIconImage) {
@@ -6046,6 +6047,8 @@ async function initGaniEditorStartup() {
         a.click();
         URL.revokeObjectURL(url);
     };
+    $("btnExportAnim").onclick = () => showExportAnimDialog();
+
     $("btnCloseAll").onclick = () => {
         if (window.tabManager && window.tabManager.getTabsByType('gani').length > 0) {
             window.tabManager.closeAll();
@@ -6742,9 +6745,9 @@ async function initGaniEditorStartup() {
         } else {
             isPlaying = true;
             playPosition = 0;
-            playStartTime = Date.now();
+            playStartTime = 0;
             $("btnPlay").innerHTML = '<i class="fas fa-pause"></i>';
-            playAnimation();
+            requestAnimationFrame(playAnimation);
         }
     };
     $("btnStop").onclick = () => {
@@ -7377,6 +7380,7 @@ async function initGaniEditorStartup() {
     }, true);
 
     document.addEventListener("keydown", (e) => {
+        const gr = document.getElementById('ganiRoot'); if (!gr || gr.style.display === 'none') return;
         if (matchesKeybind(e, keybinds.save)) {
             e.preventDefault();
             if (currentAnimation) $("btnSave").click();
@@ -10071,7 +10075,6 @@ async function initGaniEditorStartup() {
         applyLabelShadows();
     });
     labelObserver.observe(document.body, { childList: true, subtree: true });
-    const APP_VERSION = "2.1.3";
     const _infoDialog = $("infoDialog");
     const _infoClose = $("infoClose");
     const _infoContent = $("infoContent");
@@ -10079,8 +10082,8 @@ async function initGaniEditorStartup() {
     function _getInfoTabHTML(tab) {
         const fontFamily = getFontFamily(localStorage.getItem("editorFont") || "chevyray");
         if (tab === "about") return `
-            <p style="margin:0 0 12px 0;">A web-based suite of tools for Graal Online development — includes a .gani animation editor, .nw/.graal/.zelda level editor, Gmap Generator, and Setshape2 editor.</p>
-            <p style="margin:0 0 12px 0;">Part of Preagonal/OpenGraal &mdash; preserving Graal for future generations.</p>
+            <p style="margin:0 0 12px 0;">A web-based suite of tools for classic game development — includes a .gani animation editor, .nw/.graal/.zelda level editor, Gmap Generator, and Setshape2 editor.</p>
+            <p style="margin:0 0 12px 0;">Part of Preagonal/OpenGraal &mdash; keeping classic online game formats alive for future generations.</p>
             <p style="margin:0 0 12px 0; border-top:1px solid #0a0a0a; padding-top:12px; font-size:11px; color:#888;">
                 <strong>Credits:</strong><br>
                 Original C++ TilesEditor by <a href="https://www.xing.com/profile/Stefan_Knorr9" target="_blank" style="color:#4a9eff; text-decoration:none;">Stefan Knorr</a><br>
@@ -12037,7 +12040,7 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
                             }
                         }
                     }
-                    if (frame.sounds && frame.sounds.length > 0) {
+    if (!_isExportRender && frame.sounds && frame.sounds.length > 0) {
                         for (const sound of frame.sounds) {
                             const centerX = sound.xoffset;
                             const centerY = sound.yoffset;
@@ -12074,9 +12077,8 @@ if (document.readyState === "complete") {
 }
 
 let lastPlayedFrame = -1;
-function playAnimation() {
+function playAnimation(now) {
     if (!isPlaying) return;
-    const now = Date.now();
     if (!playStartTime) playStartTime = now;
     const delta = now - playStartTime;
     playStartTime = now;
@@ -12189,8 +12191,8 @@ function playAnimation() {
         }
         redraw();
         updateFrameInfo();
+        drawTimeline();
     }
-    drawTimeline();
     if (isPlaying) {
         requestAnimationFrame(playAnimation);
     }
@@ -13050,7 +13052,7 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
     row2.style.display = "flex";
     row2.style.alignItems = "center";
     row2.style.gap = "4px";
-    row2.innerHTML = `<label style="width:100px;font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">Image File:</label><input type="text" id="addSpriteImageFile" readonly style="flex:1;min-width:0;background:${dialogColors.inputBg};color:${dialogColors.text};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};padding:4px;font-size:12px;font-family:${fontFamily};box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);"><button id="addSpriteBrowse" style="background:${dialogColors.buttonBg};color:${dialogColors.buttonText};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};padding:4px 8px;cursor:pointer;font-size:12px;font-family:${fontFamily};flex-shrink:0;box-shadow:inset 0 1px 0 rgba(0,0,0,0.3),0 1px 0 rgba(255,255,255,0.1);">Select</button>`;
+    row2.innerHTML = `<label style="width:100px;font-size:12px;flex-shrink:0;color:${dialogColors.text};text-shadow:0 0 2px rgba(0,0,0,0.8);user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;cursor:default;">Image File:</label><input type="text" id="addSpriteImageFile" style="flex:1;min-width:0;background:${dialogColors.inputBg};color:${dialogColors.text};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};padding:4px;font-size:12px;font-family:${fontFamily};box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);"><button id="addSpriteBrowse" style="background:${dialogColors.buttonBg};color:${dialogColors.buttonText};border:1px solid ${dialogColors.border};border-top:1px solid ${borderTopLeft};border-left:1px solid ${borderTopLeft};padding:4px 8px;cursor:pointer;font-size:12px;font-family:${fontFamily};flex-shrink:0;box-shadow:inset 0 1px 0 rgba(0,0,0,0.3),0 1px 0 rgba(255,255,255,0.1);">Select</button>`;
     const row3 = document.createElement("div");
     row3.style.display = "flex";
     row3.style.alignItems = "center";
@@ -13339,6 +13341,15 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
             }
         };
         fileInput.click();
+    };
+    $("addSpriteImageFile").oninput = () => {
+        const imgKey = $("addSpriteImageFile").value.trim().toLowerCase();
+        if (imageLibrary.has(imgKey)) {
+            previewImg = imageLibrary.get(imgKey);
+        } else {
+            previewImg = null;
+        }
+        updateAddSpritePreview();
     };
     $("addSpriteSource").onchange = async () => {
         const sourceType = $("addSpriteSource").value;
@@ -14077,13 +14088,19 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
                 undo: () => restoreAnimationState(oldState),
                 redo: () => restoreAnimationState(newState)
             });
+            const lastAdded = currentAnimation.sprites.get(spriteIndex + totalSprites - 1);
+            if (lastAdded) editingSprite = lastAdded;
             if (previewImg && fileInput.files[0]) {
-            loadImage(fileInput.files[0]).then(() => {
-                updateSpritesList();
-                redraw();
-            });
-        }
+                loadImage(fileInput.files[0]).then(() => {
+                    updateSpritesList();
+                    const sel = $("spritesList").querySelector(".selected");
+                    if (sel) sel.scrollIntoView({ block: "nearest" });
+                    redraw();
+                });
+            }
             updateSpritesList();
+            const sel = $("spritesList").querySelector(".selected");
+            if (sel) sel.scrollIntoView({ block: "nearest" });
             redraw();
             saveSession();
             $("addSpriteIndex").value = spriteIndex + totalSprites;
@@ -14657,6 +14674,7 @@ function setupContextMenus() {
         });
     }
     document.addEventListener("keydown", (e) => {
+        const gr = document.getElementById('ganiRoot'); if (!gr || gr.style.display === 'none') return;
         if (e.key === "Escape" || e.key === "Esc") {
             const settingsDialog = $("settingsDialog");
             const aboutDialog = $("infoDialog");
@@ -15139,3 +15157,549 @@ function setupContextMenus() {
 })();
 Object.defineProperty(window, 'ganiAnimations', { get: () => animations, configurable: true });
 Object.defineProperty(window, 'ganiCurrentTabIndex', { get: () => currentTabIndex, configurable: true });
+
+// ── Animation Export ──────────────────────────────────────────────────────────
+
+// ── GIF encoder ───────────────────────────────────────────────────────────────
+function _gifLZW(indices, minCodeSize) {
+    if (!indices.length) return [];
+    const clear = 1 << minCodeSize, eof = clear + 1;
+    const bytes = []; let buf = 0, blen = 0;
+    let codeSize = minCodeSize + 1, nextCode = eof + 1;
+    let table = new Map();
+    const emit = c => { buf |= c << blen; blen += codeSize; while (blen >= 8) { bytes.push(buf & 0xFF); buf >>>= 8; blen -= 8; } };
+    const reset = () => { table.clear(); codeSize = minCodeSize + 1; nextCode = eof + 1; };
+    emit(clear); reset();
+    let prefix = indices[0];
+    for (let i = 1; i < indices.length; i++) {
+        const k = indices[i];
+        const key = (prefix << 8) | k;
+        if (table.has(key)) { prefix = table.get(key); } else {
+            emit(prefix);
+            if (nextCode < 4096) { table.set(key, nextCode++); if (nextCode > (1 << codeSize) && codeSize < 12) codeSize++; }
+            else { emit(clear); reset(); }
+            prefix = k;
+        }
+    }
+    emit(prefix); emit(eof);
+    if (blen > 0) bytes.push(buf & 0xFF);
+    return bytes;
+}
+
+function _gifQuantize(imageData) {
+    const data = imageData.data, n = imageData.width * imageData.height;
+    const colorSet = new Map(); let hasTransp = false;
+    for (let i = 0; i < n; i++) {
+        if (data[i*4+3] < 128) { hasTransp = true; continue; }
+        const key = (data[i*4] << 16) | (data[i*4+1] << 8) | data[i*4+2];
+        if (!colorSet.has(key)) colorSet.set(key, colorSet.size);
+    }
+    const palette = [];
+    if (hasTransp) palette.push([0, 0, 0]);
+    for (const [key] of colorSet) { if (palette.length >= 256) break; palette.push([(key >> 16) & 0xFF, (key >> 8) & 0xFF, key & 0xFF]); }
+    const base = hasTransp ? 1 : 0;
+    const colorIdx = new Map();
+    for (let i = base; i < palette.length; i++) { const c = palette[i]; colorIdx.set((c[0] << 16) | (c[1] << 8) | c[2], i); }
+    const nearestIdx = (r, g, b) => { let best = base, bestD = Infinity; for (let i = base; i < palette.length; i++) { const c = palette[i]; const d = (r-c[0])**2+(g-c[1])**2+(b-c[2])**2; if (d < bestD) { bestD = d; best = i; } } return best; };
+    const indexed = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+        if (data[i*4+3] < 128) { indexed[i] = 0; continue; }
+        const r = data[i*4], g = data[i*4+1], b = data[i*4+2];
+        const key = (r << 16) | (g << 8) | b;
+        indexed[i] = colorIdx.has(key) ? colorIdx.get(key) : nearestIdx(r, g, b);
+    }
+    return { palette, indexed, transparentIdx: hasTransp ? 0 : -1 };
+}
+
+function _buildGIF(width, height, frames, loop) {
+    const out = [];
+    const word = n => out.push(n & 0xFF, (n >> 8) & 0xFF);
+    const str  = s => { for (let i = 0; i < s.length; i++) out.push(s.charCodeAt(i)); };
+    str('GIF89a'); word(width); word(height); out.push(0x70, 0x00, 0x00);
+    if (loop) { out.push(0x21, 0xFF, 0x0B); str('NETSCAPE2.0'); out.push(0x03, 0x01); word(0); out.push(0x00); }
+    for (const { imageData, delayMs } of frames) {
+        const { palette, indexed, transparentIdx } = _gifQuantize(imageData);
+        const ctBits = Math.max(1, Math.ceil(Math.log2(Math.max(palette.length, 2))));
+        const ctSize = 1 << ctBits;
+        const delay  = Math.max(2, Math.round(delayMs / 10));
+        const hasT   = transparentIdx >= 0;
+        out.push(0x21, 0xF9, 0x04, hasT ? 0x09 : 0x00); word(delay); out.push(hasT ? transparentIdx : 0, 0x00);
+        out.push(0x2C); word(0); word(0); word(width); word(height); out.push(0x80 | (ctBits - 1));
+        for (let i = 0; i < ctSize; i++) { const c = palette[i] || [0,0,0]; out.push(c[0], c[1], c[2]); }
+        const minCS = Math.max(2, ctBits);
+        const lzw = _gifLZW(indexed, minCS);
+        out.push(minCS);
+        for (let i = 0; i < lzw.length; ) { const n = Math.min(255, lzw.length - i); out.push(n); for (let j = 0; j < n; j++) out.push(lzw[i++]); }
+        out.push(0x00);
+    }
+    out.push(0x3B);
+    return new Uint8Array(out);
+}
+
+// ── MP4 muxer (ISOBMFF / H.264) ──────────────────────────────────────────────
+function _mp4Cat(...arrays) {
+    const n = arrays.reduce((s, a) => s + a.length, 0);
+    const out = new Uint8Array(n); let off = 0;
+    for (const a of arrays) { out.set(a, off); off += a.length; }
+    return out;
+}
+function _mp4Box(type, ...parts) {
+    const data = _mp4Cat(...parts);
+    const size = 8 + data.length;
+    const b = new Uint8Array(size);
+    b[0]=(size>>>24)&0xFF; b[1]=(size>>>16)&0xFF; b[2]=(size>>>8)&0xFF; b[3]=size&0xFF;
+    b[4]=type.charCodeAt(0); b[5]=type.charCodeAt(1); b[6]=type.charCodeAt(2); b[7]=type.charCodeAt(3);
+    b.set(data, 8); return b;
+}
+function _mp4U32(n) { n=n>>>0; return new Uint8Array([(n>>>24)&0xFF,(n>>>16)&0xFF,(n>>>8)&0xFF,n&0xFF]); }
+function _mp4U16(n) { return new Uint8Array([(n>>>8)&0xFF,n&0xFF]); }
+function _mp4I32(n) { return _mp4U32(n < 0 ? (n + 0x100000000) : n); }
+function _mp4Str(s, len) { const a = new Uint8Array(len); for(let i=0;i<s.length&&i<len;i++) a[i]=s.charCodeAt(i); return a; }
+const _mp4Mat = _mp4Cat(_mp4U32(0x00010000),_mp4U32(0),_mp4U32(0),_mp4U32(0),_mp4U32(0x00010000),_mp4U32(0),_mp4U32(0),_mp4U32(0),_mp4U32(0x40000000));
+const _mp4VF  = new Uint8Array([0,0,0,0]); // version+flags=0
+
+function _buildMP4(w, h, samples, avccConfig, stts, stss, audioTrack) {
+    const totalDur = stts.reduce((s, e) => s + e.count * e.delta, 0);
+    const sampleCount = samples.length;
+    const hasAudio = !!audioTrack;
+    const ftypParts = [_mp4Str('isom',4), _mp4U32(0x200), _mp4Str('isom',4), _mp4Str('iso2',4), _mp4Str('avc1',4), _mp4Str('mp41',4)];
+    if (hasAudio) ftypParts.push(_mp4Str('mp40',4));
+    const ftyp = _mp4Box('ftyp', ...ftypParts);
+    let allMdatParts = [...samples.map(s => s.data)];
+    let audioChunkOffset = 0;
+    if (hasAudio) { audioChunkOffset = allMdatParts.reduce((s, d) => s + d.length, 0); allMdatParts.push(...audioTrack.samples.map(s => s.data)); }
+    const mdatData = _mp4Cat(...allMdatParts);
+    const mdat = _mp4Box('mdat', mdatData);
+    const chunkOffset = ftyp.length + 8;
+
+    const avcC = _mp4Box('avcC', avccConfig);
+    const avc1 = _mp4Box('avc1', new Uint8Array(6), _mp4U16(1), new Uint8Array(16), _mp4U16(w), _mp4U16(h),
+        _mp4U32(0x00480000), _mp4U32(0x00480000), new Uint8Array(4), _mp4U16(1), new Uint8Array(32), _mp4U16(0x0018), _mp4U16(0xFFFF), avcC);
+    const vStsd = _mp4Box('stsd', _mp4VF, _mp4U32(1), avc1);
+    const sttsBox = _mp4Box('stts', _mp4VF, _mp4U32(stts.length), _mp4Cat(...stts.flatMap(e=>[_mp4U32(e.count),_mp4U32(e.delta)])));
+    const stssBox = _mp4Box('stss', _mp4VF, _mp4U32(stss.length), _mp4Cat(...stss.map(n=>_mp4U32(n))));
+    const stszBox = _mp4Box('stsz', _mp4VF, _mp4U32(0), _mp4U32(sampleCount), _mp4Cat(...samples.map(s=>_mp4U32(s.data.length))));
+    const stscBox = _mp4Box('stsc', _mp4VF, _mp4U32(1), _mp4U32(1), _mp4U32(sampleCount), _mp4U32(1));
+    const stcoBox = _mp4Box('stco', _mp4VF, _mp4U32(1), _mp4U32(chunkOffset));
+    const vStbl = _mp4Box('stbl', vStsd, sttsBox, stssBox, stszBox, stscBox, stcoBox);
+    const url  = _mp4Box('url ', new Uint8Array([0,0,0,1]));
+    const dref = _mp4Box('dref', _mp4VF, _mp4U32(1), url);
+    const dinf = _mp4Box('dinf', dref);
+    const vmhd = _mp4Box('vmhd', new Uint8Array([0,0,0,1,0,0,0,0,0,0,0,0]));
+    const vMinf = _mp4Box('minf', vmhd, dinf, vStbl);
+    const vHdlr = _mp4Box('hdlr', _mp4VF, _mp4U32(0), _mp4Str('vide',4), new Uint8Array(12), _mp4Str('VideoHandler',12), new Uint8Array(1));
+    const vMdhd = _mp4Box('mdhd', _mp4VF, _mp4U32(0), _mp4U32(0), _mp4U32(1000), _mp4U32(totalDur), _mp4U16(0x55C4), _mp4U16(0));
+    const vMdia = _mp4Box('mdia', vMdhd, vHdlr, vMinf);
+    const vTkhd = _mp4Box('tkhd', new Uint8Array([0,0,0,3]), _mp4U32(0), _mp4U32(0), _mp4U32(1), _mp4U32(0), _mp4U32(totalDur), new Uint8Array(8), _mp4U16(0), _mp4U16(0), _mp4U16(0), _mp4U16(0), _mp4Mat, _mp4U32(w<<16), _mp4U32(h<<16));
+    const vTrak = _mp4Box('trak', vTkhd, vMdia);
+
+    const traks = [vTrak];
+    if (hasAudio) {
+        const a = audioTrack;
+        const aSampleCount = a.samples.length;
+        const aStsd = _mp4Box('stsd', _mp4VF, _mp4U32(1), a.sampleDesc);
+        const aSttsBox = _mp4Box('stts', _mp4VF, _mp4U32(a.stts.length), _mp4Cat(...a.stts.flatMap(e=>[_mp4U32(e.count),_mp4U32(e.delta)])));
+        const aStszBox = _mp4Box('stsz', _mp4VF, _mp4U32(0), _mp4U32(aSampleCount), _mp4Cat(...a.samples.map(s=>_mp4U32(s.data.length))));
+        const aStscBox = _mp4Box('stsc', _mp4VF, _mp4U32(1), _mp4U32(1), _mp4U32(aSampleCount), _mp4U32(1));
+        const aStcoBox = _mp4Box('stco', _mp4VF, _mp4U32(1), _mp4U32(chunkOffset + audioChunkOffset));
+        const aStbl = _mp4Box('stbl', aStsd, aSttsBox, aStszBox, aStscBox, aStcoBox);
+        const aDinf = _mp4Box('dinf', _mp4Box('dref', _mp4VF, _mp4U32(1), _mp4Box('url ', new Uint8Array([0,0,0,1]))));
+        const smhd = _mp4Box('smhd', _mp4VF, _mp4U16(0), _mp4U16(0));
+        const aMinf = _mp4Box('minf', smhd, aDinf, aStbl);
+        const aHdlr = _mp4Box('hdlr', _mp4VF, _mp4U32(0), _mp4Str('soun',4), new Uint8Array(12), _mp4Str('SoundHandler',12), new Uint8Array(1));
+        const aTimescale = a.sampleRate;
+        const aMdhd = _mp4Box('mdhd', _mp4VF, _mp4U32(0), _mp4U32(0), _mp4U32(aTimescale), _mp4U32(a.totalDurationSamples), _mp4U16(0x55C4), _mp4U16(0));
+        const aMdia = _mp4Box('mdia', aMdhd, aHdlr, aMinf);
+        const aTkhd = _mp4Box('tkhd', new Uint8Array([0,0,0,3]), _mp4U32(0), _mp4U32(0), _mp4U32(2), _mp4U32(0), _mp4U32(totalDur), new Uint8Array(8), _mp4U16(0), _mp4U16(0), _mp4U16(0x0100), _mp4U16(0), _mp4Mat, _mp4U32(0), _mp4U32(0));
+        traks.push(_mp4Box('trak', aTkhd, aMdia));
+    }
+
+    const numTracks = traks.length;
+    const mvhd = _mp4Box('mvhd', _mp4VF, _mp4U32(0), _mp4U32(0), _mp4U32(1000), _mp4U32(totalDur), _mp4U32(0x00010000), _mp4U16(0x0100), new Uint8Array(10), _mp4Mat, new Uint8Array(24), _mp4U32(numTracks + 1));
+    const moov = _mp4Box('moov', mvhd, ...traks);
+    return _mp4Cat(ftyp, mdat, moov);
+}
+
+// ── Shared render helpers ─────────────────────────────────────────────────────
+function _exportBounds(ani, dirIdx, scale, padding) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const frame of ani.frames) {
+        for (const p of (frame.pieces[dirIdx] || [])) {
+            if (p.type !== 'sprite') continue;
+            const bb = p.getBoundingBox(ani); if (!bb) continue;
+            minX = Math.min(minX, bb.x); minY = Math.min(minY, bb.y);
+            maxX = Math.max(maxX, bb.x + bb.width); maxY = Math.max(maxY, bb.y + bb.height);
+        }
+    }
+    if (!isFinite(minX)) { minX = -32; minY = -32; maxX = 32; maxY = 32; }
+    return { w: Math.max(1, Math.ceil((maxX - minX) * scale) + 2 * padding), h: Math.max(1, Math.ceil((maxY - minY) * scale) + 2 * padding), minX, minY };
+}
+
+function _renderExportFrame(offCtx, frame, dirIdx, scale, padding, minX, minY, bgColor) {
+    const w = offCtx.canvas.width, h = offCtx.canvas.height;
+    offCtx.clearRect(0, 0, w, h);
+    if (bgColor) { offCtx.fillStyle = bgColor; offCtx.fillRect(0, 0, w, h); }
+    offCtx.save();
+    offCtx.translate(-minX * scale + padding, -minY * scale + padding);
+    offCtx.scale(scale, scale);
+    const savedSel = new Set(selectedPieces); selectedPieces.clear();
+    _isExportRender = true;
+    drawFrame(offCtx, frame, dirIdx);
+    _isExportRender = false;
+    selectedPieces.clear(); for (const p of savedSel) selectedPieces.add(p);
+    offCtx.restore();
+}
+
+async function _animExportSave(data, filename, mimeType, ext, filters) {
+    if (_isTauri) {
+        const path = await _tauri.dialog.save({ defaultPath: filename, filters: [{ name: filters, extensions: [ext] }] });
+        if (path) await _tauri.fs.writeFile(path, data instanceof Uint8Array ? data : new Uint8Array(data));
+    } else {
+        const url = URL.createObjectURL(new Blob([data], { type: mimeType }));
+        const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
+    }
+}
+
+// ── Export functions ──────────────────────────────────────────────────────────
+async function _exportGIF(ani, dirIdx, scale, padding, bgColor, loop) {
+    const { w, h, minX, minY } = _exportBounds(ani, dirIdx, scale, padding);
+    const off = document.createElement('canvas'); off.width = w; off.height = h;
+    const ctx = off.getContext('2d', { willReadFrequently: true }); ctx.imageSmoothingEnabled = false;
+    const gifFrames = [];
+    for (const frame of ani.frames) {
+        _renderExportFrame(ctx, frame, dirIdx, scale, padding, minX, minY, bgColor);
+        gifFrames.push({ imageData: ctx.getImageData(0, 0, w, h), delayMs: frame.duration });
+    }
+    const gif = _buildGIF(w, h, gifFrames, loop);
+    const filename = (ani.fileName || 'animation').replace(/\.gani$/i, '') + '.gif';
+    await _animExportSave(gif, filename, 'image/gif', 'gif', 'GIF Image');
+}
+
+async function _exportWebM(ani, dirIdx, scale, padding, bgColor) {
+    const { w, h, minX, minY } = _exportBounds(ani, dirIdx, scale, padding);
+    const off = document.createElement('canvas'); off.width = w; off.height = h;
+    const ctx = off.getContext('2d'); ctx.imageSmoothingEnabled = false;
+    const stream = off.captureStream(0);
+    const track = stream.getVideoTracks()[0];
+    const mimeType = ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'].find(m => MediaRecorder.isTypeSupported(m)) || 'video/webm';
+    const chunks = [];
+    const recorder = new MediaRecorder(stream, { mimeType });
+    recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    const filename = (ani.fileName || 'animation').replace(/\.gani$/i, '') + '.webm';
+    await new Promise((resolve, reject) => {
+        recorder.onstop = async () => {
+            try {
+                const blob = new Blob(chunks, { type: mimeType });
+                if (_isTauri) {
+                    const buf = await blob.arrayBuffer();
+                    await _animExportSave(new Uint8Array(buf), filename, mimeType, 'webm', 'WebM Video');
+                } else {
+                    await _animExportSave(blob, filename, mimeType, 'webm', 'WebM Video');
+                }
+                resolve();
+            } catch (e) { reject(e); }
+        };
+        recorder.onerror = reject;
+        recorder.start();
+        (async () => {
+            for (const frame of ani.frames) {
+                _renderExportFrame(ctx, frame, dirIdx, scale, padding, minX, minY, bgColor);
+                if ('requestFrame' in track) track.requestFrame();
+                await new Promise(r => setTimeout(r, frame.duration));
+            }
+            recorder.stop();
+        })();
+    });
+}
+
+async function _exportMP4(ani, dirIdx, scale, padding, bgColor) {
+    if (typeof VideoEncoder === 'undefined') throw new Error('VideoEncoder (WebCodecs) is not available in this environment. Try WebM instead.');
+    const { w, h, minX, minY } = _exportBounds(ani, dirIdx, scale, padding);
+    const encW = Math.ceil(w / 16) * 16, encH = Math.ceil(h / 16) * 16;
+    const off = document.createElement('canvas'); off.width = encW; off.height = encH;
+    const ctx = off.getContext('2d'); ctx.imageSmoothingEnabled = false;
+
+    const chunks = []; let avccConfig = null; let encoderError = null; let outputIdx = 0; const stssArr = [];
+    const encoder = new VideoEncoder({
+        output: (chunk, meta) => {
+            if (meta?.decoderConfig?.description && !avccConfig) avccConfig = new Uint8Array(meta.decoderConfig.description);
+            const data = new Uint8Array(chunk.byteLength); chunk.copyTo(data);
+            if (chunks.length === 0) {
+                console.log('First chunk type:', chunk.type, 'size:', chunk.byteLength);
+                console.log('First 32 bytes:', Array.from(data.slice(0,32)).map(b=>b.toString(16).padStart(2,'0')).join(' '));
+                console.log('avccConfig:', avccConfig ? Array.from(avccConfig).map(b=>b.toString(16).padStart(2,'0')).join(' ') : 'null');
+            }
+            if (chunk.type === 'key') stssArr.push(outputIdx + 1);
+            chunks.push({ data });
+            outputIdx++;
+        },
+        error: e => { encoderError = e; }
+    });
+    const avgFrameMs = ani.frames.reduce((s,f) => s + f.duration, 0) / ani.frames.length;
+    const framerate = Math.max(1, Math.round(1000 / avgFrameMs));
+    encoder.configure({ codec: 'avc1.42001f', width: encW, height: encH, bitrate: 2_000_000, framerate, avc: { format: 'avc' } });
+
+    let tsUs = 0; const durMap = [];
+    for (let i = 0; i < ani.frames.length; i++) {
+        const frame = ani.frames[i];
+        _renderExportFrame(ctx, frame, dirIdx, scale, padding, minX, minY, bgColor);
+        ctx.getImageData(0, 0, 1, 1);
+        const durUs = frame.duration * 1000;
+        const vf = new VideoFrame(off, { timestamp: tsUs, duration: durUs });
+        if (i === 0) console.log('VideoFrame:', vf.format, vf.codedWidth + 'x' + vf.codedHeight, 'visible:' + vf.visibleRect?.width + 'x' + vf.visibleRect?.height, 'ts:', vf.timestamp, 'dur:', vf.duration);
+        encoder.encode(vf, { keyFrame: i % 30 === 0 });
+        vf.close();
+        tsUs += durUs; durMap.push(frame.duration);
+    }
+    await encoder.flush(); encoder.close();
+    if (encoderError) throw encoderError;
+    if (!avccConfig) throw new Error('Encoder did not produce decoder config. Codec may not be supported.');
+
+    const stts = [];
+    for (const d of durMap) { if (stts.length && stts[stts.length-1].delta === d) stts[stts.length-1].count++; else stts.push({ count: 1, delta: d }); }
+
+    let audioTrack = null;
+    try { audioTrack = await _buildMP4AudioTrack(ani); } catch(e) { /* no audio, that's fine */ }
+
+    const mp4 = _buildMP4(encW, encH, chunks, avccConfig, stts, stssArr, audioTrack);
+    const filename = (ani.fileName || 'animation').replace(/\.gani$/i, '') + '.mp4';
+    await _animExportSave(mp4, filename, 'video/mp4', 'mp4', 'MP4 Video');
+}
+
+async function _resolveSoundAudioBuffer(fileName) {
+    const audioExts = [".wav", ".mp3", ".ogg", ".m4a"];
+    const commonSubdirs = ["sounds", "sound", "music", "audio", "sfx", "fx"];
+    const baseName = fileName;
+    const hasExt = /\.\w+$/.test(baseName);
+    const pathsToTry = [];
+    if (soundLibrary.has(baseName.toLowerCase())) {
+        const audio = soundLibrary.get(baseName.toLowerCase());
+        try { return await _decodeAudioElement(audio); } catch(e) {}
+    }
+    if (!fileName.includes("/") && !fileName.includes("\\")) {
+        pathsToTry.push("sounds/" + baseName);
+        if (!hasExt) for (const ext of audioExts) pathsToTry.push("sounds/" + baseName + ext);
+        if (typeof workingDirectory !== 'undefined' && workingDirectory) {
+            pathsToTry.push(workingDirectory + "/" + baseName);
+            if (!hasExt) for (const ext of audioExts) pathsToTry.push(workingDirectory + "/" + baseName + ext);
+            for (const subdir of commonSubdirs) {
+                pathsToTry.push(workingDirectory + "/" + subdir + "/" + baseName);
+                if (!hasExt) for (const ext of audioExts) pathsToTry.push(workingDirectory + "/" + subdir + "/" + baseName + ext);
+            }
+        }
+    } else {
+        pathsToTry.push(fileName);
+    }
+    for (const path of pathsToTry) {
+        try {
+            const resp = await fetch(path);
+            if (resp.ok) {
+                const buf = await resp.arrayBuffer();
+                const ac = new (window.AudioContext || window.webkitAudioContext)();
+                return await ac.decodeAudioData(buf);
+            }
+        } catch(e) {}
+    }
+    return null;
+}
+
+function _decodeAudioElement(audio) {
+    return new Promise((resolve, reject) => {
+        if (audio._audioBuffer) return resolve(audio._audioBuffer);
+        const ac = new (window.AudioContext || window.webkitAudioContext)();
+        fetch(audio.src).then(r => r.arrayBuffer()).then(buf => ac.decodeAudioData(buf)).then(buf => { audio._audioBuffer = buf; resolve(buf); }).catch(reject);
+    });
+}
+
+async function _buildMP4AudioTrack(ani) {
+    const frames = ani.frames;
+    if (!frames.some(f => f.sounds && f.sounds.length > 0)) return null;
+    if (typeof AudioEncoder === 'undefined') return null;
+
+    let totalDurMs = 0;
+    for (const f of frames) totalDurMs += f.duration;
+
+    const audioCtx = new OfflineAudioContext(2, Math.ceil(44100 * totalDurMs / 1000), 44100);
+    let timeOffset = 0;
+    const decodedBuffers = new Map();
+
+    for (const frame of frames) {
+        if (frame.sounds && frame.sounds.length > 0) {
+            for (const sound of frame.sounds) {
+                const key = sound.fileName.toLowerCase();
+                let buffer = decodedBuffers.get(key);
+                if (!buffer) {
+                    buffer = await _resolveSoundAudioBuffer(sound.fileName);
+                    if (buffer) decodedBuffers.set(key, buffer);
+                }
+                if (buffer) {
+                    const src = audioCtx.createBufferSource();
+                    src.buffer = buffer;
+                    src.connect(audioCtx.destination);
+                    src.start(timeOffset / 1000);
+                }
+            }
+        }
+        timeOffset += frame.duration;
+    }
+
+    const rendered = await audioCtx.startRendering();
+    const pcmData = rendered.getChannelData(0);
+    let hasNonSilent = false;
+    for (let i = 0; i < pcmData.length; i += 1024) { if (Math.abs(pcmData[i]) > 0.0001) { hasNonSilent = true; break; } }
+    if (!hasNonSilent) return null;
+
+    const sampleRate = rendered.sampleRate;
+    const numChannels = rendered.numberOfChannels;
+    const totalSamples = rendered.length;
+
+    const audioSamples = []; let aacConfig = null; let audioEncError = null;
+    const encoder = new AudioEncoder({
+        output: (chunk, meta) => {
+            if (meta?.decoderConfig?.description && !aacConfig) aacConfig = new Uint8Array(meta.decoderConfig.description);
+            const data = new Uint8Array(chunk.byteLength); chunk.copyTo(data);
+            audioSamples.push({ data });
+        },
+        error: e => { audioEncError = e; }
+    });
+
+    const codecSupported = (await AudioEncoder.isConfigSupported({ codec: 'mp4a.40.2', sampleRate, numberOfChannels: numChannels, bitrate: 128000 })).supported;
+    if (!codecSupported) return null;
+
+    encoder.configure({ codec: 'mp4a.40.2', sampleRate, numberOfChannels: numChannels, bitrate: 128000 });
+
+    const frameSize = 1024;
+    let offset = 0;
+    while (offset < totalSamples) {
+        const numFrames = Math.min(frameSize, totalSamples - offset);
+        const buf = new Float32Array(numFrames * numChannels);
+        for (let ch = 0; ch < numChannels; ch++) {
+            const src = rendered.getChannelData(ch);
+            buf.set(src.subarray(offset, offset + numFrames), ch * numFrames);
+        }
+        const ad = new AudioData({ format: 'f32-planar', sampleRate, numberOfFrames: numFrames, numberOfChannels: numChannels, timestamp: Math.round(offset / sampleRate * 1e6), data: buf });
+        encoder.encode(ad);
+        ad.close();
+        offset += frameSize;
+    }
+    await encoder.flush(); encoder.close();
+    if (audioEncError) throw audioEncError;
+    if (!aacConfig || audioSamples.length === 0) return null;
+
+    const aacSampleDur = frameSize;
+    const astts = [{ count: audioSamples.length, delta: aacSampleDur }];
+
+    // Build esds box: each descriptor is tag(1) + length(1) + body (length<128 guaranteed here)
+    const _d = (tag, ...parts) => { const b = _mp4Cat(...parts); return _mp4Cat(new Uint8Array([tag, b.length]), b); };
+    const dsi  = _d(0x05, aacConfig);
+    const dcfg = _d(0x04, new Uint8Array([0x40, 0x15, 0x00,0x00,0x00, 0x00,0x01,0xF4,0x00, 0x00,0x01,0xF4,0x00]), dsi);
+    const slc  = _d(0x06, new Uint8Array([0x02]));
+    const es   = _d(0x03, new Uint8Array([0x00, 0x01, 0x00]), dcfg, slc);
+    const esds = _mp4Box('esds', _mp4VF, es);
+
+    const mp4a = _mp4Box('mp4a', new Uint8Array(6), _mp4U16(1), new Uint8Array(8), _mp4U16(numChannels), _mp4U16(16), _mp4U16(0), _mp4U16(0), _mp4U32(sampleRate << 16), esds);
+
+    return { samples: audioSamples, stts: astts, sampleDesc: mp4a, sampleRate, totalDurationSamples: totalSamples, numChannels };
+}
+
+// ── Export dialog ─────────────────────────────────────────────────────────────
+function showExportAnimDialog() {
+    if (!currentAnimation) return;
+    const colors = getColorSchemeColors();
+    const currentFont = localStorage.getItem('editorFont') || 'chevyray';
+    const ff = getFontFamily(currentFont);
+    const borderLight = colors.border === '#0a0a0a' || colors.border === '#1a1a1a' ? '#404040' : colors.border;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'dialog-overlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;display:flex;justify-content:center;align-items:center;';
+    overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+
+    const box = document.createElement('div');
+    box.style.cssText = `background:${colors.panel};border:2px solid ${colors.border};box-shadow:0 4px 12px rgba(0,0,0,0.8);width:340px;max-width:92vw;font-family:${ff};color:${colors.text};font-size:12px;`;
+    box.onclick = e => e.stopPropagation();
+
+    const titlebar = document.createElement('div');
+    titlebar.className = 'dialog-titlebar';
+    titlebar.style.cssText = `padding:8px 14px;display:flex;align-items:center;gap:8px;font-size:13px;`;
+    titlebar.innerHTML = `<i class="fas fa-file-export" style="flex-shrink:0;"></i><span style="font-family:${ff};color:${colors.text};">Export Animation</span>`;
+
+    const body = document.createElement('div');
+    body.style.cssText = 'padding:14px 20px;display:flex;flex-direction:column;gap:10px;';
+
+    const mkSelStyle = () => `background:${colors.buttonBg};color:${colors.buttonText};border:1px solid ${colors.buttonBorder};border-top:1px solid ${borderLight};border-left:1px solid ${borderLight};padding:4px 6px;flex:1;font-family:${ff};font-size:11px;cursor:pointer;box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);`;
+    const mkRow = (label, el) => {
+        const r = document.createElement('div'); r.style.cssText = 'display:flex;align-items:center;gap:8px;';
+        const lbl = document.createElement('label'); lbl.style.cssText = `width:90px;flex-shrink:0;font-size:11px;color:${colors.text};user-select:none;`; lbl.textContent = label;
+        r.append(lbl, el); return r;
+    };
+    const mkSel = (opts, val) => {
+        const s = document.createElement('select'); s.style.cssText = mkSelStyle();
+        for (const [v, t] of opts) { const o = document.createElement('option'); o.value = v; o.textContent = t; if (v === val) o.selected = true; s.append(o); }
+        return s;
+    };
+
+    const fmtSel   = mkSel([['gif','GIF (animated)'],['mp4','MP4 (H.264)'],['webm','WebM (VP8/VP9)']], 'gif');
+    const scaleSel = mkSel([['1','1x (native)'],['2','2x'],['4','4x'],['8','8x']], '2');
+    const padSel   = mkSel([['0','None'],['4','4px'],['8','8px'],['16','16px']], '4');
+    const dirOpts  = [['current','Current']];
+    if (!currentAnimation.singleDir) dirOpts.push(['0','Up'],['1','Left'],['2','Down'],['3','Right']);
+    const dirSel   = mkSel(dirOpts, 'current');
+    const bgSel    = mkSel([['transparent','Transparent'],['canvas','Canvas background'],['#000000','Black'],['#ffffff','White']], 'transparent');
+
+    // Custom checkbox (matches showConfirmDialog style)
+    const loopRow = document.createElement('div'); loopRow.style.cssText = 'display:flex;align-items:center;gap:8px;';
+    const loopChk = document.createElement('span');
+    loopChk.style.cssText = `display:inline-block;width:14px;height:14px;text-align:center;border:1px solid ${borderLight};background:${colors.buttonBg};vertical-align:middle;line-height:12px;font-size:11px;cursor:pointer;user-select:none;flex-shrink:0;`;
+    loopChk._checked = true; loopChk.textContent = '✓';
+    const toggleLoop = () => { loopChk._checked = !loopChk._checked; loopChk.textContent = loopChk._checked ? '✓' : ' '; };
+    loopChk.onclick = toggleLoop;
+    const loopLbl = document.createElement('label'); loopLbl.style.cssText = `font-size:11px;color:${colors.text};cursor:pointer;user-select:none;`; loopLbl.textContent = 'Loop (GIF only)'; loopLbl.onclick = toggleLoop;
+    loopRow.append(loopChk, loopLbl);
+
+    fmtSel.onchange = () => { loopRow.style.opacity = fmtSel.value === 'gif' ? '1' : '0.4'; loopRow.style.pointerEvents = fmtSel.value === 'gif' ? '' : 'none'; };
+
+    body.append(mkRow('Format', fmtSel), mkRow('Scale', scaleSel), mkRow('Direction', dirSel), mkRow('Padding', padSel), mkRow('Background', bgSel), loopRow);
+
+    const status = document.createElement('div');
+    status.style.cssText = `padding:2px 20px 0;font-size:11px;color:#f88;min-height:16px;`;
+
+    const footer = document.createElement('div');
+    footer.style.cssText = `padding:12px 20px;display:flex;gap:10px;justify-content:center;`;
+
+    const mkBtn = (label) => {
+        const b = document.createElement('button');
+        b.textContent = label;
+        b.style.cssText = `background:${colors.buttonBg};color:${colors.buttonText};border:1px solid ${colors.buttonBorder};border-top:1px solid ${borderLight};border-left:1px solid ${borderLight};padding:8px 20px;cursor:pointer;font-family:${ff};font-size:12px;box-shadow:inset 0 1px 0 rgba(0,0,0,0.3),0 1px 0 rgba(255,255,255,0.1);`;
+        b.onmouseover = () => { b.style.background = colors.buttonHover; b.style.borderColor = borderLight; };
+        b.onmouseout  = () => { b.style.background = colors.buttonBg; b.style.borderColor = colors.buttonBorder; b.style.borderTop = `1px solid ${borderLight}`; b.style.borderLeft = `1px solid ${borderLight}`; };
+        return b;
+    };
+    const btnCancel = mkBtn('Cancel'); btnCancel.onclick = () => overlay.remove();
+    const btnExport = mkBtn('Export');
+
+    btnExport.onclick = async () => {
+        const fmt     = fmtSel.value;
+        const scale   = parseInt(scaleSel.value);
+        const padding = parseInt(padSel.value);
+        const loop    = loopChk._checked;
+        const bgRaw   = bgSel.value;
+        const bgColor = bgRaw === 'transparent' ? null : bgRaw === 'canvas' ? (backgroundColor || '#000000') : bgRaw;
+        const dirIdx  = dirSel.value === 'current' ? getDirIndex(currentDir) : parseInt(dirSel.value);
+        btnExport.disabled = true; btnExport.textContent = 'Exporting…'; status.textContent = '';
+        try {
+            if (fmt === 'gif')  await _exportGIF(currentAnimation, dirIdx, scale, padding, bgColor, loop);
+            else if (fmt === 'mp4')  await _exportMP4(currentAnimation, dirIdx, scale, padding, bgColor);
+            else await _exportWebM(currentAnimation, dirIdx, scale, padding, bgColor);
+            overlay.remove();
+        } catch (err) {
+            status.textContent = err?.message || String(err);
+            btnExport.disabled = false; btnExport.textContent = 'Export';
+        }
+    };
+
+    footer.append(btnCancel, btnExport);
+    box.append(titlebar, body, status, footer);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+}

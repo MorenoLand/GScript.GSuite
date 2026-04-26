@@ -41,6 +41,7 @@ class SetshapeEditor {
         ];
         this.canvas = root.querySelector('._ss2canvas');
         this.ctx = this.canvas.getContext('2d');
+        this.maxZoomLevel = 32;
         window.__setshapeEditorInstance = this;
         SetshapeEditor._instance = this;
         this._init();
@@ -407,6 +408,14 @@ class SetshapeEditor {
         this.canvas.width = c.clientWidth; this.canvas.height = c.clientHeight;
     }
 
+    _clampZoom(zoom) {
+        return Math.max(0.25, Math.min(this.maxZoomLevel, zoom));
+    }
+
+    _updateZoomLabel() {
+        this._q('zoomLabel').textContent = `Zoom: ${Math.round(this.zoomLevel * 100)}%`;
+    }
+
     _resizeGrid(nextWidth, nextHeight) {
         const width = Math.max(64, nextWidth | 0);
         const height = Math.max(64, nextHeight | 0);
@@ -568,10 +577,10 @@ class SetshapeEditor {
         e.preventDefault();
         const r = this.canvas.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
         const oldZ = this.zoomLevel, delta = e.deltaY < 0 ? 1.1 : 0.9;
-        this.zoomLevel = Math.max(0.25, Math.min(5, this.zoomLevel * delta));
+        this.zoomLevel = this._clampZoom(this.zoomLevel * delta);
         const zr = this.zoomLevel / oldZ;
         this.offsetX = mx - (mx - this.offsetX) * zr; this.offsetY = my - (my - this.offsetY) * zr;
-        this._q('zoomLabel').textContent = `Zoom: ${Math.round(this.zoomLevel * 100)}%`;
+        this._updateZoomLabel();
         this._render();
     }
 
@@ -647,11 +656,11 @@ class SetshapeEditor {
             const r = this.canvas.getBoundingClientRect();
             const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - r.left, my = (e.touches[0].clientY + e.touches[1].clientY) / 2 - r.top;
             const oldZ = this.zoomLevel;
-            this.zoomLevel = Math.max(0.25, Math.min(5, this.zoomLevel * (dist / this._pinchDist)));
+            this.zoomLevel = this._clampZoom(this.zoomLevel * (dist / this._pinchDist));
             const zr = this.zoomLevel / oldZ;
             this.offsetX = mx - (mx - this.offsetX) * zr; this.offsetY = my - (my - this.offsetY) * zr;
             this._pinchDist = dist;
-            this._q('zoomLabel').textContent = `Zoom: ${Math.round(this.zoomLevel * 100)}%`;
+            this._updateZoomLabel();
             this._render(); return;
         }
         if (e.touches.length !== 1 || !this.isDrawing) return;
@@ -779,7 +788,7 @@ class SetshapeEditor {
         this.tileMap = new Array(this.gridWidth * this.gridHeight).fill(0);
         nums.forEach((n, i) => { const x = i % w, y = Math.floor(i / w); if (x < this.gridWidth && y < this.gridHeight) this.tileMap[x + y * this.gridWidth] = parseInt(n); });
         this.offsetX = 0; this.offsetY = 0; this.zoomLevel = 1;
-        this._q('zoomLabel').textContent = 'Zoom: 100%';
+        this._updateZoomLabel();
         this._q('importModal').style.display = 'none';
         this._render();
     }
@@ -791,9 +800,71 @@ class SetshapeEditor {
         ctx.fillStyle = rc.canvasBg;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         ctx.save(); ctx.translate(this.offsetX, this.offsetY); ctx.scale(this.zoomLevel, this.zoomLevel);
-        if (this.backgroundImage) { ctx.globalAlpha = 0.6; ctx.drawImage(this.backgroundImage, 0, 0); ctx.globalAlpha = 1; }
-        ctx.strokeStyle = rc.grid; ctx.lineWidth = 1 / this.zoomLevel;
-        for (let x = 0; x < this.gridWidth; x++) for (let y = 0; y < this.gridHeight; y++) ctx.strokeRect(x * this.tileSize, y * this.tileSize, this.tileSize, this.tileSize);
+        ctx.imageSmoothingEnabled = false;
+        const contentWidth = Math.max(this.gridWidth * this.tileSize, this.backgroundImage?.width || 0);
+        const contentHeight = Math.max(this.gridHeight * this.tileSize, this.backgroundImage?.height || 0);
+        if (this.backgroundImage) {
+            ctx.globalAlpha = 0.9;
+            ctx.drawImage(this.backgroundImage, 0, 0);
+            ctx.globalAlpha = 1;
+        }
+
+        const pxOnScreen = this.zoomLevel;
+        const tileOnScreen = this.tileSize * this.zoomLevel;
+        const minorGrid = rc.canvasBg.startsWith('rgb(')
+            ? rc.grid.replace('rgb(', 'rgba(').replace(')', ',0.28)')
+            : rc.grid;
+        const microGrid = rc.canvasBg.startsWith('rgb(')
+            ? rc.grid.replace('rgb(', 'rgba(').replace(')', ',0.18)')
+            : rc.grid;
+
+        if (this.cutMode) {
+            if (pxOnScreen >= 10) {
+                ctx.beginPath();
+                ctx.strokeStyle = microGrid;
+                ctx.lineWidth = 1 / this.zoomLevel;
+                for (let x = 0; x <= contentWidth; x += 1) {
+                    ctx.moveTo(x + 0.5 / this.zoomLevel, 0);
+                    ctx.lineTo(x + 0.5 / this.zoomLevel, contentHeight);
+                }
+                for (let y = 0; y <= contentHeight; y += 1) {
+                    ctx.moveTo(0, y + 0.5 / this.zoomLevel);
+                    ctx.lineTo(contentWidth, y + 0.5 / this.zoomLevel);
+                }
+                ctx.stroke();
+            } else if (pxOnScreen >= 4) {
+                ctx.beginPath();
+                ctx.strokeStyle = minorGrid;
+                ctx.lineWidth = 1 / this.zoomLevel;
+                for (let x = 0; x <= contentWidth; x += 4) {
+                    ctx.moveTo(x + 0.5 / this.zoomLevel, 0);
+                    ctx.lineTo(x + 0.5 / this.zoomLevel, contentHeight);
+                }
+                for (let y = 0; y <= contentHeight; y += 4) {
+                    ctx.moveTo(0, y + 0.5 / this.zoomLevel);
+                    ctx.lineTo(contentWidth, y + 0.5 / this.zoomLevel);
+                }
+                ctx.stroke();
+            }
+        }
+
+        if (tileOnScreen >= 6) {
+            ctx.beginPath();
+            ctx.strokeStyle = rc.grid;
+            ctx.lineWidth = Math.max(1 / this.zoomLevel, (tileOnScreen >= 20 ? 1.5 : 1) / this.zoomLevel);
+            for (let x = 0; x <= this.gridWidth; x++) {
+                const px = x * this.tileSize + 0.5 / this.zoomLevel;
+                ctx.moveTo(px, 0);
+                ctx.lineTo(px, this.gridHeight * this.tileSize);
+            }
+            for (let y = 0; y <= this.gridHeight; y++) {
+                const py = y * this.tileSize + 0.5 / this.zoomLevel;
+                ctx.moveTo(0, py);
+                ctx.lineTo(this.gridWidth * this.tileSize, py);
+            }
+            ctx.stroke();
+        }
+
         for (let i = 0; i < this.tileMap.length; i++) {
             const id = this.tileMap[i]; if (!id) continue;
             const t = this.tileTypes[id]; if (!t) continue;

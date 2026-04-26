@@ -1071,6 +1071,7 @@
                     <div id="${p}collabCodeSection"><div style="margin-bottom:6px;">Your code:</div><div style="display:flex;gap:4px;margin-bottom:10px;"><input id="${p}collabMyCode" readonly style="flex:1;background:#1a1a1a;border:1px solid #404040;color:#4a9eff;padding:4px 8px;font-family:'chevyray',monospace;font-size:12px;outline:none;"><button id="${p}collabCopy" style="background:#353535;border:1px solid #404040;color:#e0e0e0;padding:4px 10px;cursor:pointer;font-size:11px;">Copy</button></div><div style="margin-bottom:6px;">Join session:</div><div style="display:flex;gap:4px;"><input id="${p}collabJoinCode" placeholder="paste code here" style="flex:1;background:#1a1a1a;border:1px solid #404040;color:#e0e0e0;padding:4px 8px;font-family:'chevyray',monospace;font-size:12px;outline:none;"><button id="${p}collabJoin" style="background:#353535;border:1px solid #404040;color:#e0e0e0;padding:4px 10px;cursor:pointer;font-size:11px;">Join</button></div></div>
                 </div>
             </div>
+            <button title="Export Animation (GIF / MP4 / WebM)" id="${p}btnExportAnim" class="tb-gani-only"><i class="fas fa-file-export"></i></button>
             <div class="tb-level-only" style="position:relative;">
                 <button title="Collab — edit together in real time via P2P" id="${p}btnLevelCollab"><i class="fas fa-layer-group"></i></button>
                 <div id="${p}levelCollabDropdown" style="display:none;position:absolute;top:100%;right:0;background:#2b2b2b;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;z-index:1000;width:260px;padding:12px;box-shadow:0 2px 8px rgba(0,0,0,0.5);margin-top:2px;font-family:'chevyray',monospace;font-size:12px;color:#e0e0e0;">
@@ -1090,7 +1091,7 @@
                 <button title="Code Beautify" id="${p}btnBeautify" onclick="typeof BeautifyTool!=='undefined'&&BeautifyTool.open()"><img src="icons/code.svg" width="14" height="14" style="display:block;image-rendering:pixelated;filter:brightness(0) invert(1);background:transparent;"></button>
                 <div class="tb-sep"></div>
             </div>
-            <button ${p === 'level-' ? `id="${p}btnPlayerSetup"` : ''} class="tb-level-only" title="Player Settings" style="margin-left:auto;display:flex;align-items:center;gap:5px;background:#353535;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#fff;padding:4px 10px;cursor:pointer;font-family:chevyray,monospace;font-size:12px;white-space:nowrap;"><i class="fas fa-user"></i> Player</button>
+            <button ${p === 'level-' ? `id="${p}btnPlayerSetup"` : ''} class="tb-level-only" title="Player Settings" style="margin-left:auto;display:flex;align-items:center;gap:5px;background:#353535;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#fff;padding:4px 10px;cursor:pointer;font-family:chevyray,monospace;font-size:12px;white-space:nowrap;"><img src="icons/user.svg" width="14" height="14" style="filter:brightness(0) invert(1);image-rendering:pixelated;margin-right:4px;flex-shrink:0;"><span style="transform:translateY(-4px);display:inline-block;">Player</span></button>
             <button ${p === 'level-' ? `id="${p}btnPlay"` : ''} class="tb-level-only" title="Play Mode (F4)" style="display:flex;align-items:center;gap:5px;background:#353535;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;color:#e0e0e0;padding:4px 12px;cursor:pointer;font-family:chevyray,monospace;font-size:12px;white-space:nowrap;">&#9654; Play</button>
         </div>`; }
 
@@ -1535,12 +1536,15 @@
                                         <option value="zlttp_tiles_lightworld_day.png">zlttp_tiles_lightworld_day.png</option>
                                     </select>
                                 </div>
-                                <div class="tileset-toolbar-actions">
-                                    <button title="Refresh Tileset" id="btnRefreshTileset"><i class="fas fa-sync"></i></button>
-                                    <button title="New Tileset" id="btnNewTileset"><i class="fas fa-file"></i></button>
-                                    <button title="Load Tileset" id="btnLoadTileset"><i class="fas fa-folder-open"></i></button>
-                                    <button title="Delete Tileset" id="btnDeleteTileset"><i class="fas fa-trash"></i></button>
-                                </div>
+                            </div>
+                            <div class="tileset-toolbar tileset-toolbar-row2">
+                                <select id="tilesetTypeCombo" title="Tileset Type (playmode)">
+                                    <option value="0">Type 0</option>
+                                    <option value="1">Type 1</option>
+                                </select>
+                                <button title="Refresh Tileset" id="btnRefreshTileset"><i class="fas fa-sync"></i></button>
+                                <button title="Load Tileset" id="btnLoadTileset"><i class="fas fa-folder-open"></i></button>
+                                <button title="Delete Tileset" id="btnDeleteTileset"><i class="fas fa-trash"></i></button>
                             </div>
                             <div class="tileset-display">
                                 <canvas id="tilesetCanvas"></canvas>

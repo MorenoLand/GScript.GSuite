@@ -1,5 +1,25 @@
 [
   {
+    "version": "0.1.50",
+    "date": "2026-04-26",
+    "tag": "GSuite",
+    "changes": [
+      "Fixed gani editor keyboard shortcuts firing in inactive tabs — spacebar no longer triggers gani playback while in level editor play mode",
+      "Removed unused New Tileset button and stub from level editor",
+      "Level editor NPC list now auto-refreshes when placing or deleting NPCs instead of requiring manual refresh",
+      "Extra windows now respond properly to the title bar buttons, so the spawned window can be closed, minimized, and maximized like the main one",
+      "Setshape now lets you zoom in much further without turning the image blurry, making close-up editing much easier",
+      "Setimgpart gets a more detailed guide grid when you zoom in, while regular Setshape keeps the normal 16x16 tile grid",
+      "The image shown behind Setshape is brighter and easier to see while you work",
+      "Fixed level editor merging all layers together when an empty tile placeholder is present",
+      "Fixed layer visibility checkboxes in the right panel not working — clicking a checkbox no longer accidentally triggers layer selection at the same time",
+      "Flood Fill now tiles the active tileset stamp pattern across the filled region — select a multi-tile pattern first, then flood fill to repeat it like carpet or flooring",
+      "Gani editor can now export animations as GIF, MP4, or WebM via the Export button in the toolbar — choose scale (1x–8x), direction, padding, and background color",
+      "Fixed the Fade Inactive Layers button — it now fades layers that are unchecked in the layers panel instead of fading all non-current layers",
+      "The Image File field in Add Sprite can now be typed into directly — typing a filename that exists in the image library updates the preview immediately"
+    ]
+  },
+  {
     "version": "0.1.49",
     "date": "2026-04-16",
     "tag": "GSuite",
