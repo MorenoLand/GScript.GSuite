@@ -5417,15 +5417,20 @@ class LevelEditor {
         return { gmap: entry.gmapText, gmapLevels: updatedLevels, gmapGrid: entry.gmapGrid, name: entry.name, tilesetName: lv.tilesetName || 'pics1.png', modified: entry.modified };
     }
 
-    async openGmapText(text, filename, levelsOverride) {
-        if (!levelsOverride && _isTauri && this._tauriPathIndex?.size) {
+    async openGmapText(text, filename, levelsOverride, filePath = null) {
+        if (!levelsOverride && _isTauri) {
             const { grid } = this.parseGmap(text);
+            const slash = String.fromCharCode(92);
+            const cut = filePath ? Math.max(filePath.lastIndexOf(slash), filePath.lastIndexOf('/')) : -1;
+            const dir = cut >= 0 ? filePath.slice(0, cut) : '';
+            const sep = filePath?.includes(slash) ? slash : '/';
             const toLoad = [];
             for (const row of grid) for (const rawName of row) {
                 if (!rawName) continue;
                 const key = rawName.toLowerCase().endsWith('.nw') ? rawName.toLowerCase() : rawName.toLowerCase() + '.nw';
+                const localName = rawName.endsWith('.nw') ? rawName : rawName + '.nw';
                 const alreadyLoaded = this.fileCache.levels.has(key) || this.fileCache.levels.has(rawName.toLowerCase()) || [...this.fileCache.levels.keys()].some(k => k.toLowerCase().endsWith('\\' + key) || k.toLowerCase().endsWith('/' + key));
-                const path = alreadyLoaded ? null : (this._tauriPathIndex.get(key) || this._tauriPathIndex.get(rawName.toLowerCase()) || [...this._tauriPathIndex.entries()].find(([k]) => k.toLowerCase().endsWith('\\' + key) || k.toLowerCase().endsWith('/' + key))?.[1]);
+                const path = alreadyLoaded ? null : (dir ? dir + sep + localName : null) || this._tauriPathIndex?.get(key) || this._tauriPathIndex?.get(rawName.toLowerCase()) || [...(this._tauriPathIndex?.entries?.() || [])].find(([k]) => k.toLowerCase().endsWith('\\' + key) || k.toLowerCase().endsWith('/' + key))?.[1];
                 if (!alreadyLoaded && path) toLoad.push([key, path]);
             }
             await Promise.all(toLoad.map(([name, path]) =>
@@ -5434,6 +5439,7 @@ class LevelEditor {
         }
         const entry = this._buildGmapEntry(text, filename, levelsOverride);
         if (!entry) return;
+        entry.fullPath = filePath || entry.fullPath || '';
         this.levels.push(entry);
         this.currentLevelIndex = this.levels.length - 1;
         this.level = entry.level;
@@ -5447,7 +5453,7 @@ class LevelEditor {
 
     openFromText(text, name, filePath = null) {
         const ext = name.split('.').pop().toLowerCase();
-        if (ext === 'gmap') { this.openGmapText(text, name); return; }
+        if (ext === 'gmap') { this.openGmapText(text, name, null, filePath); return; }
         if (ext === 'gani') { window.switchToTab?.('gani'); if (typeof parseGani === 'function' && typeof addTab === 'function') { const ani = parseGani(text); if (ani) { ani.fileName = name; addTab(ani, name); } } return; }
         let level;
         if (ext === 'graal' || ext === 'zelda') { const buf = new TextEncoder().encode(text).buffer; level = Level.loadFromGraal(buf); }
@@ -5525,7 +5531,18 @@ class LevelEditor {
         window.openDefaultDialog('level');
     }
 
-    openLevel() {
+    async openLevel() {
+        if (_isTauri) {
+            const selected = await _tauri.dialog.open({ multiple: true, filters: [{ name: 'Graal Files', extensions: ['nw','gmap','graal','zelda','gani'] }] }).catch(() => null);
+            const paths = Array.isArray(selected) ? selected : selected ? [selected] : [];
+            for (const path of paths) {
+                const name = path.split(String.fromCharCode(92)).pop().split('/').pop();
+                const ext = name.split('.').pop().toLowerCase();
+                if (ext === 'graal' || ext === 'zelda') { const data = await _tauri.fs.readFile(path); this.openFromBuffer(data.buffer || data, name, path); }
+                else this.openFromText(await _tauri.fs.readTextFile(path), name, path);
+            }
+            return;
+        }
         const input = this.$('fileInput');
         input.value = '';
         input.click();
