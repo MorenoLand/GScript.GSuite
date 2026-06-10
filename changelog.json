@@ -1,5 +1,14 @@
 [
   {
+    "version": "0.1.56",
+    "date": "2026-06-10",
+    "tag": "GSuite",
+    "changes": [
+      "Gani selection handles now use consistent dot controls and screen-space overlay drawing so zoomed and rotated sprites keep cleaner editor chrome",
+      "CI now builds both Apple Silicon and Intel macOS targets"
+    ]
+  },
+  {
     "version": "0.1.55",
     "date": "2026-05-20",
     "tag": "GSuite",

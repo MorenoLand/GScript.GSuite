@@ -1568,38 +1568,49 @@ function drawFrame(ctx, frame, dir) {
                     const borderThickness = _cssThick ? parseFloat(_cssThick) : (parseInt(localStorage.getItem("editorSelectionBorderThickness")) || 2);
                     const _cssOpacity = _rs2.getPropertyValue('--selection-border-opacity').trim();
                     const borderOpacity = _cssOpacity ? parseFloat(_cssOpacity) : (parseInt(localStorage.getItem("editorSelectionBorderOpacity") ?? "100") / 100);
+                    const zoom = zoomFactors[zoomLevel] || 1.0;
+                    const selectionTransform = ctx.getTransform();
                     ctx.save();
+                    ctx.setTransform(1, 0, 0, 1, 0, 0);
                     ctx.globalAlpha = borderOpacity;
                     ctx.strokeStyle = borderColor;
                     ctx.lineWidth = borderThickness;
+                    ctx.lineJoin = "round";
+                    ctx.lineCap = "round";
                     const outline = getPieceRotationOutline(piece);
                     if (outline && outline.length === 4) {
+                        const screenOutline = outline.map(point => transformSelectionPoint(selectionTransform, point));
                         ctx.beginPath();
-                        ctx.moveTo(outline[0].x, outline[0].y);
-                        for (let i = 1; i < outline.length; i++) ctx.lineTo(outline[i].x, outline[i].y);
+                        ctx.moveTo(screenOutline[0].x, screenOutline[0].y);
+                        for (let i = 1; i < screenOutline.length; i++) ctx.lineTo(screenOutline[i].x, screenOutline[i].y);
                         ctx.closePath();
                         ctx.stroke();
-                        const zoom = zoomFactors[zoomLevel] || 1.0;
-                        const anchorRadius = 3.5 / zoom;
+                        const anchorRadius = 3.5;
+                        const handleStrokeWidth = Math.max(1, borderThickness / 2);
                         for (const point of outline) {
-                            drawAnchorDot(ctx, point.x, point.y, anchorRadius, borderColor, "#0a0a0a", Math.max(1 / zoom, borderThickness / 2));
+                            const screenPoint = transformSelectionPoint(selectionTransform, point);
+                            drawAnchorDot(ctx, screenPoint.x, screenPoint.y, anchorRadius, borderColor, "#0a0a0a", handleStrokeWidth);
                         }
                     } else {
                         const bb = piece.getBoundingBox(currentAnimation);
-                        ctx.strokeRect(bb.x - borderThickness, bb.y - borderThickness, bb.width + borderThickness * 2, bb.height + borderThickness * 2);
+                        const topLeft = transformSelectionPoint(selectionTransform, {x: bb.x, y: bb.y});
+                        const bottomRight = transformSelectionPoint(selectionTransform, {x: bb.x + bb.width, y: bb.y + bb.height});
+                        ctx.strokeRect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
                     }
                     const rotationHandles = getPieceRotationHandles(piece);
                     if (rotationHandles.length) {
-                        const zoom = zoomFactors[zoomLevel] || 1.0;
+                        const handleStrokeWidth = Math.max(1, borderThickness / 2);
                         for (const rotationHandle of rotationHandles) {
-                            drawAnchorDot(ctx, rotationHandle.x, rotationHandle.y, rotationHandle.radius, borderColor, "#0a0a0a", Math.max(1 / zoom, borderThickness / 2));
+                            const screenHandle = transformSelectionPoint(selectionTransform, rotationHandle);
+                            drawAnchorDot(ctx, screenHandle.x, screenHandle.y, rotationHandle.radius * zoom, borderColor, "#0a0a0a", handleStrokeWidth);
                         }
                     }
                     const scaleHandles = getPieceScaleHandles(piece);
                     if (scaleHandles.length) {
-                        const zoom = zoomFactors[zoomLevel] || 1.0;
+                        const handleStrokeWidth = Math.max(1, borderThickness / 2);
                         for (const sh of scaleHandles) {
-                            drawScaleHandle(ctx, sh.x, sh.y, sh.radius, "#ffffff", "#0a0a0a", Math.max(1 / zoom, borderThickness / 2));
+                            const screenHandle = transformSelectionPoint(selectionTransform, sh);
+                            drawScaleHandle(ctx, screenHandle.x, screenHandle.y, sh.radius * zoom, borderColor, "#0a0a0a", handleStrokeWidth);
                         }
                     }
                     ctx.restore();
@@ -1815,6 +1826,13 @@ function findScaleHandleAt(wx, wy) {
     }
     return null;
 }
+function transformSelectionPoint(transform, point) {
+    return {
+        x: point.x * transform.a + point.y * transform.c + transform.e,
+        y: point.x * transform.b + point.y * transform.d + transform.f
+    };
+}
+
 function drawAnchorDot(ctx, x, y, radius, fillColor, strokeColor, lineWidth) {
     ctx.save();
     ctx.fillStyle = fillColor;
@@ -1832,7 +1850,7 @@ function drawScaleHandle(ctx, x, y, radius, fillColor, strokeColor, lineWidth) {
     ctx.strokeStyle = strokeColor;
     ctx.lineWidth = lineWidth;
     ctx.beginPath();
-    ctx.rect(x - radius, y - radius, radius * 2, radius * 2);
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
     ctx.restore();
