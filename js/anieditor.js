@@ -13458,6 +13458,7 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
     fileInput.style.display = "none";
     document.body.appendChild(fileInput);
     let previewImg = null;
+    let selectedExternalImageName = "";
     if (preSelectImage) {
         const _psi = imageLibrary.get(preSelectImage.toLowerCase());
         if (_psi) {
@@ -13472,8 +13473,11 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
             const selected = await tauriOpenDialog({ multiple: false, filters: [{ name: 'Images', extensions: ['png', 'gif', 'jpg', 'jpeg', 'webp', 'bmp', 'mng'] }] });
             if (selected) {
                 const name = selected.split(/[\\/]/).pop();
+                selectedExternalImageName = name;
                 $("addSpriteImageFile").value = name;
                 previewImg = await loadImageFromPath(selected, name);
+                _failedImageLoads.delete(name.toLowerCase());
+                _spriteCompositeCache.clear();
                 if (selectionBox.w === 0 || selectionBox.h === 0) { selectionBox.w = 32; selectionBox.h = 32; }
                 updateAddSpritePreview();
             }
@@ -13482,8 +13486,11 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
         fileInput.onchange = async (e) => {
             const file = e.target.files[0];
             if (file) {
+                selectedExternalImageName = file.name;
                 $("addSpriteImageFile").value = file.name;
                 previewImg = await loadImage(file);
+                _failedImageLoads.delete(file.name.toLowerCase());
+                _spriteCompositeCache.clear();
                 if (selectionBox.w === 0 || selectionBox.h === 0) {
                     selectionBox.w = 32;
                     selectionBox.h = 32;
@@ -13495,6 +13502,7 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
     };
     $("addSpriteImageFile").oninput = () => {
         const imgKey = $("addSpriteImageFile").value.trim().toLowerCase();
+        selectedExternalImageName = "";
         if (imageLibrary.has(imgKey)) {
             previewImg = imageLibrary.get(imgKey);
         } else {
@@ -13504,6 +13512,7 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
     };
     $("addSpriteSource").onchange = async () => {
         const sourceType = $("addSpriteSource").value;
+        selectedExternalImageName = "";
         if (sourceType === "CUSTOM") {
             $("addSpriteImageFile").value = "";
             previewImg = null;
@@ -14116,9 +14125,18 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
         if (editSprite) {
             const oldState = serializeAnimationState();
             editSprite.type = $("addSpriteSource").value;
-            if (editSprite.type === "CUSTOM" && fileInput.files[0]) {
-                editSprite.customImageName = fileInput.files[0].name;
+            if (editSprite.type === "CUSTOM") {
+                const imageName = (fileInput.files[0]?.name || selectedExternalImageName || $("addSpriteImageFile").value).trim();
+                editSprite.customImageName = imageName;
+                if (imageName) _failedImageLoads.delete(imageName.toLowerCase());
+            } else {
+                editSprite.customImageName = "";
             }
+            delete editSprite._lightCanvas;
+            delete editSprite._lightCacheKey;
+            delete editSprite._cachedColorCanvas;
+            delete editSprite._cachedColorKey;
+            delete editSprite._cachedImageSrc;
             editSprite.comment = $("addSpriteComment").value;
             editSprite.left = parseInt($("addSpriteLeft").value) || 0;
             editSprite.top = parseInt($("addSpriteTop").value) || 0;
@@ -14154,12 +14172,7 @@ function showAddSpriteDialog(editSprite = null, preSelectImage = null) {
                 undo: () => restoreAnimationState(oldState),
                 redo: () => restoreAnimationState(newState)
             });
-            if (previewImg && fileInput.files[0]) {
-                loadImage(fileInput.files[0]).then(() => {
-                    updateSpritesList();
-                    redraw();
-                });
-            }
+            _spriteCompositeCache.clear();
             updateSpritesList();
             redraw();
             saveSession();

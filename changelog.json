@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.1.57",
+    "date": "2026-06-13",
+    "tag": "GSuite",
+    "changes": [
+      "Fixed Edit Sprite so changing a custom sprite's image file now updates the actual sprite, including external images selected outside the workspace"
+    ]
+  },
+  {
     "version": "0.1.56",
     "date": "2026-06-10",
     "tag": "GSuite",
