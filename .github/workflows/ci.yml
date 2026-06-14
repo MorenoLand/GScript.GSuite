@@ -1,0 +1,127 @@
+name: Compile GSuite
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: compile-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bump-version:
+    name: Bump patch version
+    if: github.event_name == 'push' && github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, '[skip version]')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install Node deps
+        run: npm ci
+
+      - name: Bump patch version
+        id: bump
+        shell: bash
+        run: |
+          version="$(node js/bump-version.js patch)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Commit version bump
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json changelog.json
+          git commit -m "Bump version to v${{ steps.bump.outputs.version }} [skip version]"
+          git push
+
+  compile:
+    name: Compile ${{ matrix.target }}
+    needs: bump-version
+    if: always() && !cancelled() && !(github.event_name == 'push' && github.actor == 'github-actions[bot]' && contains(github.event.head_commit.message, '[skip version]'))
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact-name: gsuite-windows-x64
+            artifact-path: |
+              src-tauri/target/x86_64-pc-windows-msvc/release/*.exe
+              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/**
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact-name: gsuite-macos-arm64
+            artifact-path: src-tauri/target/aarch64-apple-darwin/release/bundle/**
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact-name: gsuite-macos-x64
+            artifact-path: src-tauri/target/x86_64-apple-darwin/release/bundle/**
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            artifact-name: gsuite-linux-x64
+            artifact-path: |
+              src-tauri/target/x86_64-unknown-linux-gnu/release/GSuite
+              src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/**
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install Node deps
+        run: npm ci
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Linux system deps
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - name: Compile Tauri app
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npx tauri build --target ${{ matrix.target }}
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: ${{ matrix.artifact-path }}
+          if-no-files-found: error
+          retention-days: 14

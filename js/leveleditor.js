@@ -994,7 +994,7 @@ class LevelEditor {
         tilesetsCombo.parentElement?.addEventListener('mousedown', (e) => {
             if (e.target === tilesetsCombo.parentElement) openTilesetPicker(e);
         });
-        try { const tc = JSON.parse(localStorage.getItem('levelEditor_tilesetCache')||'{}'); if (tc && typeof tc === 'object') { this._tilesetDataCache = tc; const combo = tilesetsCombo; for (const name of Object.keys(tc)) { if (combo && ![...combo.options].some(o => o.value === name)) { const o = document.createElement('option'); o.value = o.textContent = name; combo.appendChild(o); } } } } catch(e) {}
+        try { const tc = JSON.parse(localStorage.getItem('levelEditor_tilesetCache')||'{}'); if (tc && typeof tc === 'object') { this._tilesetDataCache = tc; const combo = tilesetsCombo; for (const name of Object.keys(tc)) { if (combo && ![...combo.options].some(o => o.value === name)) { const o = document.createElement('option'); o.value = o.textContent = name; combo.appendChild(o); } } window.refreshCustomDropdown?.(combo); } } catch(e) {}
         this.$('btnRefreshTileset').addEventListener('click', () => this.refreshTileset());
         this.$('btnLoadTileset').addEventListener('click', () => this.loadTileset());
         this.$('btnDeleteTileset').addEventListener('click', () => this.deleteTileset());
@@ -1351,8 +1351,7 @@ class LevelEditor {
             }
             if (this.hasSelection()) {
                 if (this.isPointInSelection(coords.x, coords.y)) {
-                    this.selectedTilesetTiles = this._captureSelectionAsStamp();
-                    this.updateSelectedTileDisplay();
+                    this._cloneSelectionAsFloatingStamp(coords.x, coords.y);
                     e.preventDefault();
                     return;
                 }
@@ -1942,6 +1941,20 @@ class LevelEditor {
         this._floatingStamp = true; this._floatingStampCanvas = false;
         this.updateSelectionInfo();
         this.render();
+    }
+
+    _cloneSelectionAsFloatingStamp(cx, cy) {
+        if (!this.hasSelection()) return false;
+        const sourceTiles = this._floatingStamp && this.selectionTiles
+            ? this.selectionTiles.map(r => [...r])
+            : this._captureSelectionAsStamp();
+        if (!sourceTiles?.length) return false;
+        if (this._floatingStamp && this.selectionTiles) this._commitFloatingStamp();
+        this.selectedTilesetTiles = sourceTiles.map(r => [...r]);
+        this._createFloatingStamp(cx, cy);
+        this.selectedTilesetTiles = null;
+        this.updateSelectedTileDisplay();
+        return true;
     }
 
     _commitFloatingStamp() {
@@ -3202,6 +3215,7 @@ class LevelEditor {
                             combo.appendChild(opt);
                         }
                         if (combo) combo.value = file.name;
+                        window.refreshCustomDropdown?.(combo);
                         this.updateTilesetDisplay();
                         if (this.defaultTile < 0) this.defaultTile = 0;
                         this.updateSelectedTileCanvas();
@@ -6112,6 +6126,7 @@ class LevelEditor {
         const opts = [...combo.options];
         combo.insertBefore(opts[idx], opts[idx - 1]);
         combo.selectedIndex = idx - 1;
+        window.refreshCustomDropdown?.(combo);
         this._refreshTilesetOrderList();
     }
 
@@ -6123,6 +6138,7 @@ class LevelEditor {
         const opts = [...combo.options];
         combo.insertBefore(opts[idx + 1], opts[idx]);
         combo.selectedIndex = idx + 1;
+        window.refreshCustomDropdown?.(combo);
         this._refreshTilesetOrderList();
     }
 

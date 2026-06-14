@@ -42,6 +42,15 @@ jobs:
       - name: Install Node deps
         run: npm ci
 
+      - name: Sync package version
+        shell: bash
+        run: |
+          version="${RAW_VERSION#v}"
+          node js/bump-version.js set "$version"
+          echo "Building GSuite $version"
+        env:
+          RAW_VERSION: ${{ github.event.inputs.version || github.ref_name }}
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -93,8 +102,10 @@ jobs:
         run: |
           $exe = Get-ChildItem "src-tauri/target/${{ matrix.target }}/release/" -Filter "*.exe" | Where-Object { $_.Name -notlike "*setup*" } | Select-Object -First 1
           if ($exe) {
-            $tag = "${{ github.event.inputs.version || github.ref_name }}".TrimStart("v")
-          gh release upload "$tag" $exe.FullName --clobber
+            $tag = "${{ github.event.inputs.version || github.ref_name }}"
+            gh release upload "$tag" $exe.FullName --clobber
+          } else {
+            Write-Host "No portable exe found to upload."
           }
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

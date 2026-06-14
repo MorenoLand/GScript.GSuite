@@ -9108,6 +9108,27 @@ async function initGaniEditorStartup() {
         const dropdown = document.createElement("div");
         dropdown.className = "custom-dropdown";
         dropdown.style.cssText = "display: none; position: absolute; top: 100%; left: 0; right: 0; background: #2b2b2b; border: 1px solid #0a0a0a; border-top: 1px solid #404040; border-left: 1px solid #404040; z-index: 1000; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); margin-top: 2px; max-height: 200px; overflow-y: auto;";
+        const useViewportDropdown = selectElement.id === "tilesetsCombo";
+        if (useViewportDropdown) dropdown.classList.add("custom-dropdown-portal");
+        const positionViewportDropdown = () => {
+            if (!useViewportDropdown) return;
+            const rect = button.getBoundingClientRect();
+            const margin = 4;
+            const maxWidth = Math.min(420, window.innerWidth - margin * 2);
+            const width = Math.max(rect.width, Math.min(dropdown.scrollWidth || rect.width, maxWidth));
+            const left = Math.min(Math.max(margin, rect.left), window.innerWidth - width - margin);
+            dropdown.style.setProperty("position", "fixed", "important");
+            dropdown.style.setProperty("left", `${left}px`, "important");
+            dropdown.style.setProperty("right", "auto", "important");
+            dropdown.style.setProperty("top", `${rect.bottom + 2}px`, "important");
+            dropdown.style.setProperty("width", `${width}px`, "important");
+            dropdown.style.setProperty("min-width", `${rect.width}px`, "important");
+            dropdown.style.setProperty("z-index", "2147483646", "important");
+        };
+        const hideDropdown = () => {
+            dropdown.style.display = "none";
+            wrapper.classList.remove("open");
+        };
         Array.from(selectElement.options).forEach((option, index) => {
             const item = document.createElement("div");
             item.className = "custom-dropdown-item";
@@ -9172,32 +9193,39 @@ async function initGaniEditorStartup() {
                 }
                 dropdown.querySelectorAll(".custom-dropdown-item").forEach(i => i.style.background = "");
                 item.style.background = "#404040";
-                dropdown.style.display = "none";
-                wrapper.classList.remove("open");
+                hideDropdown();
                 selectElement.dispatchEvent(new Event('change', { bubbles: true }));
             };
             dropdown.appendChild(item);
         });
         wrapper.appendChild(button);
-        wrapper.appendChild(dropdown);
+        (useViewportDropdown ? document.body : wrapper).appendChild(dropdown);
         button.onclick = (e) => {
             e.stopPropagation();
             const shouldOpen = dropdown.style.display === "none";
             document.querySelectorAll(".custom-dropdown-wrapper.open").forEach(openWrapper => {
                 if (openWrapper !== wrapper) {
                     openWrapper.classList.remove("open");
-                    const openDropdown = openWrapper.querySelector(".custom-dropdown");
+                    const openSelect = openWrapper.querySelector("select[data-custom-dropdown]");
+                    const openDropdown = openWrapper.querySelector(".custom-dropdown")
+                        || (openSelect?.id ? document.querySelector(`.custom-dropdown[data-owner-select="${openSelect.id}"]`) : null);
                     if (openDropdown) openDropdown.style.display = "none";
                 }
             });
+            if (useViewportDropdown) {
+                dropdown.dataset.ownerSelect = selectElement.id;
+                positionViewportDropdown();
+            }
             dropdown.style.display = shouldOpen ? "block" : "none";
+            if (shouldOpen) positionViewportDropdown();
             wrapper.classList.toggle("open", shouldOpen);
         };
+        if (useViewportDropdown) {
+            window.addEventListener("resize", () => { if (dropdown.style.display !== "none") positionViewportDropdown(); });
+            window.addEventListener("scroll", () => { if (dropdown.style.display !== "none") positionViewportDropdown(); }, true);
+        }
         document.addEventListener("click", (e) => {
-            if (!wrapper.contains(e.target)) {
-                dropdown.style.display = "none";
-                wrapper.classList.remove("open");
-            }
+            if (!wrapper.contains(e.target) && !dropdown.contains(e.target)) hideDropdown();
         });
         selectElement.addEventListener("change", () => {
             buttonText.textContent = selectElement.options[selectElement.selectedIndex]?.text || "";
@@ -9233,7 +9261,8 @@ async function initGaniEditorStartup() {
         if (!selectElement || !selectElement.dataset.customDropdown) return;
         const wrapper = selectElement.closest(".custom-dropdown-wrapper") || selectElement.parentElement;
         if (!wrapper) return;
-        const dropdown = wrapper.querySelector(".custom-dropdown");
+        const dropdown = wrapper.querySelector(".custom-dropdown")
+            || (selectElement.id ? document.querySelector(`.custom-dropdown[data-owner-select="${selectElement.id}"]`) : null);
         const buttonText = wrapper.querySelector(".custom-dropdown-button span");
         if (!dropdown || !buttonText) return;
 
@@ -9261,6 +9290,7 @@ async function initGaniEditorStartup() {
         });
         buttonText.textContent = selectElement.options[selectElement.selectedIndex]?.text || selectElement.options[0]?.text || "";
     }
+    window.refreshCustomDropdown = refreshCustomDropdown;
     const btnSettings = $("btnSettings");
     const settingsDialog = $("settingsDialog");
     const settingsSwapKeys = $("settingsSwapKeysCheckbox");

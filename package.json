@@ -1,9 +1,11 @@
 {
   "name": "gsuite",
-  "version": "0.1.58",
+  "version": "0.1.60",
   "description": "GSuite - A web-based suite of tools for development.",
   "main": "anieditor.js",
   "scripts": {
+    "bump:patch": "node js/bump-version.js patch",
+    "version:set": "node js/bump-version.js set",
     "dev": "node js/build-web.js && npx tauri dev",
     "build": "node js/build-web.js && npx tauri build",
     "start": "node server.js",
