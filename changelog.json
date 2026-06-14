@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.1.58",
+    "date": "2026-06-14",
+    "tag": "GSuite",
+    "changes": [
+      "Fixed the level editor tileset dropdown so its list opens above the right-side panel tabs and other nearby UI"
+    ]
+  },
+  {
     "version": "0.1.57",
     "date": "2026-06-13",
     "tag": "GSuite",

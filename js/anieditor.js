@@ -9067,6 +9067,7 @@ async function initGaniEditorStartup() {
         selectElement.dataset.customDropdown = "true";
         selectElement.style.display = "none";
         const wrapper = document.createElement("div");
+        wrapper.className = "custom-dropdown-wrapper";
         wrapper.style.position = "relative";
         wrapper.style.width = "100%";
         selectElement.parentNode.insertBefore(wrapper, selectElement);
@@ -9172,6 +9173,7 @@ async function initGaniEditorStartup() {
                 dropdown.querySelectorAll(".custom-dropdown-item").forEach(i => i.style.background = "");
                 item.style.background = "#404040";
                 dropdown.style.display = "none";
+                wrapper.classList.remove("open");
                 selectElement.dispatchEvent(new Event('change', { bubbles: true }));
             };
             dropdown.appendChild(item);
@@ -9180,11 +9182,21 @@ async function initGaniEditorStartup() {
         wrapper.appendChild(dropdown);
         button.onclick = (e) => {
             e.stopPropagation();
-            dropdown.style.display = dropdown.style.display === "none" ? "block" : "none";
+            const shouldOpen = dropdown.style.display === "none";
+            document.querySelectorAll(".custom-dropdown-wrapper.open").forEach(openWrapper => {
+                if (openWrapper !== wrapper) {
+                    openWrapper.classList.remove("open");
+                    const openDropdown = openWrapper.querySelector(".custom-dropdown");
+                    if (openDropdown) openDropdown.style.display = "none";
+                }
+            });
+            dropdown.style.display = shouldOpen ? "block" : "none";
+            wrapper.classList.toggle("open", shouldOpen);
         };
         document.addEventListener("click", (e) => {
             if (!wrapper.contains(e.target)) {
                 dropdown.style.display = "none";
+                wrapper.classList.remove("open");
             }
         });
         selectElement.addEventListener("change", () => {
@@ -9242,6 +9254,7 @@ async function initGaniEditorStartup() {
                 dropdown.querySelectorAll(".custom-dropdown-item").forEach(i => i.style.background = "");
                 item.style.background = "#404040";
                 dropdown.style.display = "none";
+                wrapper.classList.remove("open");
                 selectElement.dispatchEvent(new Event("change", { bubbles: true }));
             };
             dropdown.appendChild(item);
