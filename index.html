@@ -29,7 +29,9 @@
 .editor-root.hidden { display: none !important; }
 
 #editorContainer { width: 100%; min-width: 0; flex: 1 1 auto; overflow: hidden; }
-#levelRoot, #ganiRoot { width: 100%; min-width: 0; }
+#levelRoot, #ganiRoot, #beautifyRoot, #setshapeRoot { width: 100%; min-width: 0; max-width: none; align-self: stretch; }
+.editor-root > .main-container { width: 100%; min-width: 0; max-width: none; flex: 1 1 auto; }
+#beautifyRoot .content-area, #setshapeRoot .content-area { width: 100%; min-width: 0; max-width: none; }
 
 .tab-ctx-menu { position: fixed; background: #2b2b2b; border: 1px solid #404040; box-shadow: 0 2px 8px rgba(0,0,0,0.5); z-index: 100000; min-width: 140px; font-family: 'chevyray',monospace; font-size: 12px; color: #e0e0e0; }
 .tab-ctx-item { padding: 6px 12px; cursor: pointer; }
@@ -143,6 +145,70 @@
             tabManager.init();
         }
         window._defaultDialogLoaders = {};
+        const _fallbackDefaultGanis = [
+            "carried.gani", "carry.gani", "carrypeople.gani", "carrystill.gani", "dead.gani", "def.gani",
+            "editorcursor.gani", "editorcursor2.gani", "ghostani.gani", "gotgoldball.gani", "grab.gani", "gralats.gani",
+            "horse.gani", "horsestill.gani", "hurt.gani", "idle.gani", "kick.gani", "lamps_wood.gani",
+            "lava.gani", "lay.gani", "lift.gani", "maps1.gani", "maps2.gani", "maps3.gani",
+            "palmtree1.gani", "palmtree2.gani", "pray.gani", "pull.gani", "push.gani", "ride.gani",
+            "rideeat.gani", "ridefire.gani", "ridehurt.gani", "ridejump.gani", "ridestill.gani", "ridesword.gani",
+            "shoot.gani", "shovel.gani", "shovel2.gani", "sit.gani", "skip.gani", "sleep.gani",
+            "spin.gani", "swim.gani", "sword.gani", "tutorial_touch.gani", "walk.gani", "walkslow.gani"
+        ];
+        const _alertDefaultOpenError = (message) => {
+            if (typeof window.showAlertDialog === 'function') window.showAlertDialog(message);
+            else window.alert(message);
+        };
+        const _ensureGaniEditorLoaded = async () => {
+            if (typeof window.parseGani === 'function' && typeof window.addTab === 'function') return true;
+            injectGani();
+            for (let i = 0; i < 80; i++) {
+                if (typeof window.parseGani === 'function' && typeof window.addTab === 'function') return true;
+                await new Promise(resolve => setTimeout(resolve, 50));
+            }
+            return false;
+        };
+        window._defaultDialogLoaders.gani = async (container) => {
+            let files = _fallbackDefaultGanis;
+            try {
+                let response = await fetch(`ganis/index.json?_=${Date.now()}`, { cache: 'no-store' }).catch(() => null);
+                if (!response?.ok) response = await fetch('ganis/').catch(() => null);
+                if (response?.ok) {
+                    const data = await response.json().catch(() => null);
+                    const manifestFiles = Array.isArray(data) ? data : Array.isArray(data?.files) ? data.files : null;
+                    if (manifestFiles) files = manifestFiles;
+                }
+            } catch(e) {}
+            files = [...new Set(files.filter(name => name && /\.gani$/i.test(name)))];
+            container.innerHTML = '';
+            files.forEach(fileName => {
+                const item = document.createElement('div');
+                item.className = 'default-gani-item';
+                item.style.cssText = 'padding:12px 16px;cursor:pointer;color:#e0e0e0;font-size:12px;font-family:chevyray,monospace;border-bottom:1px solid #1a1a1a;';
+                item.textContent = fileName;
+                item.onmouseenter = () => item.style.background = '#404040';
+                item.onmouseleave = () => item.style.background = '';
+                item.onclick = async (e) => {
+                    e.stopPropagation();
+                    document.getElementById('defaultOpenDialog').style.display = 'none';
+                    try {
+                        const ready = await _ensureGaniEditorLoaded();
+                        if (!ready) { _alertDefaultOpenError('GANI editor failed to load.'); return; }
+                        const response = await fetch(`ganis/${fileName}`);
+                        if (!response.ok) { _alertDefaultOpenError(`Failed to load ${fileName}: ${response.statusText}`); return; }
+                        const ani = window.parseGani(await response.text());
+                        if (!ani) { _alertDefaultOpenError(`Failed to parse ${fileName}.`); return; }
+                        ani.fileName = fileName;
+                        window.addTab(ani, fileName);
+                        switchToTab('gani');
+                    } catch(err) {
+                        _alertDefaultOpenError(`Error loading ${fileName}: ${err.message}`);
+                    }
+                };
+                container.appendChild(item);
+            });
+            if (!files.length) container.innerHTML = '<div style="color:#666;padding:20px;text-align:center;font-family:chevyray,monospace;font-size:12px;">No ganis found</div>';
+        };
         window.openDefaultDialog = (tab) => {
             const dlg = document.getElementById('defaultOpenDialog');
             const content = document.getElementById('defaultOpenContent');
@@ -154,6 +220,7 @@
             dlg.style.display = 'flex';
             const loader = window._defaultDialogLoaders[tab];
             if (loader) loader(content);
+            else content.innerHTML = '<div style="color:#666;padding:20px;text-align:center;font-family:chevyray,monospace;font-size:12px;">No loader available.</div>';
         };
         const _defaultDlg = document.getElementById('defaultOpenDialog');
         document.getElementById('defaultOpenCancel').onclick = () => { _defaultDlg.style.display = 'none'; };
@@ -360,10 +427,24 @@
         utilityRoot.style.display = 'flex';
         utilityRoot.style.flex = '1';
         utilityRoot.style.height = '';
+        utilityRoot.style.width = '100%';
+        utilityRoot.style.minWidth = '0';
+        utilityRoot.style.alignSelf = 'stretch';
         utilityRoot.style.position = 'relative';
         utilityRoot.style.zIndex = '1';
         const utilityMc = utilityRoot.querySelector('.main-container');
         const utilityContent = utilityMc?.querySelector('.content-area');
+        if (utilityMc) {
+            utilityMc.style.width = '100%';
+            utilityMc.style.minWidth = '0';
+            utilityMc.style.maxWidth = 'none';
+            utilityMc.style.flex = '1 1 auto';
+        }
+        if (utilityContent) {
+            utilityContent.style.width = '100%';
+            utilityContent.style.minWidth = '0';
+            utilityContent.style.maxWidth = 'none';
+        }
         if (suiteTabs && utilityMc && utilityContent) utilityMc.insertBefore(suiteTabs, utilityContent);
         _currentApp = type;
         setAppTitle(title);
@@ -580,7 +661,7 @@
         beautifyRoot.innerHTML = `
         <div class="main-container">
             <div class="content-area">
-                <div id="beautifyTabHost" style="flex:1;min-height:0;display:flex;flex-direction:column;background:#1e1e1e;"></div>
+                <div id="beautifyTabHost" style="flex:1;min-height:0;min-width:0;width:100%;display:flex;flex-direction:column;background:#1e1e1e;"></div>
             </div>
         </div>`;
         beautifyRoot.style.display = 'none';
@@ -606,7 +687,7 @@
         setshapeRoot.innerHTML = `
         <div class="main-container">
             <div class="content-area">
-                <div id="setshapeTabHost" style="flex:1;min-height:0;display:flex;flex-direction:column;background:#1e1e1e;"></div>
+                <div id="setshapeTabHost" style="flex:1;min-height:0;min-width:0;width:100%;display:flex;flex-direction:column;background:#1e1e1e;"></div>
             </div>
         </div>`;
         setshapeRoot.style.display = 'none';

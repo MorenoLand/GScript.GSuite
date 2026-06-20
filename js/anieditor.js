@@ -193,6 +193,103 @@ class Frame {
     }
 }
 
+class MovieItem {
+    constructor(type = "actor", id = 0) {
+        this.id = id;
+        this.type = type;
+        this.kind = type === "text" ? "TEXT" : type === "sprite" ? "SPRITE" : type === "sound" ? "SOUND" : "CHAR";
+        this.name = type === "text" ? `Text${id}` : `Actor${id}`;
+        this.direction = 2;
+        this.visible = true;
+        this.layer = 1;
+        this.dx = 0;
+        this.dy = 0;
+        this.ani = type === "text" ? "" : "idle";
+        this.dir = 2;
+        this.chat = "";
+        this.text = type === "text" ? "text" : "";
+        this.head = "head19.png";
+        this.body = "body.png";
+        this.attrs = {};
+        this.frames = new Map();
+    }
+    duplicate() {
+        const item = new MovieItem(this.type, this.id);
+        Object.assign(item, JSON.parse(JSON.stringify({
+            id: this.id,
+            type: this.type,
+            kind: this.kind,
+            name: this.name,
+            direction: this.direction,
+            visible: this.visible,
+            layer: this.layer,
+            dx: this.dx,
+            dy: this.dy,
+            ani: this.ani,
+            dir: this.dir,
+            chat: this.chat,
+            text: this.text,
+            head: this.head,
+            body: this.body,
+            attrs: this.attrs || {}
+        })));
+        item.frames = new Map(Array.from(this.frames.entries()).map(([k, v]) => [Number(k), {...v}]));
+        return item;
+    }
+    hasFrame(frameId) {
+        return this.frames.has(frameId);
+    }
+    getFrameKey(frameId) {
+        if (this.frames.has(frameId)) return frameId;
+        let best = -1;
+        for (const key of this.frames.keys()) {
+            const frameKey = Number(key);
+            if (frameKey <= frameId && frameKey > best) best = frameKey;
+        }
+        return best;
+    }
+    getFrame(frameId) {
+        return {...this, ...(this.frames.get(frameId) || {})};
+    }
+    getEffectiveFrame(frameId) {
+        const keys = Array.from(this.frames.keys()).map(Number).filter(key => key <= frameId).sort((a, b) => a - b);
+        if (!keys.length) return null;
+        const state = {...this, attrs: {...(this.attrs || {})}};
+        for (const key of keys) {
+            const frame = this.frames.get(key) || {};
+            const previousAttrs = {...(state.attrs || {})};
+            Object.assign(state, frame);
+            state.attrs = {...previousAttrs, ...(frame.attrs || {})};
+        }
+        return state;
+    }
+    getInterpolatedFrame(frameId) {
+        const state = this.getEffectiveFrame(frameId);
+        if (!state) return null;
+        const prevKey = this.getFrameKey(frameId);
+        let nextKey = Infinity;
+        for (const key of this.frames.keys()) {
+            const frameKey = Number(key);
+            if (frameKey > frameId && frameKey < nextKey) nextKey = frameKey;
+        }
+        if (prevKey < 0 || !Number.isFinite(nextKey) || nextKey === prevKey) return state;
+        const prevState = this.getEffectiveFrame(prevKey);
+        const nextState = this.getEffectiveFrame(nextKey);
+        if (!prevState || !nextState) return state;
+        const t = (frameId - prevKey) / (nextKey - prevKey);
+        for (const key of ["dx", "dy"]) {
+            if (Number.isFinite(prevState[key]) && Number.isFinite(nextState[key])) {
+                state[key] = prevState[key] + (nextState[key] - prevState[key]) * t;
+            }
+        }
+        return state;
+    }
+    setFrame(frameId, attrs) {
+        const existing = this.frames.get(frameId) || {};
+        this.frames.set(frameId, {...existing, ...attrs});
+    }
+}
+
 function generateAnimationId(animation) {
     const str = `${animation.fileName || ""}_${Date.now()}_${Math.random()}`;
     let hash = 0;
@@ -215,6 +312,9 @@ class Animation {
         this.speed = 1.0;
         this.sprites = new Map();
         this.frames = [];
+        this.isMovieMode = false;
+        this.frameCount = 100;
+        this.movieItems = [];
         this.defaultImages = new Map();
         this.nextSpriteIndex = 0;
         this.boundingBox = {x: 0, y: 0, width: 0, height: 0};
@@ -371,6 +471,7 @@ const refreshLocalFileCache = async () => {
 let currentFrame = 0;
 let currentDir = 2;
 let selectedPieces = new Set();
+let selectedMovieItem = null;
 let selectedPieceDir = null;
 let selectedSpritesForDeletion = new Set();
 function f12Log(message) {
@@ -439,6 +540,66 @@ function getComboIndexFromDirIndex(dirIndex) {
 }
 const zoomFactors = [0.25, 0.3, 0.35, 0.4, 0.5, 0.75, 1.0, 2, 3, 4, 8, 12, 16, 24, 32, 48, 64];
 const dpr = window.devicePixelRatio || 1;
+const MOVIE_DIR_NAMES = ["up", "left", "down", "right"];
+const MOVIE_ACTOR_KINDS = ["CHAR", "SPRITE", "SOUND", "TEXT"];
+function encodeMovieValue(value) {
+    return encodeURIComponent(String(value ?? "")).replace(/%20/g, "+");
+}
+function decodeMovieValue(value) {
+    return decodeURIComponent(String(value ?? "").replace(/\+/g, "%20"));
+}
+function serializeMovieFrameState(item, frameId) {
+    const state = item.frames.get(frameId) || {};
+    const pairs = [];
+    const push = (key, value) => {
+        if (value === undefined || value === null || value === "") return;
+        pairs.push([key, value]);
+    };
+    if (Object.prototype.hasOwnProperty.call(state, "visible")) push("visible", state.visible ? "true" : "false");
+    if (Object.prototype.hasOwnProperty.call(state, "dx")) push("dx", state.dx);
+    if (Object.prototype.hasOwnProperty.call(state, "dy")) push("dy", state.dy);
+    if (Object.prototype.hasOwnProperty.call(state, "layer")) push("layer", state.layer);
+    push("ani", state.ani);
+    if (Object.prototype.hasOwnProperty.call(state, "dir")) push("dir", state.dir);
+    push("chat", state.chat);
+    push("text", state.text);
+    push("head", state.head);
+    push("body", state.body);
+    push("sprite #", state.spriteIndex ?? state["sprite #"]);
+    for (const [key, value] of Object.entries(state.attrs || {})) {
+        push(key, value);
+    }
+    return pairs.map(([k, v]) => `${k}=${encodeMovieValue(v)}`).join(",");
+}
+function parseMovieFrameState(text) {
+    const attrs = {};
+    const state = { attrs };
+    const tokens = String(text || "").split(",").map(t => t.trim()).filter(Boolean);
+    for (const token of tokens) {
+        const eq = token.indexOf("=");
+        if (eq < 0) {
+            if (!state.ani) state.ani = decodeMovieValue(token);
+            continue;
+        }
+        const key = token.slice(0, eq).toLowerCase();
+        const value = decodeMovieValue(token.slice(eq + 1));
+        if (key === "dx" || key === "dy" || key === "layer" || key === "dir") state[key] = parseFloat(value) || 0;
+        else if (key === "sprite #") state.spriteIndex = parseFloat(value) || 0;
+        else if (key === "visible") state.visible = value !== "false";
+        else if (key === "ani" || key === "chat" || key === "text" || key === "head" || key === "body") state[key] = value;
+        else attrs[key] = value;
+    }
+    return state;
+}
+function ensureMovieFrames(ani) {
+    if (!ani) return;
+    const count = Math.max(1, ani.isMovieMode ? (ani.frameCount || 100) : ani.frames.length || 1);
+    while (ani.frames.length < count) ani.frames.push(new Frame());
+    if (ani.isMovieMode) {
+        ani.frameCount = count;
+        if (ani.frames.length > count) ani.frames.length = count;
+    }
+}
 
 let editingSprite = null;
 let zoomLevel = parseInt(localStorage.getItem("mainCanvasZoom")) || 6;
@@ -455,6 +616,7 @@ let panY = 0;
 let isPlaying = false;
 let playPosition = 0;
 let playStartTime = 0;
+let moviePlaybackFrame = null;
 let keysSwapped = localStorage.getItem("editorSwapKeys") === "true";
 if (localStorage.getItem("editorShowGrid") === null) {
     localStorage.setItem("editorShowGrid", "true");
@@ -544,6 +706,10 @@ let dragStartMousePos = null;
 let pieceInitialPositions = new Map();
 let _dragMoveIndicator = null;
 let isDragging = false;
+let isDraggingMovieItem = false;
+let movieDragStartState = null;
+let movieDragOffset = null;
+let movieDragLastFrame = -1;
 let insertPiece = null;
 let insertPieces = [];
 let selectedAttachedSprite = -1;
@@ -1549,6 +1715,10 @@ function _schedulePostRestoreRefresh() {
 
 function drawFrame(ctx, frame, dir) {
     if (!frame) return;
+    if (currentAnimation?.isMovieMode) {
+        drawMovieFrame(ctx, getMovieRenderFrameId(Math.max(0, currentAnimation.frames.indexOf(frame))));
+        return;
+    }
     ctx.imageSmoothingEnabled = false;
     const actualDir = currentAnimation.singleDir ? 0 : (typeof dir === 'number' ? getDirIndex(dir) : getDirIndex(dir));
     const pieces = frame.pieces[actualDir] || [];
@@ -1833,6 +2003,273 @@ function transformSelectionPoint(transform, point) {
     };
 }
 
+function getMovieRenderFrameId(frameId = currentFrame) {
+    if (currentAnimation?.isMovieMode && isPlaying && moviePlaybackFrame !== null) return moviePlaybackFrame;
+    return frameId;
+}
+
+function getMovieItemState(item, frameId = getMovieRenderFrameId()) {
+    if (!item) return null;
+    return item.getInterpolatedFrame(frameId);
+}
+
+function getMovieTextStyle(state) {
+    const attrs = state.attrs || {};
+    const fontSize = parseFloat(attrs.fontsize || attrs.size || 16) || 16;
+    const fontFamily = attrs.font || "Tempus Sans ITC";
+    const fontStyle = attrs.italic === "true" ? "italic " : "";
+    const fontWeight = attrs.bold === "true" ? "bold " : "";
+    const color = String(attrs.color || "ffffff").replace(/^#/, "");
+    const align = attrs.rightaligned === "true" ? "right" : attrs.centered === "false" ? "left" : "center";
+    const text = state.text || state.chat || state.name || "text";
+    return {attrs, fontSize, fontFamily, fontStyle, fontWeight, color, align, text};
+}
+
+function getMovieTextBounds(state) {
+    const style = getMovieTextStyle(state);
+    if (!getMovieTextBounds.canvas) getMovieTextBounds.canvas = document.createElement("canvas");
+    const ctx = getMovieTextBounds.canvas.getContext("2d");
+    ctx.font = `${style.fontStyle}${style.fontWeight}${style.fontSize}px '${style.fontFamily}', 'Tempus Sans ITC', sans-serif`;
+    const metrics = ctx.measureText(style.text);
+    const width = Math.max(1, metrics.width || style.text.length * style.fontSize * 0.6);
+    const height = Math.max(style.fontSize, (metrics.actualBoundingBoxAscent || style.fontSize * 0.8) + (metrics.actualBoundingBoxDescent || style.fontSize * 0.2));
+    const shadowPad = style.attrs.shaded === "false" ? 1 : 3;
+    let x = state.dx || 0;
+    if (style.align === "center") x -= width / 2;
+    else if (style.align === "right") x -= width;
+    return {
+        x: x - shadowPad,
+        y: (state.dy || 0) - height / 2 - shadowPad,
+        width: width + shadowPad * 2 + 2,
+        height: height + shadowPad * 2 + 2
+    };
+}
+
+function getMovieItemBounds(item, frameId = getMovieRenderFrameId()) {
+    const state = getMovieItemState(item, frameId);
+    if (!state || state.visible === false) return null;
+    const kind = (item.kind || "").toUpperCase();
+    if (kind === "TEXT" || item.type === "text") {
+        return getMovieTextBounds(state);
+    }
+    if (kind === "SPRITE") {
+        const spriteIndex = state.spriteIndex ?? state["sprite #"] ?? 0;
+        const sprite = currentAnimation?.getAniSprite(spriteIndex, "");
+        return {x: state.dx || 0, y: state.dy || 0, width: sprite?.width || 16, height: sprite?.height || 16};
+    }
+    return {x: state.dx || 0, y: state.dy || 0, width: 32, height: 48};
+}
+
+function findMovieSpriteByType(type, dir, candidates = []) {
+    if (!currentAnimation) return null;
+    for (const idx of candidates) {
+        const sprite = currentAnimation.getAniSprite(idx, "");
+        if (sprite) return sprite;
+    }
+    const dirName = (MOVIE_DIR_NAMES[dir] || "").toLowerCase();
+    const sprites = Array.from(currentAnimation.sprites.values()).filter(sprite => sprite.type === type);
+    return sprites.find(sprite => (sprite.comment || "").toLowerCase().includes(dirName)) || sprites[0] || null;
+}
+
+function findMovieShadowSprite() {
+    if (!currentAnimation) return null;
+    return currentAnimation.getAniSprite(0, "") ||
+        Array.from(currentAnimation.sprites.values()).find(sprite => (sprite.comment || "").toLowerCase().includes("shadow")) ||
+        null;
+}
+
+function getMovieFrameBounds(frameId) {
+    if (!currentAnimation?.isMovieMode) return null;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const item of currentAnimation.movieItems || []) {
+        const bb = getMovieItemBounds(item, frameId);
+        if (!bb) continue;
+        minX = Math.min(minX, bb.x);
+        minY = Math.min(minY, bb.y);
+        maxX = Math.max(maxX, bb.x + bb.width);
+        maxY = Math.max(maxY, bb.y + bb.height);
+    }
+    if (minX === Infinity) return null;
+    return {minX, minY, maxX, maxY};
+}
+
+function drawMovieFramePreview(ctx, frameId, clipX, clipY, clipW, clipH) {
+    const bounds = getMovieFrameBounds(frameId);
+    if (!bounds) return;
+    const frameWidth = bounds.maxX - bounds.minX;
+    const frameHeight = bounds.maxY - bounds.minY;
+    const frameCenterX = (bounds.minX + bounds.maxX) / 2;
+    const frameCenterY = (bounds.minY + bounds.maxY) / 2;
+    const previewCenterX = clipX + clipW / 2;
+    const previewCenterY = clipY + clipH / 2;
+    const scale = Math.min((clipW - 4) / Math.max(frameWidth, 1), (clipH - 4) / Math.max(frameHeight, 1), 0.75);
+    const previousExportRender = _isExportRender;
+    ctx.save();
+    ctx.translate(previewCenterX, previewCenterY);
+    ctx.scale(scale, scale);
+    ctx.translate(-frameCenterX, -frameCenterY);
+    try {
+        _isExportRender = true;
+        drawMovieFrame(ctx, frameId);
+    } finally {
+        _isExportRender = previousExportRender;
+        ctx.restore();
+    }
+}
+
+function movieActorLabel(item) {
+    const kind = (item?.kind || (item?.type === "text" ? "TEXT" : item?.type === "sprite" ? "SPRITE" : "CHAR")).toUpperCase();
+    if (kind === "TEXT") return "Text";
+    if (kind === "SPRITE") return "Sprite";
+    if (kind === "SOUND") return "Sound";
+    return "Actor";
+}
+
+function getMovieDragDirection(prevDir, mx, my) {
+    const ax = Math.abs(mx);
+    const ay = Math.abs(my);
+    const moveThreshold = 2;
+    const dominance = 2;
+    if (ax < moveThreshold && ay < moveThreshold) return prevDir;
+    if (ax >= ay + dominance) return mx < 0 ? 1 : 3;
+    if (ay >= ax + dominance) return my < 0 ? 0 : 2;
+    return prevDir;
+}
+
+function drawMovieFrame(ctx, frameId) {
+    if (!currentAnimation?.isMovieMode) return;
+    const items = (currentAnimation.movieItems || [])
+        .map(item => ({item, state: getMovieItemState(item, frameId)}))
+        .filter(entry => entry.state && entry.state.visible !== false)
+        .sort((a, b) => (a.state.layer || 0) - (b.state.layer || 0) || a.item.id - b.item.id);
+    for (const {item, state} of items) {
+        const kind = (item.kind || "").toUpperCase();
+        if (kind === "TEXT" || item.type === "text") {
+            const style = getMovieTextStyle(state);
+            const scale = zoomFactors[zoomLevel] || 1;
+            ctx.save();
+            ctx.font = `${style.fontStyle}${style.fontWeight}${style.fontSize}px '${style.fontFamily}', 'Tempus Sans ITC', sans-serif`;
+            ctx.textAlign = style.align;
+            ctx.textBaseline = "middle";
+            if (style.attrs.shaded !== "false") {
+                ctx.shadowColor = "rgba(20,40,200,1)";
+                ctx.shadowOffsetX = _isExportRender ? 2 : 2 / scale;
+                ctx.shadowOffsetY = _isExportRender ? 2 : 2 / scale;
+                ctx.shadowBlur = 0;
+            }
+            ctx.fillStyle = "#" + style.color.padStart(6, "0").slice(0, 6);
+            ctx.fillText(style.text, state.dx || 0, state.dy || 0);
+            ctx.restore();
+        } else if (kind === "SPRITE") {
+            const spriteIndex = state.spriteIndex ?? state["sprite #"] ?? 0;
+            const sprite = currentAnimation.getAniSprite(spriteIndex, "");
+            if (sprite) drawSpriteCached(ctx, sprite, state.dx || 0, state.dy || 0);
+        } else {
+            const dx = state.dx || 0;
+            const dy = state.dy || 0;
+            const dir = Math.max(0, Math.min(3, state.dir ?? item.direction ?? 2));
+            const walkStep = state.ani === "walk" ? (Math.floor(frameId / 2) % 5) : -1;
+            const bodyCandidates = walkStep >= 0
+                ? [204 + walkStep * 4 + dir, 260 + walkStep * 4 + dir, 260 + dir, 200 + dir]
+                : [200 + dir, 260 + dir, 264 + dir];
+            const shadowSprite = findMovieShadowSprite();
+            const bodySprite = findMovieSpriteByType("BODY", dir, bodyCandidates);
+            const headSprite = findMovieSpriteByType("HEAD", dir, [100 + dir]);
+            if (shadowSprite) drawSpriteCached(ctx, shadowSprite, dx + 4, dy + 34);
+            if (bodySprite) drawSpriteCached(ctx, bodySprite, dx, dy + 16);
+            if (headSprite) drawSpriteCached(ctx, headSprite, dx, dy);
+            if (state.chat) {
+                ctx.save();
+                ctx.font = "bold 12px Arial";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "bottom";
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = "#1b3f9a";
+                ctx.fillStyle = "#ffffff";
+                ctx.strokeText(state.chat, dx + 16, dy - 3);
+                ctx.fillText(state.chat, dx + 16, dy - 3);
+                ctx.restore();
+            }
+        }
+        if (selectedMovieItem === item && !_isExportRender) {
+            const bb = getMovieItemBounds(item, frameId);
+            if (bb) {
+                ctx.save();
+                ctx.strokeStyle = "#00ff00";
+                ctx.lineWidth = 1.5 / (zoomFactors[zoomLevel] || 1);
+                ctx.setLineDash([4 / (zoomFactors[zoomLevel] || 1), 3 / (zoomFactors[zoomLevel] || 1)]);
+                ctx.strokeRect(bb.x, bb.y, bb.width, bb.height);
+                ctx.setLineDash([]);
+                ctx.restore();
+            }
+        }
+    }
+}
+
+function hitMovieItem(wx, wy, frameId = currentFrame) {
+    if (!currentAnimation?.isMovieMode) return null;
+    const items = (currentAnimation.movieItems || [])
+        .map(item => ({item, state: getMovieItemState(item, frameId)}))
+        .filter(entry => entry.state && entry.state.visible !== false)
+        .sort((a, b) => (b.state.layer || 0) - (a.state.layer || 0) || b.item.id - a.item.id);
+    for (const {item} of items) {
+        const bb = getMovieItemBounds(item, frameId);
+        if (bb && wx >= bb.x && wx <= bb.x + bb.width && wy >= bb.y && wy <= bb.y + bb.height) return item;
+    }
+    return null;
+}
+
+function recordMovieDragFrame(item, wx, wy) {
+    if (!currentAnimation?.isMovieMode || !item || !movieDragOffset) return;
+    const dx = Math.floor(0.5 + wx - movieDragOffset.x);
+    const dy = Math.floor(0.5 + wy - movieDragOffset.y);
+    const prev = item.getEffectiveFrame(movieDragLastFrame >= 0 ? movieDragLastFrame : currentFrame) || item.getFrame(currentFrame);
+    let dir = prev.dir ?? item.dir ?? 2;
+    const mx = dx - (prev.dx || 0);
+    const my = dy - (prev.dy || 0);
+    dir = getMovieDragDirection(dir, mx, my);
+    const movedEnough = Math.abs(mx) >= 2 || Math.abs(my) >= 2;
+    item.setFrame(currentFrame, {
+        dx,
+        dy,
+        dir,
+        ani: item.type === "actor" && movedEnough ? "walk" : (prev.ani || item.ani || "idle"),
+        visible: prev.visible !== false,
+        layer: prev.layer ?? item.layer ?? 1,
+        name: prev.name || item.name,
+        text: prev.text || item.text,
+        chat: prev.chat || item.chat
+    });
+    movieDragLastFrame = currentFrame;
+    drawTimeline();
+}
+
+function finishMovieDrag() {
+    if (!isDraggingMovieItem) return;
+    isDraggingMovieItem = false;
+    if (movieDragStartState) {
+        const newState = serializeAnimationState();
+        const _stripSel = s => { const {selectedPieceIds, selectedPieceDir, ...r} = s; return r; };
+        if (JSON.stringify(_stripSel(movieDragStartState)) !== JSON.stringify(_stripSel(newState))) {
+            addUndoCommand({
+                description: "Move Movie Item",
+                oldState: movieDragStartState,
+                newState,
+                undo: () => restoreAnimationState(movieDragStartState),
+                redo: () => restoreAnimationState(newState)
+            });
+        }
+    }
+    movieDragStartState = null;
+    movieDragOffset = null;
+    movieDragLastFrame = -1;
+    mainCanvas.style.cursor = "default";
+    document.body.style.cursor = "";
+    updateMovieModeUI();
+    redraw();
+    saveSession();
+}
+
 function drawAnchorDot(ctx, x, y, radius, fillColor, strokeColor, lineWidth) {
     ctx.save();
     ctx.fillStyle = fillColor;
@@ -2049,7 +2486,9 @@ function drawTimeline() {
         timelineCtx.beginPath();
         timelineCtx.rect(clipX, clipY, clipW, clipH);
         timelineCtx.clip();
-        if (pieces.length > 0) {
+        if (currentAnimation.isMovieMode) {
+            drawMovieFramePreview(timelineCtx, i, clipX, clipY, clipW, clipH);
+        } else if (pieces.length > 0) {
             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
             for (const piece of pieces) {
                 if (piece.type === "sprite") {
@@ -2119,7 +2558,9 @@ function drawTimeline() {
         timelineCtx.beginPath();
         timelineCtx.rect(clipX, clipY, clipW, clipH);
         timelineCtx.clip();
-        if (pieces.length > 0) {
+        if (currentAnimation.isMovieMode) {
+            drawMovieFramePreview(timelineCtx, dragFrame, clipX, clipY, clipW, clipH);
+        } else if (pieces.length > 0) {
             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
             for (const piece of pieces) {
                 if (piece.type === "sprite") {
@@ -2318,6 +2759,10 @@ function drawSpritePreview() {
 function parseGani(text) {
     const lines = text.split("\n");
     const ani = new Animation();
+    if (lines[0]?.trim() === "GANI0002") {
+        ani.isMovieMode = true;
+        ani.singleDir = false;
+    }
     let left = 0, top = 0, right = 0, bottom = 0;
     let dirCount = 4;
     let i = 0;
@@ -2407,6 +2852,8 @@ function parseGani(text) {
             ani.looped = true;
         } else if (word1 === "CONTINUOUS") {
             ani.continous = true;
+        } else if (word1 === "FRAMES" && words.length >= 2) {
+            ani.frameCount = Math.max(1, parseInt(words[1]) || 100);
         } else if (word1 === "SETBACKTO" && words.length >= 2) {
             ani.nextAni = words[1];
         } else if (word1 === "SINGLEDIR" || word1 === "SINGLEDIRECTION") {
@@ -2587,9 +3034,36 @@ function parseGani(text) {
                 i++;
             }
             ani.script = scriptLines.join("\n");
+        } else if (word1 === "MOVIE") {
+            ani.isMovieMode = true;
+            i++;
+            let item = null;
+            while (i < lines.length && lines[i].trim() !== "MOVIEEND") {
+                const movieLine = lines[i].trim();
+                if (!movieLine) { i++; continue; }
+                const movieWords = movieLine.split(/\s+/).filter(w => w);
+                if (movieWords[0] === "ACTOR" && movieWords.length >= 2) {
+                    const kind = (movieWords[1] || "CHAR").toUpperCase();
+                    const name = movieWords.slice(2).join(" ") || `${kind === "TEXT" ? "Text" : "Actor"}${ani.movieItems.length}`;
+                    item = new MovieItem(kind.toLowerCase(), ani.movieItems.length);
+                    item.kind = MOVIE_ACTOR_KINDS.includes(kind) ? kind : "CHAR";
+                    item.name = name;
+                    if (item.kind === "TEXT") item.text = name;
+                    ani.movieItems.push(item);
+                } else if (movieWords[0] === "FRAME" && item && movieWords.length >= 3) {
+                    const frameId = Math.max(0, parseInt(movieWords[1]) || 0);
+                    const stateText = movieLine.replace(/^FRAME\s+\S+\s+/i, "");
+                    const state = parseMovieFrameState(stateText);
+                    item.setFrame(frameId, state);
+                } else if (movieWords[0] === "ACTOREND") {
+                    item = null;
+                }
+                i++;
+            }
         }
         i++;
     }
+    ensureMovieFrames(ani);
     ani.boundingBox = {x: left, y: top, width: right - left, height: bottom - top};
     return ani;
 }
@@ -2603,7 +3077,7 @@ function isCustomImageType(type) {
 }
 
 function saveGani(ani) {
-    let output = "GANI0001\n";
+    let output = ani.isMovieMode ? "GANI0002\n" : "GANI0001\n";
     const otherCommands = [];
     for (const sprite of ani.sprites.values()) {
         output += `SPRITE ${String(sprite.index).padStart(4)} ${(sprite.type === "CUSTOM" ? sprite.customImageName : sprite.type).padEnd(15)} ${String(sprite.left).padStart(4)} ${String(sprite.top).padStart(4)} ${String(sprite.width).padStart(4)} ${String(sprite.height).padStart(4)} ${sprite.comment}\n`;
@@ -2633,14 +3107,34 @@ function saveGani(ani) {
             otherCommands.push(`COLOREFFECT ${String(sprite.index).padStart(4)} ${sprite.colorEffect.r/255} ${sprite.colorEffect.g/255} ${sprite.colorEffect.b/255} ${sprite.colorEffect.a/255}`);
         }
     }
+    if (ani.isMovieMode) output += `FRAMES ${Math.max(1, ani.frameCount || ani.frames.length || 100)}\n`;
     for (const [type, value] of ani.defaultImages) {
         output += `DEFAULT${type} ${value}\n`;
     }
     if (ani.looped) output += "LOOP\n";
     if (ani.continous) output += "CONTINUOUS\n";
     if (ani.nextAni) output += `SETBACKTO ${ani.nextAni}\n`;
-    if (ani.singleDir) output += "SINGLEDIR\n";
+    if (ani.singleDir && !ani.isMovieMode) output += "SINGLEDIR\n";
     for (const cmd of otherCommands) output += cmd + "\n";
+    if (ani.isMovieMode) {
+        output += "MOVIE\n";
+        const items = (ani.movieItems || []).slice().sort((a, b) => (a.layer || 0) - (b.layer || 0) || a.id - b.id);
+        items.forEach((item, index) => {
+            if (index > 0) output += "\n";
+            const kind = (item.kind || (item.type === "text" ? "TEXT" : item.type === "sprite" ? "SPRITE" : "CHAR")).toUpperCase();
+            output += `  ACTOR ${MOVIE_ACTOR_KINDS.includes(kind) ? kind : "CHAR"} ${item.name || `${kind === "TEXT" ? "Text" : "Actor"}${item.id}`}\n`;
+            const frameIds = Array.from(item.frames.keys()).map(Number).sort((a, b) => a - b);
+            for (const frameId of frameIds) {
+                output += `    FRAME ${frameId} ${serializeMovieFrameState(item, frameId)}\n`;
+            }
+            output += "  ACTOREND\n";
+        });
+        output += "MOVIEEND\n";
+        if (ani.script) {
+            output += "SCRIPT\n" + ani.script + "\nSCRIPTEND\n";
+        }
+        return output;
+    }
     output += "ANI\n";
     for (const frame of ani.frames) {
         for (let dir = 0; dir < (ani.singleDir ? 1 : 4); dir++) {
@@ -3754,6 +4248,7 @@ function updateSoundsList() {
 
 function updateAnimationSettings() {
     if (!currentAnimation) return;
+    ensureMovieModeUI();
     const singleDirCheckbox = $("singleDirCheckbox");
     const loopedCheckbox = $("loopedCheckbox");
     const continousCheckbox = $("continousCheckbox");
@@ -3761,6 +4256,227 @@ function updateAnimationSettings() {
     if (loopedCheckbox) loopedCheckbox.textContent = currentAnimation.looped ? "✓" : " ";
     if (continousCheckbox) continousCheckbox.textContent = currentAnimation.continous ? "✓" : " ";
     $("nextAni").value = currentAnimation.nextAni;
+    updateMovieModeUI();
+}
+
+function ensureMovieModeUI() {
+    const root = document.getElementById("ganiRoot") || document;
+    root.querySelectorAll("#btnMovieMode").forEach(btn => btn.remove());
+    root.querySelector("#movieModeToggleRow")?.remove();
+    if (root.querySelector("#btnMovieModePanel")) return;
+    const toolbar = root.querySelector(".toolbar");
+    if (toolbar) {
+        const toggle = document.createElement("button");
+        toggle.id = "btnMovieModePanel";
+        toggle.className = "tb-gani-only";
+        toggle.textContent = "-> Movie Mode";
+        toggle.title = "Switch to Movie Mode";
+        toggle.style.cssText = "margin-left:auto;width:118px;height:24px;padding:2px 8px;white-space:nowrap;";
+        toggle.onclick = () => toggleMovieMode();
+        toolbar.appendChild(toggle);
+    }
+    const rightPanel = root.querySelector(".right-panel");
+    if (!rightPanel) return;
+    const group = document.createElement("div");
+    group.className = "settings-group";
+    group.id = "movieModeGroup";
+    group.innerHTML = `
+        <h3>Movie Mode</h3>
+        <div style="display:flex;gap:4px;margin-bottom:6px;">
+            <button id="btnAddMovieActor" style="flex:1;" title="Add Actor"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" style="display:block;margin:auto;fill:currentColor;"><path d="M6 7a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"></path><path d="M1 15c0-3 2-5 5-5s5 2 5 5H1z"></path><path d="M12 5h2v3h3v2h-3v3h-2v-3H9V8h3V5z"></path></svg></button>
+            <button id="btnAddMovieText" style="flex:1;" title="Add Text"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" style="display:block;margin:auto;fill:currentColor;"><path d="M3 2h10v3h-2l-.3-1H9v9h1.5v2h-5v-2H7V4H5.3L5 5H3V2z"></path></svg></button>
+            <button id="btnDeleteMovieItem" style="flex:1;" title="Delete"><i class="fas fa-trash"></i></button>
+        </div>
+        <label style="display:block;margin:6px 0 3px;">Frames:</label>
+        <input type="number" id="movieFrameCount" min="1" value="100">
+        <label style="display:block;margin:8px 0 3px;">Selected:</label>
+        <select id="movieItemsCombo" style="width:100%;margin-bottom:8px;"><option value="">(none)</option></select>
+        <label style="display:block;margin:6px 0 3px;">Name/Text:</label>
+        <input type="text" id="movieItemName">
+        <label style="display:block;margin:6px 0 3px;">Ani:</label>
+        <input type="text" id="movieItemAni">
+        <label style="display:block;margin:6px 0 3px;">Chat:</label>
+        <input type="text" id="movieItemChat">
+        <label style="display:block;margin:6px 0 3px;">Dir:</label>
+        <select id="movieItemDir"><option value="0">up</option><option value="1">left</option><option value="2">down</option><option value="3">right</option></select>
+        <label style="display:block;margin:6px 0 3px;">Layer:</label>
+        <input type="number" id="movieItemLayer" value="1">
+        <label style="display:flex;align-items:center;gap:8px;margin-top:6px;"><span id="movieItemVisible" class="custom-checkbox">✓</span> Visible</label>
+    `;
+    rightPanel.insertBefore(group, rightPanel.firstChild);
+    document.getElementById("btnAddMovieActor").onclick = () => addMovieItem("actor");
+    document.getElementById("btnAddMovieText").onclick = () => addMovieItem("text");
+    document.getElementById("btnDeleteMovieItem").onclick = () => deleteSelectedMovieItem();
+    document.getElementById("movieItemsCombo").onchange = (e) => {
+        selectedMovieItem = (currentAnimation?.movieItems || []).find(item => String(item.id) === e.target.value) || null;
+        selectedPieces.clear();
+        updateMovieModeUI();
+        redraw();
+    };
+    document.getElementById("movieFrameCount").onchange = (e) => {
+        if (!currentAnimation) return;
+        const oldState = serializeAnimationState();
+        currentAnimation.frameCount = Math.max(1, parseInt(e.target.value) || 100);
+        ensureMovieFrames(currentAnimation);
+        currentFrame = Math.min(currentFrame, currentAnimation.frameCount - 1);
+        const newState = serializeAnimationState();
+        addUndoCommand({description: "Change Movie Frame Count", oldState, newState, undo: () => restoreAnimationState(oldState), redo: () => restoreAnimationState(newState)});
+        updateFrameInfo();
+        drawTimeline();
+        saveSession();
+    };
+    for (const id of ["movieItemName", "movieItemAni", "movieItemChat", "movieItemDir", "movieItemLayer"]) {
+        document.getElementById(id).onchange = applyMoviePanelChanges;
+    }
+    document.getElementById("movieItemVisible").onclick = () => {
+        if (!selectedMovieItem) return;
+        const state = getMovieItemState(selectedMovieItem, currentFrame) || selectedMovieItem.getFrame(currentFrame);
+        setMovieItemFrameAttrs(selectedMovieItem, {visible: state.visible === false});
+    };
+}
+
+function updateMovieModeUI() {
+    const root = document.getElementById("ganiRoot") || document;
+    const enabled = !!currentAnimation?.isMovieMode;
+    const group = root.querySelector("#movieModeGroup");
+    const panelBtn = root.querySelector("#btnMovieModePanel");
+    if (group) group.style.display = enabled ? "block" : "none";
+    if (panelBtn) {
+        panelBtn.classList.toggle("active", enabled);
+        panelBtn.textContent = enabled ? "-> Sprite Mode" : "-> Movie Mode";
+        panelBtn.title = enabled ? "Switch to Sprite Mode" : "Switch to Movie Mode";
+    }
+    const direction = root.querySelector(".direction-selector");
+    if (direction) direction.style.display = enabled ? "none" : "";
+    if (!enabled) return;
+    const combo = document.getElementById("movieItemsCombo");
+    if (combo) {
+        const selectedId = selectedMovieItem ? String(selectedMovieItem.id) : combo.value;
+        combo.innerHTML = '<option value="">(none)</option>';
+        for (const item of currentAnimation.movieItems || []) {
+            const opt = document.createElement("option");
+            opt.value = String(item.id);
+            const itemState = getMovieItemState(item, currentFrame);
+            opt.textContent = `${movieActorLabel(item)} ${item.id}: ${itemState?.name || item.name}`;
+            if (opt.value === selectedId) opt.selected = true;
+            combo.appendChild(opt);
+        }
+        selectedMovieItem = (currentAnimation.movieItems || []).find(item => String(item.id) === combo.value) || selectedMovieItem;
+    }
+    const frameCount = document.getElementById("movieFrameCount");
+    if (frameCount) frameCount.value = currentAnimation.frameCount || currentAnimation.frames.length || 100;
+    const state = selectedMovieItem ? getMovieItemState(selectedMovieItem, currentFrame) : null;
+    for (const id of ["movieItemName", "movieItemAni", "movieItemChat", "movieItemDir", "movieItemLayer"]) {
+        const el = document.getElementById(id);
+        if (el) el.disabled = !state;
+    }
+    if (document.getElementById("movieItemName")) document.getElementById("movieItemName").value = state ? (((selectedMovieItem.kind || "").toUpperCase() === "TEXT" || selectedMovieItem.type === "text") ? (state.text || state.name || "") : (state.name || selectedMovieItem.name || "")) : "";
+    if (document.getElementById("movieItemAni")) document.getElementById("movieItemAni").value = state?.ani || "";
+    if (document.getElementById("movieItemChat")) document.getElementById("movieItemChat").value = state?.chat || "";
+    if (document.getElementById("movieItemDir")) document.getElementById("movieItemDir").value = String(state?.dir ?? 2);
+    if (document.getElementById("movieItemLayer")) document.getElementById("movieItemLayer").value = state?.layer ?? 1;
+    const visible = document.getElementById("movieItemVisible");
+    if (visible) visible.textContent = !state || state.visible !== false ? "✓" : " ";
+}
+
+function toggleMovieMode() {
+    if (!currentAnimation) return;
+    const toMovie = !currentAnimation.isMovieMode;
+    showConfirmDialog(toMovie ? "Switching to movie mode will remove all frame sprites. Continue?" : "Switching to sprite mode will remove all actors. Continue?", (confirmed) => {
+        if (!confirmed) return;
+        const oldState = serializeAnimationState();
+        currentAnimation.isMovieMode = toMovie;
+        currentAnimation.singleDir = false;
+        selectedPieces.clear();
+        selectedMovieItem = null;
+        if (toMovie) {
+            currentAnimation.frameCount = Math.max(100, currentAnimation.frames.length || 1);
+            ensureMovieFrames(currentAnimation);
+            for (const frame of currentAnimation.frames) frame.pieces = [[], [], [], []];
+            if (!currentAnimation.movieItems.length) addMovieItem("actor", false);
+        } else {
+            currentAnimation.movieItems = [];
+        }
+        const newState = serializeAnimationState();
+        addUndoCommand({description: toMovie ? "Switch to Movie Mode" : "Switch to Sprite Mode", oldState, newState, undo: () => restoreAnimationState(oldState), redo: () => restoreAnimationState(newState)});
+        updateAnimationSettings();
+        updateItemsCombo();
+        updateFrameInfo();
+        redraw();
+        drawTimeline();
+        saveSession();
+    });
+}
+
+function addMovieItem(type = "actor", pushUndo = true) {
+    if (!currentAnimation) return null;
+    if (!currentAnimation.isMovieMode) currentAnimation.isMovieMode = true;
+    const oldState = pushUndo ? serializeAnimationState() : null;
+    const nextId = (currentAnimation.movieItems || []).reduce((max, item) => Math.max(max, item.id), -1) + 1;
+    const item = new MovieItem(type, nextId);
+    item.kind = type === "text" ? "TEXT" : "CHAR";
+    item.dx = type === "text" ? 0 : -16;
+    item.dy = type === "text" ? -32 : -24;
+    item.setFrame(currentFrame, {dx: item.dx, dy: item.dy, text: item.text, name: item.name, ani: item.ani, dir: item.dir, visible: item.visible, layer: item.layer});
+    currentAnimation.movieItems.push(item);
+    selectedMovieItem = item;
+    selectedPieces.clear();
+    ensureMovieFrames(currentAnimation);
+    if (pushUndo) {
+        const newState = serializeAnimationState();
+        addUndoCommand({description: type === "text" ? "Add Movie Text" : "Add Movie Actor", oldState, newState, undo: () => restoreAnimationState(oldState), redo: () => restoreAnimationState(newState)});
+    }
+    updateMovieModeUI();
+    redraw();
+    drawTimeline();
+    saveSession();
+    return item;
+}
+
+function deleteSelectedMovieItem() {
+    if (!currentAnimation || !selectedMovieItem) return;
+    const oldState = serializeAnimationState();
+    currentAnimation.movieItems = currentAnimation.movieItems.filter(item => item !== selectedMovieItem);
+    selectedMovieItem = null;
+    const newState = serializeAnimationState();
+    addUndoCommand({description: "Delete Movie Item", oldState, newState, undo: () => restoreAnimationState(oldState), redo: () => restoreAnimationState(newState)});
+    updateMovieModeUI();
+    redraw();
+    drawTimeline();
+    saveSession();
+}
+
+function setMovieItemFrameAttrs(item, attrs, pushUndo = true) {
+    if (!currentAnimation || !item) return;
+    const oldState = pushUndo ? serializeAnimationState() : null;
+    item.setFrame(currentFrame, attrs);
+    if (attrs.name !== undefined) item.name = attrs.name;
+    if (attrs.text !== undefined) item.text = attrs.text;
+    if (attrs.dir !== undefined) item.dir = attrs.dir;
+    if (attrs.layer !== undefined) item.layer = attrs.layer;
+    if (attrs.visible !== undefined) item.visible = attrs.visible;
+    if (pushUndo) {
+        const newState = serializeAnimationState();
+        addUndoCommand({description: "Change Movie Item", oldState, newState, undo: () => restoreAnimationState(oldState), redo: () => restoreAnimationState(newState)});
+    }
+    updateMovieModeUI();
+    redraw();
+    drawTimeline();
+    saveSession();
+}
+
+function applyMoviePanelChanges() {
+    if (!selectedMovieItem) return;
+    const name = document.getElementById("movieItemName")?.value || selectedMovieItem.name;
+    const attrs = {
+        name,
+        ani: document.getElementById("movieItemAni")?.value || "",
+        chat: document.getElementById("movieItemChat")?.value || "",
+        dir: parseInt(document.getElementById("movieItemDir")?.value || "2") || 0,
+        layer: parseInt(document.getElementById("movieItemLayer")?.value || "1") || 0
+    };
+    if (selectedMovieItem.type === "text") attrs.text = name;
+    setMovieItemFrameAttrs(selectedMovieItem, attrs);
 }
 
 function updateDefaultsTable() {
@@ -4199,6 +4915,27 @@ function generateHistoryDescription(oldState, newState) {
 function serializeAnimationState() {
     if (!currentAnimation) return null;
     const state = {
+        isMovieMode: currentAnimation.isMovieMode || false,
+        frameCount: currentAnimation.frameCount || currentAnimation.frames.length || 100,
+        movieItems: (currentAnimation.movieItems || []).map(item => ({
+            id: item.id,
+            type: item.type,
+            kind: item.kind,
+            name: item.name,
+            direction: item.direction,
+            visible: item.visible,
+            layer: item.layer,
+            dx: item.dx,
+            dy: item.dy,
+            ani: item.ani,
+            dir: item.dir,
+            chat: item.chat,
+            text: item.text,
+            head: item.head,
+            body: item.body,
+            attrs: {...(item.attrs || {})},
+            frames: Array.from(item.frames.entries()).map(([frameId, attrs]) => ({ frameId: Number(frameId), attrs: {...attrs, attrs: {...(attrs.attrs || {})}} }))
+        })),
         frames: currentAnimation.frames.map(f => ({
         pieces: f.pieces.map(dir => dir.map(p => {
             if (p.type === "sprite") {
@@ -4267,6 +5004,32 @@ function restoreAnimationState(state) {
         return;
     }
     f12Log(`restoreAnimationState: restoring ${state.frames?.length || 0} frames, ${state.sprites?.length || 0} sprites`);
+    currentAnimation.isMovieMode = !!state.isMovieMode;
+    currentAnimation.frameCount = state.frameCount || state.frames?.length || 100;
+    currentAnimation.movieItems = (state.movieItems || []).map(itemData => {
+        const item = new MovieItem(itemData.type || "actor", itemData.id || 0);
+        const kind = (itemData.kind || (itemData.type === "text" ? "TEXT" : itemData.type === "sprite" ? "SPRITE" : itemData.type === "sound" ? "SOUND" : "CHAR")).toUpperCase();
+        Object.assign(item, {
+            id: itemData.id || 0,
+            type: itemData.type || "actor",
+            kind: MOVIE_ACTOR_KINDS.includes(kind) ? kind : "CHAR",
+            name: itemData.name || ((itemData.type === "text" ? "Text" : "Actor") + (itemData.id || 0)),
+            direction: itemData.direction ?? itemData.dir ?? 2,
+            visible: itemData.visible !== false,
+            layer: itemData.layer || 0,
+            dx: itemData.dx || 0,
+            dy: itemData.dy || 0,
+            ani: itemData.ani || (itemData.type === "text" ? "" : "idle"),
+            dir: itemData.dir ?? itemData.direction ?? 2,
+            chat: itemData.chat || "",
+            text: itemData.text || "",
+            head: itemData.head || "head19.png",
+            body: itemData.body || "body.png",
+            attrs: {...(itemData.attrs || {})}
+        });
+        item.frames = new Map((itemData.frames || []).map(f => [Number(f.frameId) || 0, {...(f.attrs || {})}]));
+        return item;
+    });
     currentAnimation.frames = state.frames.map(fData => {
         const frame = new Frame();
         frame.duration = fData.duration || 50;
@@ -4302,6 +5065,7 @@ function restoreAnimationState(state) {
         });
         return frame;
     });
+    ensureMovieFrames(currentAnimation);
     currentAnimation.sprites.clear();
     state.sprites.forEach(sData => {
         const sprite = new AniSprite();
@@ -4506,6 +5270,7 @@ function switchTab(index) {
     selectedFrames.clear();
     currentTabIndex = index;
     currentAnimation = animations[index];
+    selectedMovieItem = null;
     if (!currentAnimation.undoStack) currentAnimation.undoStack = [];
     if (currentAnimation.undoIndex === undefined) currentAnimation.undoIndex = -1;
     if (currentAnimation.historyLoggingEnabled === undefined) {
@@ -6836,12 +7601,14 @@ async function initGaniEditorStartup() {
     $("btnPlay").onclick = () => {
         if (isPlaying) {
             isPlaying = false;
+            moviePlaybackFrame = null;
             stopAllSounds();
             $("btnPlay").innerHTML = '<i class="fas fa-play"></i>';
         } else {
             isPlaying = true;
             playPosition = 0;
             playStartTime = 0;
+            moviePlaybackFrame = currentAnimation?.isMovieMode ? 0 : null;
             $("btnPlay").innerHTML = '<i class="fas fa-pause"></i>';
             requestAnimationFrame(playAnimation);
         }
@@ -6850,6 +7617,7 @@ async function initGaniEditorStartup() {
         isPlaying = false;
         playStartTime = 0;
         playPosition = 0;
+        moviePlaybackFrame = null;
         currentFrame = 0;
         stopAllSounds();
         $("btnPlay").innerHTML = '<i class="fas fa-play"></i>';
@@ -11322,6 +12090,41 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
             x = (adjustedX - logicalWidth / 2 - panX) / zoom;
             y = (adjustedY - logicalHeight / 2 - panY) / zoom;
         }
+        if (currentAnimation?.isMovieMode) {
+            if (e.button === 0) {
+                const hit = hitMovieItem(x, y);
+                if (hit) {
+                    selectedMovieItem = hit;
+                    selectedPieces.clear();
+                    const state = getMovieItemState(hit, currentFrame) || hit.getFrame(currentFrame);
+                    movieDragOffset = {x: x - (state.dx || 0), y: y - (state.dy || 0)};
+                    movieDragStartState = serializeAnimationState();
+                    movieDragLastFrame = currentFrame;
+                    isDraggingMovieItem = true;
+                    mainCanvas.style.cursor = "grabbing";
+                    updateMovieModeUI();
+                    redraw();
+                    e.preventDefault();
+                    return;
+                }
+                selectedMovieItem = null;
+                selectedPieces.clear();
+                updateMovieModeUI();
+                redraw();
+                e.preventDefault();
+                return;
+            }
+            if (e.button === 2) {
+                isRightClickPanning = true;
+                rightClickPanStartX = e.clientX;
+                rightClickPanStartY = e.clientY;
+                rightClickPanStartPanX = panX;
+                rightClickPanStartPanY = panY;
+                mainCanvas.style.cursor = "grabbing";
+                e.preventDefault();
+                return;
+            }
+        }
         if (e.button === 2) {
             let _overSprite = false;
             if (currentAnimation) {
@@ -11728,7 +12531,12 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
                 x = (adjustedX - logicalWidth / 2 - panX) / zoom;
                 y = (adjustedY - logicalHeight / 2 - panY) / zoom;
             }
-        if (isRightClickPanning) {
+        if (isDraggingMovieItem && selectedMovieItem) {
+            mainCanvas.style.cursor = "grabbing";
+            recordMovieDragFrame(selectedMovieItem, x, y);
+            updateMovieModeUI();
+            redraw();
+        } else if (isRightClickPanning) {
             mainCanvas.style.cursor = "grabbing";
             const deltaX = Math.abs(e.clientX - rightClickPanStartX);
             const deltaY = Math.abs(e.clientY - rightClickPanStartY);
@@ -11839,6 +12647,9 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
         if (isRotatingSelection && e.button === 0) {
             finishRotationSelection();
         }
+        if (isDraggingMovieItem && e.button === 0) {
+            finishMovieDrag();
+        }
         if (isDragging && e.button === 0) {
             isDragging = false;
             if (selectedPieces.size > 0 && dragStartState) {
@@ -11923,6 +12734,9 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
         }
         if (e.button === 0 && isRotatingSelection) {
             finishRotationSelection();
+        }
+        if (e.button === 0 && isDraggingMovieItem) {
+            finishMovieDrag();
         }
         if (e.button === 0 && isDragging) {
             isDragging = false;
@@ -12290,6 +13104,7 @@ function playAnimation(now) {
         } else {
             isPlaying = false;
             playPosition = 0;
+            moviePlaybackFrame = null;
             $("btnPlay").innerHTML = '<i class="fas fa-play"></i>';
             redraw();
             return;
@@ -12297,13 +13112,16 @@ function playAnimation(now) {
     }
     let accumulated = 0;
     let newFrame = currentFrame;
+    let fractionalFrame = currentFrame;
     for (let i = 0; i < currentAnimation.frames.length; i++) {
         if (playPosition < accumulated + currentAnimation.frames[i].duration) {
             newFrame = i;
+            fractionalFrame = i + ((playPosition - accumulated) / Math.max(currentAnimation.frames[i].duration, 1));
             break;
         }
         accumulated += currentAnimation.frames[i].duration;
     }
+    if (currentAnimation.isMovieMode) moviePlaybackFrame = fractionalFrame;
     if (newFrame !== currentFrame) {
         currentFrame = newFrame;
         const frame = currentAnimation.getFrame(currentFrame);
@@ -12387,6 +13205,7 @@ function playAnimation(now) {
         updateFrameInfo();
         drawTimeline();
     }
+    if (currentAnimation.isMovieMode) redraw();
     if (isPlaying) {
         requestAnimationFrame(playAnimation);
     }

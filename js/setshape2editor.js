@@ -1049,6 +1049,8 @@ class SetshapeEditor {
         SetshapeEditor._content.style.margin = '0';
         SetshapeEditor._content.style.width = '100%';
         SetshapeEditor._content.style.height = '100%';
+        SetshapeEditor._content.style.minWidth = '0';
+        SetshapeEditor._content.style.minHeight = '0';
         SetshapeEditor._content.style.maxWidth = '100%';
         SetshapeEditor._content.style.maxHeight = '100%';
         SetshapeEditor.applyTheme(SetshapeEditor._content);

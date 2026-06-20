@@ -1945,13 +1945,22 @@ class LevelEditor {
 
     _cloneSelectionAsFloatingStamp(cx, cy) {
         if (!this.hasSelection()) return false;
-        const sourceTiles = this._floatingStamp && this.selectionTiles
+        const sx = Math.min(this.selectionStartX, this.selectionEndX);
+        const sy = Math.min(this.selectionStartY, this.selectionEndY);
+        const sourceTiles = this.selectionTiles?.length
             ? this.selectionTiles.map(r => [...r])
             : this._captureSelectionAsStamp();
         if (!sourceTiles?.length) return false;
         if (this._floatingStamp && this.selectionTiles) this._commitFloatingStamp();
         this.selectedTilesetTiles = sourceTiles.map(r => [...r]);
-        this._createFloatingStamp(cx, cy);
+        this._createFloatingStamp(sx, sy);
+        this.originalSelectionX = sx;
+        this.originalSelectionY = sy;
+        this.selectionOffsetX = cx - sx;
+        this.selectionOffsetY = cy - sy;
+        this.isMovingSelection = true;
+        this.isResizingSelection = false;
+        this.pendingSelection = false;
         this.selectedTilesetTiles = null;
         this.updateSelectedTileDisplay();
         return true;
@@ -2000,6 +2009,25 @@ class LevelEditor {
         this.render();
     }
 
+    _cancelFloatingStamp() {
+        if (!this._floatingStamp && !this.selectionTiles) return false;
+        this.selectionStartX = -1;
+        this.selectionStartY = -1;
+        this.selectionEndX = -1;
+        this.selectionEndY = -1;
+        this.selectionTiles = null;
+        this.resizeOrigTiles = null;
+        this._floatingStamp = false;
+        this._floatingStampCanvas = false;
+        this._stampTilesLifted = false;
+        this.isMovingSelection = false;
+        this.isResizingSelection = false;
+        this.pendingSelection = false;
+        this.updateSelectionInfo();
+        this.render();
+        return true;
+    }
+
     _captureSnapshot() {
         return {
             layers: this.level.layers.map(l => [...l.tiles]),
@@ -2041,6 +2069,8 @@ class LevelEditor {
             if (modals.length) { modals[modals.length - 1]._closeModal(); return; }
             const about = this.$('infoDialog');
             if (about?.style.display === 'flex') { about.style.display = 'none'; return; }
+            if (this._floatingStamp && this.selectionTiles) { e.preventDefault(); this._cancelFloatingStamp(); return; }
+            if (this.selectedTilesetTiles) { e.preventDefault(); this._clearSelectedTileStampPreview(); return; }
         }
         const _ae = document.activeElement;
         const _monacoFocused = !!(
@@ -2188,7 +2218,7 @@ class LevelEditor {
         this.drawObjects();
 
         if (this.selectionStartX >= 0 && this.selectionEndX >= 0) {
-            this.drawSelection();
+            this.drawSelection({ fill: !this._floatingStamp });
         }
 
         if ((this.isMovingSelection || this.isResizingSelection || this._floatingStamp) && this.selectionTiles) {
@@ -2463,6 +2493,10 @@ class LevelEditor {
         this.render(); this.saveSessionDebounced();
     }
     _doDelete() {
+        if (this._floatingStamp && this.selectionTiles) {
+            this._cancelFloatingStamp();
+            return;
+        }
         const selectedObjects = this.getSelectedObjects();
         if (selectedObjects.length) {
             this.pushUndo();
@@ -2801,8 +2835,9 @@ class LevelEditor {
         this.saveSessionDebounced();
     }
 
-    drawSelection() {
+    drawSelection(options = {}) {
         if (this.selectionStartX < 0 || this.selectionEndX < 0) return;
+        const fill = options.fill !== false;
         const startX = Math.min(this.selectionStartX, this.selectionEndX);
         const startY = Math.min(this.selectionStartY, this.selectionEndY);
         const endX = Math.max(this.selectionStartX, this.selectionEndX);
@@ -2810,8 +2845,10 @@ class LevelEditor {
         const tw = this.level.tileWidth || 16, th = this.level.tileHeight || 16;
         const x = startX * tw, y = startY * th;
         const w = (endX - startX + 1) * tw, h = (endY - startY + 1) * th;
-        this.ctx.fillStyle = 'rgba(255, 105, 180, 0.25)';
-        this.ctx.fillRect(x, y, w, h);
+        if (fill) {
+            this.ctx.fillStyle = 'rgba(255, 105, 180, 0.25)';
+            this.ctx.fillRect(x, y, w, h);
+        }
         this.ctx.strokeStyle = 'rgb(255, 105, 180)';
         this.ctx.lineWidth = 1.5 / this.zoom;
         this.ctx.strokeRect(x, y, w, h);
@@ -2852,7 +2889,7 @@ class LevelEditor {
                 }
             }
         }
-        this.ctx.globalAlpha = 0.7;
+        this.ctx.globalAlpha = this._floatingStamp ? 1.0 : 0.7;
         for (let y = 0; y < this.selectionTiles.length; y++) {
             for (let x = 0; x < this.selectionTiles[y].length; x++) {
                 const tileIndex = this.selectionTiles[y][x];

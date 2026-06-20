@@ -213,6 +213,7 @@ const TabManager = {
         const idx = this._tabs.findIndex(t => t.id === id);
         if (idx === -1) return;
         const tab = this._tabs[idx];
+        this._dropPendingStateForTab(tab);
         if (tab.type === 'gani' && typeof window.closeGaniTab === 'function') window.closeGaniTab(tab);
         else if (tab.type === 'level' && window.levelEditor?.closeLevelTabByData) window.levelEditor.closeLevelTabByData(tab);
         else if (tab.type === 'beautify' && typeof window.closeBeautifyTab === 'function') window.closeBeautifyTab(tab);
@@ -312,6 +313,12 @@ const TabManager = {
         const savedName = savedData.name || saved.name || '';
         const currentName = currentData.name || tab.name || '';
         return !!savedName && savedName === currentName;
+    },
+
+    _dropPendingStateForTab(tab) {
+        if (!Array.isArray(this._pendingRestoreState) || !this._pendingRestoreState.length || !tab) return;
+        this._pendingRestoreState = this._pendingRestoreState.filter(saved => !this._tabMatchesState(tab, saved));
+        if (!this._pendingRestoreState.length) this._pendingRestoreState = null;
     },
 
     _restorePendingState() {

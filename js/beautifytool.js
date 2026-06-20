@@ -532,8 +532,8 @@ class BeautifyTool {
         if (!host) return;
         BeautifyTool._host = host;
         host.innerHTML = `
-<div style="display:flex;flex-direction:column;flex:1;min-height:0;background:#1e1e1e;">
-  <div style="display:flex;gap:12px;flex:1;min-height:0;padding:12px;">
+<div style="display:flex;flex-direction:column;flex:1;min-height:0;min-width:0;width:100%;background:#1e1e1e;">
+  <div style="display:flex;gap:12px;flex:1;min-height:0;min-width:0;width:100%;padding:12px;">
     <div style="flex:1;display:flex;flex-direction:column;min-width:0;border:1px solid #3a3a3a;background:#1a1a1a;">
       <div style="padding:8px 10px;border-bottom:1px solid #3a3a3a;font-family:chevyray,monospace;color:#c0c0c0;">Input</div>
       <div data-beautify="inputEditor" style="flex:1;min-height:0;"></div>

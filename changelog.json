@@ -1,5 +1,15 @@
 [
   {
+    "version": "0.1.61",
+    "date": "2026-06-19",
+    "tag": "GSuite",
+    "changes": [
+      "Added an initial GANI Movie Mode in the animation editor with GANI0002 parse/save support, actor/text controls, frame-count editing, canvas selection, and frame-recorded actor dragging",
+      "Fixed web browser utility tabs so Code Beautify and Setshape2 fill the available page width instead of staying cramped to the left",
+      "Fixed the web browser Open Default dialog so the Ganis tab lists bundled ganis even before the animation editor has been opened"
+    ]
+  },
+  {
     "version": "0.1.60",
     "date": "2026-06-14",
     "tag": "GSuite",
