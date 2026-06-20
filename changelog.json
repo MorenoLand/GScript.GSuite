@@ -1,7 +1,7 @@
 [
   {
-    "version": "0.1.61",
-    "date": "2026-06-19",
+    "version": "0.1.62",
+    "date": "2026-06-20",
     "tag": "GSuite",
     "changes": [
       "Added an initial GANI Movie Mode in the animation editor with GANI0002 parse/save support, actor/text controls, frame-count editing, canvas selection, and frame-recorded actor dragging",
