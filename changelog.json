@@ -35,7 +35,16 @@
       "Improved animation GIF export palette selection for large frames",
       "Fixed animation GIF export so large outputs are assembled in byte chunks instead of hitting invalid array length errors",
       "Improved animation export so the button shows one inline spinner, the dialog shows progress text, and long GIF/MP4 exports yield instead of locking the app until completion",
-      "Added an animation export crop option that trims GIF output to visible pixels so offscreen or stray frame bounds do not create oversized transparent canvases"
+      "Added an animation export crop option that trims GIF output to visible pixels so offscreen or stray frame bounds do not create oversized transparent canvases",
+      "Fixed tab session restore so GANI files, levels, and utility tabs reopen after restarting the app instead of falling back to a blank new level",
+      "Added animation editor canvas level backgrounds from the GANI background swatch menu, including level selection, tileset override, drag positioning, nudge controls, reset, and persistence",
+      "Added a settings option to hide GANI editor guide lines and the origin guide square without hiding selection handles",
+      "Fixed the animation editor Movie Mode toolbar toggle so it uses normal toolbar button sizing",
+      "Improved Movie Mode actor/text add controls so the timeline buttons only appear in Movie Mode and use proper icons including the original actor glyph asset",
+      "Fixed Movie Mode actor rendering so newly added actors resolve bundled default ganis such as idle and walk instead of showing only shadows",
+      "Fixed Movie Mode actor selection so clicking empty canvas clears the selected actor instead of reselecting the first item",
+      "Fixed Movie Mode timeline previews so actor nickname labels are hidden in thumbnails",
+      "Added Movie Mode Automatic Gani Setting so actor dragging only auto-switches to walk animation when the option is enabled"
     ]
   },
   {

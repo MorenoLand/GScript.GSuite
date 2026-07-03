@@ -139,9 +139,18 @@ const TabManager = {
         try {
             const stored = localStorage.getItem('graalSuiteTabs');
             if (!stored) return false;
-            const state = JSON.parse(stored).filter(t => t?.type !== 'beautify' && t?.type !== 'setshape');
+            const parsed = JSON.parse(stored);
+            const state = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.tabs) ? parsed.tabs : []);
             if (!Array.isArray(state) || state.length === 0) return false;
             this._pendingRestoreState = state;
+            let active = parsed?.active || null;
+            if (!active) {
+                try {
+                    const activeRaw = localStorage.getItem('graalSuiteActiveTab');
+                    active = activeRaw ? JSON.parse(activeRaw) : null;
+                } catch (e) {}
+            }
+            this._pendingActiveState = active;
             this._restorePendingState();
             return true;
         } catch (e) { console.warn('[TabManager restoreState] failed:', e); return false; }
@@ -153,7 +162,7 @@ const TabManager = {
                 this.clearState();
                 return;
             }
-            const state = this._tabs.filter(t => t.type !== 'beautify' && t.type !== 'setshape').map(t => ({ type: t.type, name: t.name, data: this._serializeTabData(t) }));
+            const state = this._tabs.map(t => ({ type: t.type, name: t.name, data: this._serializeTabData(t) }));
             if (Array.isArray(this._pendingRestoreState) && this._pendingRestoreState.length) {
                 const unmatchedSaved = this._pendingRestoreState.filter(saved =>
                     !this._tabs.some(tab => this._tabMatchesState(tab, saved))
@@ -161,11 +170,16 @@ const TabManager = {
                 state.push(...unmatchedSaved);
             }
             localStorage.setItem('graalSuiteTabs', JSON.stringify(state));
+            const activeTab = this.getActiveTab();
+            const activeState = this._pendingActiveState || (activeTab ? { type: activeTab.type, name: activeTab.name, data: this._serializeTabData(activeTab) } : null);
+            if (activeState) localStorage.setItem('graalSuiteActiveTab', JSON.stringify(activeState));
+            else localStorage.removeItem('graalSuiteActiveTab');
         } catch (e) { console.warn('[TabManager saveState] failed:', e); }
     },
 
     clearState() {
         try { localStorage.removeItem('graalSuiteTabs'); } catch (e) {}
+        try { localStorage.removeItem('graalSuiteActiveTab'); } catch (e) {}
     },
 
     addTab(type, name, data) {
@@ -340,6 +354,17 @@ const TabManager = {
         this._updateHighlight();
         this._updateScrollButtons();
         this._pendingRestoreState = unmatchedSaved.length ? unmatchedSaved : null;
+        return true;
+    },
+
+    restoreActiveFromState() {
+        const active = this._pendingActiveState || (() => { try { const raw = localStorage.getItem('graalSuiteActiveTab'); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } })();
+        if (!active) return false;
+        const match = this._tabs.find(tab => this._tabMatchesState(tab, active));
+        if (!match) return false;
+        this._pendingActiveState = null;
+        this.switchTo(match.id);
+        this.saveState();
         return true;
     },
 

@@ -630,6 +630,9 @@ let keysSwapped = localStorage.getItem("editorSwapKeys") === "true";
 if (localStorage.getItem("editorShowGrid") === null) {
     localStorage.setItem("editorShowGrid", "true");
 }
+if (localStorage.getItem("editorShowGaniGuides") === null) {
+    localStorage.setItem("editorShowGaniGuides", "true");
+}
 function updateSwapKeysUI() {
     const _btn = document.getElementById("btnSwapKeys");
     if (_btn) {
@@ -639,6 +642,7 @@ function updateSwapKeysUI() {
     }
 }
 let backgroundColor = "#006400";
+let canvasLevelBackground = null;
 let workingDirectory = "";
 let lastWorkingDirectory = localStorage.getItem("ganiEditorLastWorkingDir") || "";
 let lastOpenDirectory = localStorage.getItem("ganiEditorLastOpenDir") || "";
@@ -715,6 +719,9 @@ let dragStartMousePos = null;
 let pieceInitialPositions = new Map();
 let _dragMoveIndicator = null;
 let isDragging = false;
+let isDraggingCanvasLevelBackground = false;
+let canvasLevelBackgroundMoveMode = false;
+let canvasLevelBackgroundDragStart = null;
 let isDraggingMovieItem = false;
 let movieDragStartState = null;
 let movieDragOffset = null;
@@ -1572,7 +1579,8 @@ function redraw() {
     ctx.save();
     ctx.translate(width / 2 + panX, height / 2 + panY);
     ctx.scale(scale, scale);
-            const showGrid = localStorage.getItem("editorShowGrid") !== "false";
+    drawGaniCanvasLevelBackground(ctx);
+            const showGrid = localStorage.getItem("editorShowGrid") !== "false" && localStorage.getItem("editorShowGaniGuides") !== "false";
             if (showGrid) {
     drawGrid(ctx);
             }
@@ -1867,7 +1875,8 @@ function drawQuadrant(ctx, frame, dir, quadrantX, quadrantY, quadrantWidth, quad
     ctx.save();
     ctx.translate(quadrantX + quadrantWidth / 2 + panX, quadrantY + quadrantHeight / 2 + panY);
     ctx.scale(scale, scale);
-    const showGrid = localStorage.getItem("editorShowGrid") !== "false";
+    drawGaniCanvasLevelBackground(ctx);
+    const showGrid = localStorage.getItem("editorShowGrid") !== "false" && localStorage.getItem("editorShowGaniGuides") !== "false";
     if (showGrid) {
         drawGrid(ctx);
     }
@@ -2114,6 +2123,10 @@ async function loadMovieActorGani(keys) {
                 const file = (localFileCache.ganiFiles || []).find(g => (g.name || "").toLowerCase() === key || (g.path || "").replace(/\\/g, "/").toLowerCase().endsWith("/" + key));
                 const path = file?.path || workspacePathIndex.get(key) || await _tauri.core.invoke("resolve_path", {name: key}).catch(() => null);
                 if (path) text = await _tauri.fs.readTextFile(path).catch(() => null);
+                if (!text) {
+                    const response = await fetch('ganis/' + key).catch(() => null);
+                    if (response?.ok) text = await response.text();
+                }
             } else {
                 const response = await fetch('ganis/' + key).catch(() => null);
                 if (response?.ok) text = await response.text();
@@ -2409,7 +2422,7 @@ function drawMovieFrame(ctx, frameId) {
                 if (bodySprite) drawSpriteCached(ctx, bodySprite, dx, dy + 16);
                 if (headSprite) drawSpriteCached(ctx, headSprite, dx, dy);
             }
-            const nameLabel = getMovieActorNameLabel(item, state);
+            const nameLabel = _isExportRender ? null : getMovieActorNameLabel(item, state);
             if (nameLabel) drawMoviePlayText(ctx, nameLabel.text, nameLabel.x, nameLabel.y, nameLabel.size, nameLabel.baseline);
             const actorBound = getMovieItemBounds(item, frameId);
             if (actorBound) actorBounds.push(actorBound);
@@ -2452,11 +2465,12 @@ function recordMovieDragFrame(item, wx, wy) {
     const my = dy - (prev.dy || 0);
     dir = getMovieDragDirection(dir, mx, my);
     const movedEnough = Math.abs(mx) >= 2 || Math.abs(my) >= 2;
+    const autoGani = localStorage.getItem("movieAutoGaniSetting") !== "false";
     item.setFrame(currentFrame, {
         dx,
         dy,
         dir,
-        ani: item.type === "actor" && movedEnough ? "walk" : (prev.ani || item.ani || "idle"),
+        ani: autoGani && item.type === "actor" && movedEnough ? "walk" : (prev.ani || item.ani || "idle"),
         visible: prev.visible !== false,
         layer: prev.layer ?? item.layer ?? 1,
         name: prev.name || item.name,
@@ -3529,6 +3543,260 @@ async function loadImageFromPath(filePath, name) {
     });
 }
 
+function getGaniLevelClass() {
+    if (typeof Level !== "undefined") return Level;
+    return window.levelEditor?.level?.constructor || null;
+}
+
+async function resolveGaniLevelTilesetImage(level, sourcePath = "") {
+    const tilesetName = (level?.tilesetName || "pics1.png").trim() || "pics1.png";
+    const key = tilesetName.toLowerCase();
+    if (imageLibrary.has(key)) return imageLibrary.get(key);
+    if (_isTauri) {
+        const sourceDir = sourcePath ? sourcePath.replace(/[\\/][^\\/]*$/, "") : "";
+        const sameDir = sourceDir ? sourceDir + "\\" + tilesetName : "";
+        let path = null;
+        if (sameDir) path = await loadImageFromPath(sameDir, key).then(() => sameDir).catch(() => null);
+        if (!path) path = workspacePathIndex.get(key) || null;
+        if (!path) path = await _tauri.core.invoke("resolve_path", {name: key}).catch(() => null);
+        if (path && !imageLibrary.has(key)) await loadImageFromPath(path, key).catch(() => null);
+        if (imageLibrary.has(key)) return imageLibrary.get(key);
+    }
+    await loadImageFromUrl(`images/${tilesetName}`, key).catch(() => null);
+    return imageLibrary.get(key) || imageLibrary.get("pics1.png") || null;
+}
+
+async function buildGaniCanvasLevelBackground(level, name, sourcePath = "", tilesetImage = null, tilesetName = "") {
+    tilesetImage = tilesetImage || await resolveGaniLevelTilesetImage(level, sourcePath);
+    if (!level || !tilesetImage) return null;
+    level.tilesetImage = tilesetImage;
+    const tw = level.tileWidth || 16, th = level.tileHeight || 16;
+    const tilesPerRow = Math.max(1, Math.floor(tilesetImage.width / tw));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, (level.width || 64) * tw);
+    canvas.height = Math.max(1, (level.height || 64) * th);
+    const lctx = canvas.getContext("2d");
+    lctx.imageSmoothingEnabled = false;
+    for (let layerIndex = 0; layerIndex < level.layers.length; layerIndex++) {
+        const layer = level.layers[layerIndex];
+        if (!layer || layer.visible === false) continue;
+        for (let y = 0; y < level.height; y++) {
+            for (let x = 0; x < level.width; x++) {
+                const tileIndex = layer.tiles[y * level.width + x];
+                const drawIndex = tileIndex < 0 ? (layerIndex === 0 ? 0 : -1) : tileIndex;
+                if (drawIndex < 0) continue;
+                lctx.drawImage(tilesetImage, (drawIndex % tilesPerRow) * tw, Math.floor(drawIndex / tilesPerRow) * th, tw, th, x * tw, y * th, tw, th);
+            }
+        }
+    }
+    return {canvas, level, name: name || "Level Background", path: sourcePath || "", tilesetName: tilesetName || level.tilesetName || "pics1.png", x: -Math.round(canvas.width / 2), y: -Math.round(canvas.height / 2)};
+}
+
+function persistGaniCanvasLevelBackgroundPosition() {
+    if (!canvasLevelBackground) return;
+    localStorage.setItem("ganiCanvasLevelBackgroundX", String(Math.round(canvasLevelBackground.x)));
+    localStorage.setItem("ganiCanvasLevelBackgroundY", String(Math.round(canvasLevelBackground.y)));
+}
+
+function restoreGaniCanvasLevelBackgroundPosition() {
+    if (!canvasLevelBackground) return;
+    const x = Number(localStorage.getItem("ganiCanvasLevelBackgroundX"));
+    const y = Number(localStorage.getItem("ganiCanvasLevelBackgroundY"));
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+        canvasLevelBackground.x = x;
+        canvasLevelBackground.y = y;
+    }
+}
+
+function nudgeGaniCanvasLevelBackground(dx, dy) {
+    if (!canvasLevelBackground) return;
+    canvasLevelBackground.x += dx;
+    canvasLevelBackground.y += dy;
+    persistGaniCanvasLevelBackgroundPosition();
+    redraw();
+}
+
+function resetGaniCanvasLevelBackgroundPosition() {
+    if (!canvasLevelBackground?.canvas) return;
+    canvasLevelBackground.x = -Math.round(canvasLevelBackground.canvas.width / 2);
+    canvasLevelBackground.y = -Math.round(canvasLevelBackground.canvas.height / 2);
+    persistGaniCanvasLevelBackgroundPosition();
+    redraw();
+}
+
+async function setGaniCanvasLevelBackgroundFromData(name, ext, data, sourcePath = "", restorePosition = false) {
+    const LevelClass = getGaniLevelClass();
+    if (!LevelClass) throw new Error("Level parser not loaded.");
+    let level = null;
+    if (ext === "graal" || ext === "zelda") {
+        const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+        level = LevelClass.loadFromGraal(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+    } else {
+        level = LevelClass.loadFromNW(String(data || ""));
+    }
+    const bg = await buildGaniCanvasLevelBackground(level, name, sourcePath);
+    if (!bg) throw new Error("Could not render level background.");
+    canvasLevelBackground = bg;
+    if (_isTauri && sourcePath) localStorage.setItem("ganiCanvasLevelBackgroundPath", sourcePath);
+    if (restorePosition) restoreGaniCanvasLevelBackgroundPosition(); else {
+        localStorage.removeItem("ganiCanvasLevelBackgroundX");
+        localStorage.removeItem("ganiCanvasLevelBackgroundY");
+        localStorage.removeItem("ganiCanvasLevelBackgroundTilesetPath");
+    }
+    updateGaniCanvasLevelBackgroundTitle();
+    redraw();
+}
+
+async function setGaniCanvasLevelBackgroundFromPath(path, restorePosition = false) {
+    const name = path.replace(/\\/g, "/").split("/").pop();
+    const ext = name.split(".").pop().toLowerCase();
+    if (ext === "graal" || ext === "zelda") {
+        const data = await _tauri.fs.readFile(path);
+        await setGaniCanvasLevelBackgroundFromData(name, ext, data, path, restorePosition);
+    } else {
+        const text = await _tauri.fs.readTextFile(path);
+        await setGaniCanvasLevelBackgroundFromData(name, ext, text, path, restorePosition);
+    }
+}
+
+async function applyGaniCanvasLevelTilesetImage(img, name, path = "", persist = true) {
+    if (!canvasLevelBackground?.level) throw new Error("Set a level background first.");
+    const old = canvasLevelBackground;
+    const bg = await buildGaniCanvasLevelBackground(old.level, old.name, old.path, img, name);
+    if (!bg) throw new Error("Could not render level background with that tileset.");
+    bg.x = old.x;
+    bg.y = old.y;
+    bg.tilesetPath = path || "";
+    canvasLevelBackground = bg;
+    if (persist && _isTauri && path) localStorage.setItem("ganiCanvasLevelBackgroundTilesetPath", path);
+    updateGaniCanvasLevelBackgroundTitle();
+    redraw();
+}
+
+async function loadGaniCanvasLevelTileset() {
+    try {
+        if (!canvasLevelBackground) throw new Error("Set a level background first.");
+        if (_isTauri) {
+            const path = await _tauri.dialog.open({multiple: false, filters: [{name: "Images", extensions: ["png", "gif", "jpg", "jpeg", "webp", "bmp"]}]});
+            if (!path) return;
+            const name = path.replace(/\\/g, "/").split("/").pop();
+            const img = await loadImageFromPath(path, name.toLowerCase());
+            await applyGaniCanvasLevelTilesetImage(img, name, path);
+            return;
+        }
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = ".png,.gif,.jpg,.jpeg,.webp,.bmp,image/*";
+        input.onchange = async () => {
+            const file = input.files?.[0];
+            if (!file) return;
+            const img = new Image();
+            const url = URL.createObjectURL(file);
+            img.onload = () => { URL.revokeObjectURL(url); applyGaniCanvasLevelTilesetImage(img, file.name, "", false).catch(err => showAlertDialog(err.message || "Could not load tileset.")); };
+            img.onerror = () => { URL.revokeObjectURL(url); showAlertDialog("Could not load tileset."); };
+            img.src = url;
+        };
+        input.click();
+    } catch (err) {
+        showAlertDialog(err.message || "Could not load tileset.");
+    }
+}
+
+async function pickGaniCanvasLevelBackground() {
+    try {
+        if (_isTauri) {
+            const path = await _tauri.dialog.open({multiple: false, filters: [{name: "Graal Levels", extensions: ["nw", "graal", "zelda"]}]});
+            if (!path) return;
+            await setGaniCanvasLevelBackgroundFromPath(path);
+            return;
+        }
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = ".nw,.graal,.zelda";
+        input.onchange = async () => {
+            const file = input.files?.[0];
+            if (!file) return;
+            const ext = file.name.split(".").pop().toLowerCase();
+            const data = ext === "graal" || ext === "zelda" ? await file.arrayBuffer() : await file.text();
+            await setGaniCanvasLevelBackgroundFromData(file.name, ext, data).catch(err => showAlertDialog(err.message || "Could not set level background."));
+        };
+        input.click();
+    } catch (err) {
+        showAlertDialog(err.message || "Could not set level background.");
+    }
+}
+
+function clearGaniCanvasLevelBackground() {
+    canvasLevelBackground = null;
+    canvasLevelBackgroundMoveMode = false;
+    if (mainCanvas) mainCanvas.style.cursor = "default";
+    localStorage.removeItem("ganiCanvasLevelBackgroundPath");
+    localStorage.removeItem("ganiCanvasLevelBackgroundTilesetPath");
+    localStorage.removeItem("ganiCanvasLevelBackgroundX");
+    localStorage.removeItem("ganiCanvasLevelBackgroundY");
+    updateGaniCanvasLevelBackgroundTitle();
+    redraw();
+}
+
+function drawGaniCanvasLevelBackground(ctx) {
+    if (!canvasLevelBackground?.canvas) return;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(canvasLevelBackground.canvas, canvasLevelBackground.x, canvasLevelBackground.y);
+    ctx.restore();
+}
+
+function updateGaniCanvasLevelBackgroundTitle() {
+    const input = $("bgColorInput");
+    if (!input) return;
+    const suffix = canvasLevelBackground ? `\nLevel BG: ${canvasLevelBackground.name}\nRight-click to move, change tileset, or clear` : "\nRight-click to set level background";
+    input.title = "Canvas Background / Void Color" + suffix;
+}
+
+function showGaniCanvasBackgroundMenu(e) {
+    const old = document.getElementById("ganiCanvasBgMenu");
+    if (old) old.remove();
+    const menu = document.createElement("div");
+    menu.id = "ganiCanvasBgMenu";
+    menu.className = "tab-ctx-menu";
+    const add = (label, fn) => {
+        const item = document.createElement("div");
+        item.className = "tab-ctx-item";
+        item.textContent = label;
+        item.onclick = () => { menu.remove(); fn(); };
+        menu.appendChild(item);
+    };
+    add("Set Level Background", () => pickGaniCanvasLevelBackground());
+    if (canvasLevelBackground) {
+        add("Load Tileset For Level", () => loadGaniCanvasLevelTileset());
+        add(canvasLevelBackgroundMoveMode ? "Stop Moving Background" : "Move Background With Drag", () => { canvasLevelBackgroundMoveMode = !canvasLevelBackgroundMoveMode; mainCanvas.style.cursor = canvasLevelBackgroundMoveMode ? "move" : "default"; });
+        add("Nudge Left", () => nudgeGaniCanvasLevelBackground(-16, 0));
+        add("Nudge Right", () => nudgeGaniCanvasLevelBackground(16, 0));
+        add("Nudge Up", () => nudgeGaniCanvasLevelBackground(0, -16));
+        add("Nudge Down", () => nudgeGaniCanvasLevelBackground(0, 16));
+        add("Reset Position", () => resetGaniCanvasLevelBackgroundPosition());
+    }
+    if (canvasLevelBackground) add("Clear Level Background", () => clearGaniCanvasLevelBackground());
+    menu.style.left = e.clientX + "px";
+    menu.style.top = e.clientY + "px";
+    document.body.appendChild(menu);
+    const close = ev => { if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener("mousedown", close); } };
+    setTimeout(() => document.addEventListener("mousedown", close), 0);
+}
+
+async function restoreGaniCanvasLevelBackground() {
+    if (!_isTauri) return;
+    const path = localStorage.getItem("ganiCanvasLevelBackgroundPath");
+    if (!path) return;
+    await setGaniCanvasLevelBackgroundFromPath(path, true).catch(() => clearGaniCanvasLevelBackground());
+    const tilesetPath = localStorage.getItem("ganiCanvasLevelBackgroundTilesetPath");
+    if (canvasLevelBackground && tilesetPath) {
+        const name = tilesetPath.replace(/\\/g, "/").split("/").pop();
+        const img = await loadImageFromPath(tilesetPath, name.toLowerCase()).catch(() => null);
+        if (img) await applyGaniCanvasLevelTilesetImage(img, name, tilesetPath, false).catch(() => null);
+    }
+}
+
 async function loadWorkspaceFromDisk(dirPath) {
     const ext = dirPath.split(/[\\/]/).pop();
     workingDirectory = ext;
@@ -4494,7 +4762,7 @@ function ensureMovieModeUI() {
         toggle.className = "tb-gani-only";
         toggle.textContent = "-> Movie Mode";
         toggle.title = "Switch to Movie Mode";
-        toggle.style.cssText = "margin-left:auto;width:118px;height:24px;padding:2px 8px;white-space:nowrap;";
+        toggle.style.cssText = "margin-left:auto;min-width:118px;height:35px;padding:0 12px;line-height:1;display:flex;align-items:center;justify-content:center;white-space:nowrap;flex:0 0 auto;";
         toggle.onclick = () => toggleMovieMode();
         toolbar.appendChild(toggle);
     }
@@ -4512,6 +4780,7 @@ function ensureMovieModeUI() {
         </div>
         <label style="display:block;margin:6px 0 3px;">Frames:</label>
         <input type="number" id="movieFrameCount" min="1" value="100">
+        <label style="display:flex;align-items:center;gap:8px;margin:6px 0;"><span id="movieAutoGaniSetting" class="custom-checkbox">✓</span> Automatic Gani Setting</label>
         <label style="display:block;margin:8px 0 3px;">Selected:</label>
         <select id="movieItemsCombo" style="width:100%;margin-bottom:8px;"><option value="">(none)</option></select>
         <label style="display:block;margin:6px 0 3px;">Name/Text:</label>
@@ -4535,6 +4804,25 @@ function ensureMovieModeUI() {
     const btnAddMovieTextBottom = document.getElementById("btnAddMovieTextBottom");
     if (btnAddMovieActorBottom) btnAddMovieActorBottom.onclick = () => addMovieItem("actor");
     if (btnAddMovieTextBottom) btnAddMovieTextBottom.onclick = () => addMovieItem("text");
+    const movieActorGlyph = document.getElementById("movieActorGlyph");
+    if (movieActorGlyph && !movieActorGlyph.dataset.cleaned) {
+        movieActorGlyph.dataset.cleaned = "true";
+        movieActorGlyph.onload = () => {
+            const c = document.createElement("canvas");
+            c.width = movieActorGlyph.naturalWidth || 16;
+            c.height = movieActorGlyph.naturalHeight || 16;
+            const x = c.getContext("2d");
+            x.imageSmoothingEnabled = false;
+            x.drawImage(movieActorGlyph, 0, 0);
+            const d = x.getImageData(0, 0, c.width, c.height);
+            for (let i = 0; i < d.data.length; i += 4) if (d.data[i + 1] > d.data[i] + 40 && d.data[i + 1] > d.data[i + 2] + 20) d.data[i + 3] = 0;
+            for (let y = 0; y < c.height; y++) for (let x0 = 0; x0 < c.width; x0++) if ((x0 === 0 || y === 0 || x0 === c.width - 1 || y === c.height - 1) && d.data[(y * c.width + x0) * 4 + 3] < 255) d.data[(y * c.width + x0) * 4 + 3] = 0;
+            x.putImageData(d, 0, 0);
+            movieActorGlyph.onload = null;
+            movieActorGlyph.src = c.toDataURL("image/png");
+        };
+        if (movieActorGlyph.complete) movieActorGlyph.onload();
+    }
     document.getElementById("btnDeleteMovieItem").onclick = () => deleteSelectedMovieItem();
     document.getElementById("movieItemsCombo").onchange = (e) => {
         selectedMovieItem = (currentAnimation?.movieItems || []).find(item => String(item.id) === e.target.value) || null;
@@ -4553,6 +4841,11 @@ function ensureMovieModeUI() {
         updateFrameInfo();
         drawTimeline();
         saveSession();
+    };
+    document.getElementById("movieAutoGaniSetting").onclick = () => {
+        const enabled = document.getElementById("movieAutoGaniSetting").textContent.trim() !== "✓";
+        document.getElementById("movieAutoGaniSetting").textContent = enabled ? "✓" : " ";
+        localStorage.setItem("movieAutoGaniSetting", enabled ? "true" : "false");
     };
     const appearanceBox = document.getElementById("movieAppearanceFields");
     if (appearanceBox) appearanceBox.innerHTML = MOVIE_APPEARANCE_FIELDS.map(key => '<label style="display:block;font-size:11px;">' + key + '<input id="movieLook_' + key + '" type="text" style="width:100%;box-sizing:border-box;"></label>').join("");
@@ -4577,6 +4870,7 @@ function updateMovieModeUI() {
     const group = root.querySelector("#movieModeGroup");
     const panelBtn = root.querySelector("#btnMovieModePanel");
     if (group) group.style.display = enabled ? "block" : "none";
+    root.querySelectorAll(".movie-mode-only").forEach(btn => btn.style.display = enabled ? "" : "none");
     if (panelBtn) {
         panelBtn.classList.toggle("active", enabled);
         panelBtn.textContent = enabled ? "-> Sprite Mode" : "-> Movie Mode";
@@ -4588,7 +4882,7 @@ function updateMovieModeUI() {
     const combo = root.querySelector("#movieItemsCombo");
     if (combo) {
         const itemsInFrame = (currentAnimation.movieItems || []).map(item => ({item, state: getMovieItemState(item, currentFrame)})).filter(entry => entry.state);
-        const selectedId = selectedMovieItem && itemsInFrame.some(entry => entry.item === selectedMovieItem) ? String(selectedMovieItem.id) : (combo.value && itemsInFrame.some(entry => String(entry.item.id) === combo.value) ? combo.value : (itemsInFrame[0] ? String(itemsInFrame[0].item.id) : ""));
+        const selectedId = selectedMovieItem && itemsInFrame.some(entry => entry.item === selectedMovieItem) ? String(selectedMovieItem.id) : (combo.value && itemsInFrame.some(entry => String(entry.item.id) === combo.value) ? combo.value : "");
         combo.innerHTML = '<option value="">(none)</option>';
         for (const entry of itemsInFrame) {
             const item = entry.item;
@@ -4603,6 +4897,8 @@ function updateMovieModeUI() {
     }
     const frameCount = document.getElementById("movieFrameCount");
     if (frameCount) frameCount.value = currentAnimation.frameCount || currentAnimation.frames.length || 100;
+    const autoGani = root.querySelector("#movieAutoGaniSetting");
+    if (autoGani) autoGani.textContent = localStorage.getItem("movieAutoGaniSetting") !== "false" ? "✓" : " ";
     const state = selectedMovieItem ? getMovieItemState(selectedMovieItem, currentFrame) : null;
     for (const id of ["movieItemName", "movieItemAni", "movieItemChat", "movieItemDir", "movieItemLayer", ...MOVIE_APPEARANCE_FIELDS.map(key => "movieLook_" + key)]) {
         const el = document.getElementById(id);
@@ -6444,6 +6740,7 @@ async function initGaniEditorStartup() {
     await refreshLocalFileCache();
     if (_isTauri) await restoreWorkspaceFromCache();
     await loadLocalImages();
+    await restoreGaniCanvasLevelBackground();
     resizeCanvas();
     const restored = await restoreSession();
     if (!restored) {
@@ -7226,6 +7523,7 @@ async function initGaniEditorStartup() {
                 localStorage.setItem("editorPixelRendering", "true");
                 localStorage.setItem("editorAutoSave", "true");
                 localStorage.setItem("editorShowGrid", "true");
+                localStorage.setItem("editorShowGaniGuides", "true");
                 localStorage.setItem("editorColorScheme", "default");
                 location.reload();
             }
@@ -9461,6 +9759,10 @@ async function initGaniEditorStartup() {
         redraw();
         saveSession();
     };
+    bgColorInput.addEventListener("contextmenu", e => {
+        e.preventDefault();
+        showGaniCanvasBackgroundMenu(e);
+    });
     function applyColorScheme(scheme) {
         if (scheme === "default") {
             const oldStyle = $("colorSchemeStyle");
@@ -10343,6 +10645,7 @@ async function initGaniEditorStartup() {
     const settingsPixelRendering = $("settingsPixelRenderingCheckbox");
     const settingsAutoSave = $("settingsAutoSaveCheckbox");
     const settingsShowGrid = $("settingsShowGridCheckbox");
+    const settingsShowGaniGuides = $("settingsShowGaniGuidesCheckbox");
     const settingsGifAnimations = $("settingsGifAnimationsCheckbox");
     const settingsLightEffects = $("settingsLightEffectsCheckbox");
     const settingsShowPlaceholders = $("settingsShowPlaceholdersCheckbox");
@@ -10431,6 +10734,7 @@ async function initGaniEditorStartup() {
         const savedPixelRendering = localStorage.getItem("editorPixelRendering") !== "false";
         const savedAutoSave = localStorage.getItem("editorAutoSave") !== "false";
         const savedShowGrid = localStorage.getItem("editorShowGrid") !== "false";
+        const savedShowGaniGuides = localStorage.getItem("editorShowGaniGuides") !== "false";
         const savedGifAnimations = localStorage.getItem("editorGifAnimations") !== "false";
         const savedLightEffects = localStorage.getItem("editorLightEffects") !== "false";
         const savedSelectionBorderColor = localStorage.getItem("editorSelectionBorderColor") || "#00ff00";
@@ -10551,6 +10855,10 @@ async function initGaniEditorStartup() {
             if (save) localStorage.setItem("editorShowGrid", enabled ? "true" : "false");
             redraw();
         }
+        function applyShowGaniGuides(enabled, save = true) {
+            if (save) localStorage.setItem("editorShowGaniGuides", enabled ? "true" : "false");
+            redraw();
+        }
         function applyGifAnimations(enabled, save = true) {
             if (save) localStorage.setItem("editorGifAnimations", enabled ? "true" : "false");
             redraw();
@@ -10577,6 +10885,7 @@ async function initGaniEditorStartup() {
         applyUIScale(savedUIScale);
         applyPixelRendering(savedPixelRendering);
         applyShowGrid(savedShowGrid);
+        applyShowGaniGuides(savedShowGaniGuides);
         applyGifAnimations(savedGifAnimations);
         applyLightEffects(savedLightEffects);
         applySelectionBorderColor(savedSelectionBorderColor, false);
@@ -10597,6 +10906,7 @@ async function initGaniEditorStartup() {
             const currentPixelRendering = localStorage.getItem("editorPixelRendering") !== "false";
             const currentAutoSave = localStorage.getItem("editorAutoSave") !== "false";
             const currentShowGrid = localStorage.getItem("editorShowGrid") !== "false";
+            const currentShowGaniGuides = localStorage.getItem("editorShowGaniGuides") !== "false";
             const currentGifAnimations = localStorage.getItem("editorGifAnimations") !== "false";
             const currentLightEffects = localStorage.getItem("editorLightEffects") !== "false";
             const _cssColor = getComputedStyle(document.documentElement).getPropertyValue("--selection-border-color").trim();
@@ -10612,6 +10922,7 @@ async function initGaniEditorStartup() {
                 pixelRendering: currentPixelRendering,
                 autoSave: currentAutoSave,
                 showGrid: currentShowGrid,
+                showGaniGuides: currentShowGaniGuides,
                 gifAnimations: currentGifAnimations,
                 lightEffects: currentLightEffects,
                 showPlaceholders: localStorage.getItem("editorShowPlaceholders") !== "false",
@@ -10630,6 +10941,7 @@ async function initGaniEditorStartup() {
             if (settingsPixelRendering) settingsPixelRendering.textContent = currentPixelRendering ? "✓" : " ";
             if (settingsAutoSave) settingsAutoSave.textContent = currentAutoSave ? "✓" : " ";
             if (settingsShowGrid) settingsShowGrid.textContent = currentShowGrid ? "✓" : " ";
+            if (settingsShowGaniGuides) settingsShowGaniGuides.textContent = currentShowGaniGuides ? "✓" : " ";
             if (settingsGifAnimations) settingsGifAnimations.textContent = currentGifAnimations ? "✓" : " ";
             if (settingsLightEffects) settingsLightEffects.textContent = currentLightEffects ? "✓" : " ";
             if (settingsShowPlaceholders) settingsShowPlaceholders.textContent = localStorage.getItem("editorShowPlaceholders") !== "false" ? "✓" : " ";
@@ -10695,6 +11007,13 @@ async function initGaniEditorStartup() {
                 const newValue = settingsShowGrid.textContent.trim() !== "✓";
                 settingsShowGrid.textContent = newValue ? "✓" : " ";
                 applyShowGrid(newValue, false);
+            };
+        }
+        if (settingsShowGaniGuides) {
+            settingsShowGaniGuides.onclick = () => {
+                const newValue = settingsShowGaniGuides.textContent.trim() !== "✓";
+                settingsShowGaniGuides.textContent = newValue ? "✓" : " ";
+                applyShowGaniGuides(newValue, false);
             };
         }
         if (settingsGifAnimations) {
@@ -10801,6 +11120,7 @@ async function initGaniEditorStartup() {
                 if (settingsPixelRendering) applyPixelRendering(settingsPixelRendering.textContent.trim() === "✓", true);
                 if (settingsAutoSave) localStorage.setItem("editorAutoSave", settingsAutoSave.textContent.trim() === "✓");
                 if (settingsShowGrid) applyShowGrid(settingsShowGrid.textContent.trim() === "✓", true);
+                if (settingsShowGaniGuides) applyShowGaniGuides(settingsShowGaniGuides.textContent.trim() === "✓", true);
                 if (settingsGifAnimations) applyGifAnimations(settingsGifAnimations.textContent.trim() === "✓", true);
                 if (settingsLightEffects) applyLightEffects(settingsLightEffects.textContent.trim() === "✓", true);
                 if (settingsShowPlaceholders) { localStorage.setItem("editorShowPlaceholders", settingsShowPlaceholders.textContent.trim() === "✓" ? "true" : "false"); redraw(); }
@@ -10821,6 +11141,7 @@ async function initGaniEditorStartup() {
             }
             applyPixelRendering(originalSettings.pixelRendering, false);
             applyShowGrid(originalSettings.showGrid, false);
+            applyShowGaniGuides(originalSettings.showGaniGuides, false);
             applyGifAnimations(originalSettings.gifAnimations, false);
             applyLightEffects(originalSettings.lightEffects, false);
             applySelectionBorderColor(originalSettings.selectionBorderColor || "#00ff00", false);
@@ -10905,6 +11226,7 @@ async function initGaniEditorStartup() {
             if (settingsPixelRendering) settingsPixelRendering.textContent = originalSettings.pixelRendering ? "✓" : " ";
             if (settingsAutoSave) settingsAutoSave.textContent = originalSettings.autoSave ? "✓" : " ";
             if (settingsShowGrid) settingsShowGrid.textContent = originalSettings.showGrid ? "✓" : " ";
+            if (settingsShowGaniGuides) settingsShowGaniGuides.textContent = originalSettings.showGaniGuides ? "✓" : " ";
             if (settingsGifAnimations) settingsGifAnimations.textContent = originalSettings.gifAnimations ? "✓" : " ";
             if (settingsLightEffects) settingsLightEffects.textContent = originalSettings.lightEffects ? "✓" : " ";
             if (settingsShowPlaceholders) settingsShowPlaceholders.textContent = originalSettings.showPlaceholders ? "✓" : " ";
@@ -10955,6 +11277,10 @@ async function initGaniEditorStartup() {
                 if (settingsShowGrid) {
                     settingsShowGrid.textContent = "✓";
                     applyShowGrid(true, false);
+                }
+                if (settingsShowGaniGuides) {
+                    settingsShowGaniGuides.textContent = "✓";
+                    applyShowGaniGuides(true, false);
                 }
                 if (settingsGifAnimations) {
                     settingsGifAnimations.textContent = "✓";
@@ -11198,6 +11524,7 @@ async function initGaniEditorStartup() {
         const wrapperDiv = btnColorScheme.parentElement;
         if (wrapperDiv) {
             wrapperDiv.parentNode.insertBefore(bgColorInput, wrapperDiv.nextSibling);
+            updateGaniCanvasLevelBackgroundTitle();
         }
     }
     function createCustomSpinners() {
@@ -12368,6 +12695,14 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
             x = (adjustedX - logicalWidth / 2 - panX) / zoom;
             y = (adjustedY - logicalHeight / 2 - panY) / zoom;
         }
+        if (canvasLevelBackgroundMoveMode && canvasLevelBackground && e.button === 0) {
+            isDraggingCanvasLevelBackground = true;
+            canvasLevelBackgroundDragStart = {clientX: e.clientX, clientY: e.clientY, x: canvasLevelBackground.x, y: canvasLevelBackground.y};
+            mainCanvas.style.cursor = "move";
+            document.body.style.cursor = "move";
+            e.preventDefault();
+            return;
+        }
         if (currentAnimation?.isMovieMode) {
             if (e.button === 0) {
                 const hit = hitMovieItem(x, y);
@@ -12809,7 +13144,12 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
                 x = (adjustedX - logicalWidth / 2 - panX) / zoom;
                 y = (adjustedY - logicalHeight / 2 - panY) / zoom;
             }
-        if (isDraggingMovieItem && selectedMovieItem) {
+        if (isDraggingCanvasLevelBackground && canvasLevelBackground && canvasLevelBackgroundDragStart) {
+            mainCanvas.style.cursor = "move";
+            canvasLevelBackground.x = canvasLevelBackgroundDragStart.x + (e.clientX - canvasLevelBackgroundDragStart.clientX) / uiScale / zoom;
+            canvasLevelBackground.y = canvasLevelBackgroundDragStart.y + (e.clientY - canvasLevelBackgroundDragStart.clientY) / uiScale / zoom;
+            redraw();
+        } else if (isDraggingMovieItem && selectedMovieItem) {
             mainCanvas.style.cursor = "grabbing";
             recordMovieDragFrame(selectedMovieItem, x, y);
             updateMovieModeUI();
@@ -12882,13 +13222,14 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
             redraw();
         } else {
             const sh = findScaleHandleAt(x, y);
-            if (sh) { mainCanvas.style.cursor = sh.cursor; }
+            if (canvasLevelBackgroundMoveMode && canvasLevelBackground) mainCanvas.style.cursor = "move";
+            else if (sh) { mainCanvas.style.cursor = sh.cursor; }
             else {
                 const handle = findRotationHandleAt(x, y);
                 mainCanvas.style.cursor = handle ? "alias" : "default";
             }
         }
-        if (isDragging || isPanning || isRightClickPanning || isRotatingSelection || isScalingSelection) {
+        if (isDragging || isDraggingCanvasLevelBackground || isPanning || isRightClickPanning || isRotatingSelection || isScalingSelection) {
             document.body.style.cursor = mainCanvas.style.cursor;
         } else {
             document.body.style.cursor = "";
@@ -12898,6 +13239,14 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
     mainCanvas.onmouseup = (e) => {
         if (e.button === 0) {
             _releaseLeftMouse();
+        }
+        if (isDraggingCanvasLevelBackground && e.button === 0) {
+            isDraggingCanvasLevelBackground = false;
+            canvasLevelBackgroundDragStart = null;
+            persistGaniCanvasLevelBackgroundPosition();
+            mainCanvas.style.cursor = canvasLevelBackgroundMoveMode ? "move" : "default";
+            document.body.style.cursor = "";
+            redraw();
         }
         if (e.button === 2 && isRightClickPanning) {
             if (rightClickPanMoved) {
@@ -12975,10 +13324,15 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
         if ((e.buttons & 4) === 0) isPanning = false;
         if ((e.buttons & 1) === 0) {
             isDragging = false;
+            if (isDraggingCanvasLevelBackground) {
+                isDraggingCanvasLevelBackground = false;
+                canvasLevelBackgroundDragStart = null;
+                persistGaniCanvasLevelBackgroundPosition();
+            }
             _dragMoveIndicator = null;
         }
-        if (!isRotatingSelection && !isScalingSelection && !isDragging && !isPanning && !isRightClickPanning) {
-            mainCanvas.style.cursor = "default";
+        if (!isRotatingSelection && !isScalingSelection && !isDragging && !isDraggingCanvasLevelBackground && !isPanning && !isRightClickPanning) {
+            mainCanvas.style.cursor = canvasLevelBackgroundMoveMode && canvasLevelBackground ? "move" : "default";
             document.body.style.cursor = "";
         }
         redraw();
@@ -13007,6 +13361,13 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
         if (e.button === 0) {
             _releaseLeftMouse();
         }
+        if (e.button === 0 && isDraggingCanvasLevelBackground) {
+            isDraggingCanvasLevelBackground = false;
+            canvasLevelBackgroundDragStart = null;
+            persistGaniCanvasLevelBackgroundPosition();
+            document.body.style.cursor = "";
+            redraw();
+        }
         if (e.button === 0 && isScalingSelection) {
             finishScalingSelection();
         }
@@ -13031,6 +13392,12 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
         if (e.button === 0) {
             _releaseLeftMouse();
         }
+        if (e.button === 0 && isDraggingCanvasLevelBackground) {
+            isDraggingCanvasLevelBackground = false;
+            canvasLevelBackgroundDragStart = null;
+            persistGaniCanvasLevelBackgroundPosition();
+            redraw();
+        }
         if (e.button === 0 && isBoxSelecting && boxSelectStart) {
             _finishBoxSelection(e.clientX, e.clientY, e.shiftKey);
         } else if (e.button === 0 && isBoxSelecting) {
@@ -13040,6 +13407,11 @@ ${editableActions.map(a => kbRow(a.label, a.key)).join("")}
     });
     window.addEventListener("blur", () => {
         _releaseLeftMouse();
+        if (isDraggingCanvasLevelBackground) {
+            isDraggingCanvasLevelBackground = false;
+            canvasLevelBackgroundDragStart = null;
+            persistGaniCanvasLevelBackgroundPosition();
+        }
         if (isBoxSelecting) {
             _clearBoxSelectionState();
             mainCanvas.style.cursor = "default";

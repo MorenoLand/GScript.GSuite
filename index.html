@@ -913,6 +913,22 @@
     }, true);
 
     document.addEventListener('DOMContentLoaded', function() {
+        const restoreUtilityTabsFromSharedState = () => {
+            const saved = window.tabManager?._pendingRestoreState || [];
+            const wait = (ready, fn, tries = 60) => { if (ready()) fn(); else if (tries > 0) setTimeout(() => wait(ready, fn, tries - 1), 50); };
+            if (saved.some(t => t?.type === 'beautify') && !window.tabManager?.getTabsByType?.('beautify')?.length) {
+                injectBeautify();
+                wait(() => !!window.BeautifyTool?.open, () => window.BeautifyTool.open());
+            }
+            if (saved.some(t => t?.type === 'setshape') && !window.tabManager?.getTabsByType?.('setshape')?.length) {
+                injectSetshape();
+                wait(() => !!window.SetshapeEditor?.open, () => window.SetshapeEditor.open());
+            }
+        };
+        const restoreActiveSuiteTab = (tries = 60) => {
+            if (window.tabManager?.restoreActiveFromState?.()) return;
+            if (tries > 0) setTimeout(() => restoreActiveSuiteTab(tries - 1), 50);
+        };
         const init = () => {
             injectLevel();
             injectGani();
@@ -958,6 +974,8 @@
                     return true;
                 };
                 tabManager.restoreState();
+                restoreUtilityTabsFromSharedState();
+                restoreActiveSuiteTab();
             } else {
                 setTimeout(waitForLevelEditor, 50);
             }
@@ -1385,8 +1403,8 @@
                         <button id="gani-btnPlay" title="Play"><i class="fas fa-play"></i></button>
                         <button id="btnStop" title="Stop"><i class="fas fa-stop"></i></button>
                         <button id="btnNewFrame" title="New Frame"><i class="fas fa-plus"></i></button>
-                        <button id="btnAddMovieActorBottom" title="Add Movie Actor"><i class="fas fa-user-plus"></i></button>
-                        <button id="btnAddMovieTextBottom" title="Add Movie Text"><i class="fas fa-font"></i></button>
+                        <button id="btnAddMovieActorBottom" class="movie-mode-only" title="Add Character Actor" style="display:none;align-items:center;justify-content:center;"><img id="movieActorGlyph" alt="" width="20" height="20" draggable="false" style="display:block;image-rendering:pixelated;" src="icons/actor_glyph.bmp"></button>
+                        <button id="btnAddMovieTextBottom" class="movie-mode-only" title="Add Text" style="display:none;"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" style="display:block;margin:auto;fill:currentColor;"><path d="M2 2h12v3h-2V4H9v9h2v2H5v-2h2V4H4v1H2V2z"></path></svg></button>
                         <button id="btnDeleteFrame" title="Delete Frame"><i class="fas fa-minus"></i></button>
                         <button id="btnCopyFrame" title="Copy Frame"><i class="fas fa-copy"></i></button>
                         <button id="btnPasteBefore" title="Paste Before"><i class="fas fa-paste"></i></button>
@@ -1442,6 +1460,7 @@
                         <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;"><span id="settingsPixelRenderingCheckbox" class="custom-checkbox">✓</span><span>Pixel Perfect Rendering</span></label>
                         <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;"><span id="settingsAutoSaveCheckbox" class="custom-checkbox">✓</span><span>Auto Save</span></label>
                         <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;"><span id="settingsShowGridCheckbox" class="custom-checkbox">✓</span><span>Show Grid</span></label>
+                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;"><span id="settingsShowGaniGuidesCheckbox" class="custom-checkbox">✓</span><span>Show Gani Guides</span></label>
                         <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;"><span id="settingsGifAnimationsCheckbox" class="custom-checkbox">✓</span><span>GIF Animations</span></label>
                         <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;"><span id="settingsLightEffectsCheckbox" class="custom-checkbox">✓</span><span>Light Effects</span></label>
                         <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;"><span id="settingsShowPlaceholdersCheckbox" class="custom-checkbox">✓</span><span>Show Placeholders</span></label>

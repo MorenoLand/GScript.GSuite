@@ -3105,11 +3105,18 @@ class LevelEditor {
                 const sessionRaw = localStorage.getItem('levelEditorSession');
                 const sharedTabsRaw = localStorage.getItem('graalSuiteTabs');
                 let restored = false;
-                if (sessionRaw && sharedTabsRaw) {
+                let parsedSharedTabs = [];
+                if (sharedTabsRaw) {
+                    try {
+                        const parsed = JSON.parse(sharedTabsRaw);
+                        parsedSharedTabs = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.tabs) ? parsed.tabs : []);
+                    } catch(e) {}
+                }
+                const hasSavedLevelTabs = parsedSharedTabs.some(t => t?.type === 'level');
+                const hasSavedNonLevelTabs = parsedSharedTabs.some(t => t?.type && t.type !== 'level');
+                if (sessionRaw && parsedSharedTabs.length) {
                     try {
                         const data = JSON.parse(sessionRaw);
-                        const parsedSharedTabs = JSON.parse(sharedTabsRaw);
-                        if (!Array.isArray(parsedSharedTabs) || !parsedSharedTabs.length) throw new Error('no shared tabs');
                         const allowedSharedTabs = parsedSharedTabs.filter(t => t?.type === 'level');
                         if (!allowedSharedTabs.length) throw new Error('no level tabs');
                         const allowedByPath = new Set(allowedSharedTabs.map(t => t?.data?.fullPath).filter(Boolean));
@@ -3177,7 +3184,7 @@ class LevelEditor {
                         }
                     } catch(e) {}
                 }
-                if (!restored) {
+                if (!restored && (!hasSavedNonLevelTabs || hasSavedLevelTabs)) {
                     const wEl = this.$('levelWidth');
                     const hEl = this.$('levelHeight');
                     const w = wEl ? parseInt(wEl.value) || 64 : 64;
