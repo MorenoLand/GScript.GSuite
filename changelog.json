@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.1.68",
+    "date": "2026-07-03",
+    "tag": "GSuite",
+    "changes": [
+      "Fixed CI builds by regenerating the corrupted iana-time-zone lock entry through Cargo so the checksum matches crates.io"
+    ]
+  },
+  {
     "version": "0.1.67",
     "date": "2026-07-03",
     "tag": "GSuite",
