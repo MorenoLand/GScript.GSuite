@@ -5712,6 +5712,44 @@ class LevelEditor {
         if (!all.length) return;
         const gmapName = entry.name.endsWith('.gmap') ? entry.name : entry.name + '.gmap';
 
+        if (_isTauri && entry.fullPath) {
+            const slash = String.fromCharCode(92);
+            const cut = Math.max(entry.fullPath.lastIndexOf(slash), entry.fullPath.lastIndexOf('/'));
+            const dir = cut >= 0 ? entry.fullPath.slice(0, cut) : '';
+            const sep = entry.fullPath.includes(slash) ? slash : '/';
+            const levelPath = (name) => {
+                const clean = name.replace(/^"|"$/g, '');
+                const file = /\.(nw|graal|zelda)$/i.test(clean) ? clean : clean + '.nw';
+                const key = file.toLowerCase();
+                return this._tauriPathIndex?.get(key) || this._tauriPathIndex?.get(clean.toLowerCase()) || (dir ? dir + sep + file : file);
+            };
+            const box = document.createElement('div');
+            box.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#2b2b2b;border:1px solid #404040;padding:16px 20px;z-index:99999;min-width:280px;font-size:13px;color:#e0e0e0;'; box.classList.add('ed-dialog-box');
+            box.innerHTML = `<div class="ed-dlg-title">Save GMAP: ${gmapName}</div>
+                <div style="margin-bottom:12px;">${changed.length} level(s) changed of ${all.length} total.</div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;">
+                  <button id="_gmSaveAll" style="padding:4px 10px;">Save All</button>
+                  <button id="_gmSaveChanged" style="padding:4px 10px;"${changed.length ? '' : ' disabled'}>Save Changed</button>
+                  <button id="_gmCancel" style="padding:4px 10px;">Cancel</button>
+                </div>`;
+            document.body.appendChild(box);
+            const close = () => box.remove();
+            box._closeModal = close;
+            this.$('_gmCancel').onclick = close;
+            const doSave = async (subset) => {
+                close();
+                await this._writeTauriFile(entry.fullPath, entry.gmapText);
+                for (const [name, text] of subset) await this._writeTauriFile(levelPath(name), text);
+                entry.gmapLevels = serialized.gmapLevels;
+                entry.modified = false;
+                this.updateLevelTabs();
+                this.saveSessionDebounced();
+            };
+            this.$('_gmSaveAll').onclick = () => doSave(all);
+            this.$('_gmSaveChanged').onclick = () => doSave(changed);
+            return;
+        }
+
         const box = document.createElement('div');
         box.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#2b2b2b;border:1px solid #404040;padding:16px 20px;z-index:99999;min-width:280px;font-size:13px;color:#e0e0e0;'; box.classList.add('ed-dialog-box');
         box.innerHTML = `<div class="ed-dlg-title">Save GMAP: ${gmapName}</div>

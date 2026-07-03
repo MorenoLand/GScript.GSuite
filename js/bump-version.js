@@ -67,11 +67,6 @@ if (!versionPattern.test(nextVersion)) throw new Error(`Unsupported version form
 pkg.version = nextVersion;
 writeJson('package.json', pkg);
 
-const lock = readJson('package-lock.json');
-lock.version = nextVersion;
-if (lock.packages && lock.packages['']) lock.packages[''].version = nextVersion;
-writeJson('package-lock.json', lock);
-
 updateCargoToml(nextVersion);
 updateCargoLock(nextVersion);
 updateTauriConfig(nextVersion);

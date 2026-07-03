@@ -3,11 +3,12 @@
   "version": "0.1.62",
   "description": "GSuite - A web-based suite of tools for development.",
   "main": "anieditor.js",
+  "packageManager": "pnpm@10.14.0",
   "scripts": {
     "bump:patch": "node js/bump-version.js patch",
     "version:set": "node js/bump-version.js set",
-    "dev": "node js/build-web.js && npx tauri dev",
-    "build": "node js/build-web.js && npx tauri build",
+    "dev": "node js/build-web.js && pnpm exec tauri dev",
+    "build": "node js/build-web.js && pnpm exec tauri build",
     "start": "node server.js",
     "tauri": "tauri"
   },
