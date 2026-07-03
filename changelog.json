@@ -4,6 +4,8 @@
     "date": "2026-07-03",
     "tag": "GSuite",
     "changes": [
+      "Fixed the animation editor preview timeline so its horizontal scrollbar only appears while hovering the preview bar",
+      "Fixed CI auto builds by syncing Tauri Rust plugin lock versions with the installed JavaScript plugin versions",
       "Fixed animation editor Movie Mode so actor sub-ganis load from the workspace or bundled ganis and render instead of falling back to shadow-only placeholders",
       "Fixed desktop GMAP saves so loaded GMAPs write their physical .gmap and level files back to disk instead of opening the browser ZIP export flow",
       "Fixed animation editor Movie Mode actor rendering so referenced sub-animations fall back to bundled default ganis and actor head/body/sword/shield/horse/attr/param values drive the rendered look",
