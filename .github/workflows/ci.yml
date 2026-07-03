@@ -118,37 +118,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
 
-      - name: Compile Tauri app
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm exec tauri build --target ${{ matrix.target }}
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact-name }}
-          path: ${{ matrix.artifact-path }}
-          if-no-files-found: error
-          retention-days: 14
-
-  publish-release:
-    name: Publish GitHub Release
-    needs: [bump-version, compile]
-    if: always() && !cancelled() && needs.compile.result == 'success' && !(github.event_name == 'push' && github.actor == 'github-actions[bot]' && contains(github.event.head_commit.message, '[skip version]'))
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          ref: ${{ github.ref_name }}
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
       - name: Resolve release version
         id: release
         shell: bash
@@ -159,32 +128,29 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
+      - name: Build and publish Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          path: release-artifacts
+          tagName: v${{ steps.release.outputs.version }}
+          releaseName: GSuite v${{ steps.release.outputs.version }}
+          releaseBody: See changelog for details.
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+          tauriScript: pnpm exec tauri
+          args: --target ${{ matrix.target }}
 
-      - name: Stage release assets
+      - name: Upload portable exe (Windows)
+        if: matrix.os == 'windows-latest'
         shell: bash
         run: |
-          mkdir -p release-assets
-          find release-artifacts -type f \( -name 'latest.json' -o -name 'GSuite*.exe' -o -name 'GSuite*.exe.sig' -o -name 'GSuite*.msi' -o -name 'GSuite*.msi.sig' -o -name 'GSuite*.dmg' -o -name 'GSuite*.AppImage' -o -name 'GSuite*.AppImage.sig' -o -name 'GSuite*.deb' -o -name 'GSuite*.deb.sig' -o -name 'GSuite*.rpm' -o -name 'GSuite*.rpm.sig' \) -print0 | while IFS= read -r -d '' file; do
-            base="$(basename "$file")"
-            if [ -e "release-assets/$base" ]; then
-              artifact="$(echo "$file" | cut -d/ -f2)"
-              cp "$file" "release-assets/${artifact}-${base}"
-            else
-              cp "$file" "release-assets/$base"
-            fi
-          done
-          test "$(find release-assets -type f | wc -l)" -gt 0
-          find release-assets -type f -printf '%f\n' | sort
-
-      - name: Publish release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.release.outputs.version }}
-          name: GSuite v${{ steps.release.outputs.version }}
-          body: See changelog for details.
-          files: release-assets/*
-          make_latest: true
+          exe="$(find "src-tauri/target/${{ matrix.target }}/release" -maxdepth 1 -type f -name '*.exe' ! -name '*setup*' | head -n 1)"
+          if [ -n "$exe" ]; then
+            gh release upload "v${{ steps.release.outputs.version }}" "$exe" --clobber
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
