@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.1.67",
+    "date": "2026-07-03",
+    "tag": "GSuite",
+    "changes": [
+      "Fixed CI builds by restoring the locked iana-time-zone dependency version after the 0.1.66 metadata bump"
+    ]
+  },
+  {
     "version": "0.1.66",
     "date": "2026-07-03",
     "tag": "GSuite",
