@@ -164,11 +164,27 @@ jobs:
         with:
           path: release-artifacts
 
+      - name: Stage release assets
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          find release-artifacts -type f \( -name 'GSuite*.exe' -o -name 'GSuite*.exe.sig' -o -name 'GSuite*.msi' -o -name 'GSuite*.msi.sig' -o -name 'GSuite*.dmg' -o -name 'GSuite*.AppImage' -o -name 'GSuite*.AppImage.sig' -o -name 'GSuite*.deb' -o -name 'GSuite*.deb.sig' -o -name 'GSuite*.rpm' -o -name 'GSuite*.rpm.sig' \) -print0 | while IFS= read -r -d '' file; do
+            base="$(basename "$file")"
+            if [ -e "release-assets/$base" ]; then
+              artifact="$(echo "$file" | cut -d/ -f2)"
+              cp "$file" "release-assets/${artifact}-${base}"
+            else
+              cp "$file" "release-assets/$base"
+            fi
+          done
+          test "$(find release-assets -type f | wc -l)" -gt 0
+          find release-assets -type f -printf '%f\n' | sort
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.release.outputs.version }}
           name: GSuite v${{ steps.release.outputs.version }}
           body: See changelog for details.
-          files: release-artifacts/**/*
+          files: release-assets/*
           make_latest: true

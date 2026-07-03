@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.1.66",
+    "date": "2026-07-03",
+    "tag": "GSuite",
+    "changes": [
+      "Fixed CI release publishing so GitHub Releases upload only final installer and package assets instead of bundle internals"
+    ]
+  },
+  {
     "version": "0.1.65",
     "date": "2026-07-03",
     "tag": "GSuite",
