@@ -131,3 +131,44 @@ jobs:
           path: ${{ matrix.artifact-path }}
           if-no-files-found: error
           retention-days: 14
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [bump-version, compile]
+    if: always() && !cancelled() && needs.compile.result == 'success' && !(github.event_name == 'push' && github.actor == 'github-actions[bot]' && contains(github.event.head_commit.message, '[skip version]'))
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Resolve release version
+        id: release
+        shell: bash
+        run: |
+          version="${{ needs.bump-version.outputs.version }}"
+          if [ -z "$version" ]; then
+            version="$(node -p "require('./package.json').version")"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.release.outputs.version }}
+          name: GSuite v${{ steps.release.outputs.version }}
+          body: See changelog for details.
+          files: release-artifacts/**/*
+          make_latest: true

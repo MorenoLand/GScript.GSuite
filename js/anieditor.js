@@ -874,6 +874,7 @@ function formatKeybind(binding) {
 let scrollbarDragStartX = 0;
 let scrollbarDragStartScrollX = 0;
 let isDraggingScrollbar = false;
+let timelineScrollbarHovered = false;
 let timelineScrollX = 0;
 let timelineZoom = 1.0;
 let timelineTotalWidth = 0;
@@ -2921,7 +2922,7 @@ function drawTimeline() {
         timelineCtx.fill();
     }
 
-    if (timelineTotalWidth > width) {
+    if (timelineTotalWidth > width && (timelineScrollbarHovered || isDraggingScrollbar)) {
         const scrollbarHeight = 10;
         const scrollbarY = height - scrollbarHeight - 2;
         const scrollbarWidth = width - 4;
@@ -7151,6 +7152,8 @@ async function initGaniEditorStartup() {
             isDraggingScrollbar = false;
             scrollbarDragStartX = 0;
             scrollbarDragStartScrollX = 0;
+            timelineScrollbarHovered = timelineCanvas?.matches?.(":hover") || false;
+            drawTimeline();
         }
     });
     document.addEventListener("touchend", () => {
@@ -8251,6 +8254,8 @@ async function initGaniEditorStartup() {
         if (isDraggingScrollbar && timelineTotalWidth > timelineCanvas.width) {
             if (pos.x < 0 || pos.x > timelineCanvas.width || pos.y < 0 || pos.y > timelineCanvas.height) {
                 isDraggingScrollbar = false;
+                timelineScrollbarHovered = false;
+                drawTimeline();
                 return;
             }
             const scrollbarWidth = timelineCanvas.width - 4;
@@ -8411,6 +8416,14 @@ async function initGaniEditorStartup() {
             }
         }
     };
+    timelineCanvas.addEventListener("mouseenter", () => {
+        timelineScrollbarHovered = true;
+        drawTimeline();
+    });
+    timelineCanvas.addEventListener("mouseleave", () => {
+        timelineScrollbarHovered = false;
+        if (!isDraggingScrollbar) drawTimeline();
+    });
     timelineCanvas.oncontextmenu = (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -8563,6 +8576,8 @@ async function initGaniEditorStartup() {
         if (isDraggingScrollbar && timelineTotalWidth > timelineCanvas.width) {
             if (pos.x < 0 || pos.x > timelineCanvas.width || pos.y < 0 || pos.y > timelineCanvas.height) {
                 isDraggingScrollbar = false;
+                timelineScrollbarHovered = false;
+                drawTimeline();
                 return;
             }
             const scrollbarWidth = timelineCanvas.width - 4;
@@ -8634,6 +8649,8 @@ async function initGaniEditorStartup() {
             scrollbarDragStartScrollX = 0;
             timelineTouchStart = null;
             timelineTouchMoved = false;
+            timelineScrollbarHovered = timelineCanvas.matches(":hover");
+            drawTimeline();
             return;
         }
 
@@ -8726,6 +8743,8 @@ async function initGaniEditorStartup() {
             isDraggingScrollbar = false;
             scrollbarDragStartX = 0;
             scrollbarDragStartScrollX = 0;
+            timelineScrollbarHovered = timelineCanvas.matches(":hover");
+            drawTimeline();
             return;
         }
 
