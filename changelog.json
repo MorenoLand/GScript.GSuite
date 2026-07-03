@@ -1,7 +1,7 @@
 [
   {
-    "version": "0.1.63",
-    "date": "2026-07-02",
+    "version": "0.1.64",
+    "date": "2026-07-03",
     "tag": "GSuite",
     "changes": [
       "Fixed animation editor Movie Mode so actor sub-ganis load from the workspace or bundled ganis and render instead of falling back to shadow-only placeholders",
