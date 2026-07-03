@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.1.69",
+    "date": "2026-07-03",
+    "tag": "GSuite",
+    "changes": [
+      "Fixed CI release publishing so latest.json is included with GitHub Release assets for the updater"
+    ]
+  },
+  {
     "version": "0.1.68",
     "date": "2026-07-03",
     "tag": "GSuite",

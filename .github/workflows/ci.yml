@@ -168,7 +168,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p release-assets
-          find release-artifacts -type f \( -name 'GSuite*.exe' -o -name 'GSuite*.exe.sig' -o -name 'GSuite*.msi' -o -name 'GSuite*.msi.sig' -o -name 'GSuite*.dmg' -o -name 'GSuite*.AppImage' -o -name 'GSuite*.AppImage.sig' -o -name 'GSuite*.deb' -o -name 'GSuite*.deb.sig' -o -name 'GSuite*.rpm' -o -name 'GSuite*.rpm.sig' \) -print0 | while IFS= read -r -d '' file; do
+          find release-artifacts -type f \( -name 'latest.json' -o -name 'GSuite*.exe' -o -name 'GSuite*.exe.sig' -o -name 'GSuite*.msi' -o -name 'GSuite*.msi.sig' -o -name 'GSuite*.dmg' -o -name 'GSuite*.AppImage' -o -name 'GSuite*.AppImage.sig' -o -name 'GSuite*.deb' -o -name 'GSuite*.deb.sig' -o -name 'GSuite*.rpm' -o -name 'GSuite*.rpm.sig' \) -print0 | while IFS= read -r -d '' file; do
             base="$(basename "$file")"
             if [ -e "release-assets/$base" ]; then
               artifact="$(echo "$file" | cut -d/ -f2)"
