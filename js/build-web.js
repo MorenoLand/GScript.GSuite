@@ -20,11 +20,26 @@ function cp(from, to) {
     }
 }
 
+function cpFiltered(from, to, skip) {
+    const s = path.join(root, from);
+    const d = path.join(dist, to || from);
+    if (!fs.existsSync(s) || skip(from)) return;
+    const stat = fs.statSync(s);
+    if (stat.isDirectory()) {
+        fs.mkdirSync(d, { recursive: true });
+        for (const f of fs.readdirSync(s)) cpFiltered(path.join(from, f), path.join(to || from, f), skip);
+    } else {
+        fs.mkdirSync(path.dirname(d), { recursive: true });
+        fs.copyFileSync(s, d);
+    }
+}
+
 rm(dist);
 
 ['index.html', 'favicon.ico', 'example-theme.css', 'changelog.json'].forEach(f => cp(f));
-['ganis', 'fonts', 'icons', 'images', 'sounds', 'vendor', 'js', 'css', 'levels', 'objects'].forEach(d => cp(d));
-cp('node_modules/monaco-editor/min/vs', 'monaco-editor/min/vs');
+['ganis', 'icons', 'images', 'sounds', 'vendor', 'js', 'css', 'levels', 'objects'].forEach(d => cp(d));
+cpFiltered('fonts', 'fonts', f => /MesloLGS/i.test(f));
+cpFiltered('node_modules/monaco-editor/min/vs', 'monaco-editor/min/vs', f => /nls\.messages\..*\.js$/i.test(f));
 
 const levelsDir = path.join(root, 'levels');
 const levelFiles = fs.readdirSync(levelsDir).filter(f => /\.(nw|zelda|graal|gmap)$/i.test(f));

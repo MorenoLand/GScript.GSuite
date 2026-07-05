@@ -4434,7 +4434,6 @@ class LevelEditor {
             chevyrayOeuf:'"chevyrayOeuf",monospace',
             Silkscreen:'"Silkscreen",monospace',
             PressStart2P:'"PressStart2P",monospace',
-            'MesloLGS NF':'"MesloLGS NF",monospace',
             'Tempus Sans ITC':'"Tempus Sans ITC",sans-serif',
             monospace:'monospace'
         };
@@ -4501,7 +4500,7 @@ class LevelEditor {
         const _selStyle = 'flex:1;background:#1a1a1a;color:#e0e0e0;border:1px solid #555;padding:3px 6px;font-family:chevyray,monospace;font-size:12px;';
         const _lblStyle = 'min-width:130px;flex-shrink:0;font-size:13px;color:#aaa;';
         const sliderRow = (lbl,id,val,mn,mx) => `<label style="display:flex;align-items:center;gap:8px;"><span style="${_lblStyle}">${lbl}</span><input type="range" class="settings-slider" id="${id}_r" min="${mn}" max="${mx}" value="${val}" style="flex:1;"><input type="number" id="${id}_n" value="${val}" min="${mn}" max="${mx}" style="${_numStyle}"></label>`;
-        const _fontOptions = ["chevyray", "chevyrayOeuf", "MesloLGS NF", "PressStart2P", "Silkscreen", "Arial", "Comic Sans MS", "Courier New", "Georgia", "Helvetica", "Impact", "monospace", "Tahoma", "Tempus Sans ITC", "Times New Roman", "Trebuchet MS", "Verdana"];
+        const _fontOptions = ["chevyray", "chevyrayOeuf", "PressStart2P", "Silkscreen", "Arial", "Comic Sans MS", "Courier New", "Georgia", "Helvetica", "Impact", "monospace", "Tahoma", "Tempus Sans ITC", "Times New Roman", "Trebuchet MS", "Verdana"];
         const _fontLabel = (font) => font === 'PressStart2P' ? 'Press Start 2P' : font === 'monospace' ? 'Monospace' : font;
         const _fontOptionMarkup = _fontOptions.map(font => `<option value="${font}">${_fontLabel(font)}</option>`).join('');
         const _fontSizeOptions = [8, 10, 12, 14, 16, 18, 20, 22, 24].map(size => `<option value="${size}">${size}px</option>`).join('');
@@ -4559,6 +4558,20 @@ class LevelEditor {
         box.querySelector('#_stUIFont').value = s.uiFont ?? 'chevyray';
         box.querySelector('#_stUIFontSize').value = String(s.uiFontSize ?? 12);
         box.querySelector('#_stUIFontStyle').value = s.uiFontStyle ?? 'normal';
+        if (window.queryLocalFonts) {
+            window.queryLocalFonts().then(local => {
+                const select = box.querySelector('#_stUIFont');
+                const have = new Set([...select.options].map(o => o.value));
+                [...new Set(local.map(f => f.family))].sort().forEach(font => {
+                    if (have.has(font) || /MesloLGS/i.test(font)) return;
+                    const option = document.createElement('option');
+                    option.value = font;
+                    option.textContent = font;
+                    select.appendChild(option);
+                });
+                select.value = have.has(s.uiFont) || [...select.options].some(o => o.value === s.uiFont) ? s.uiFont : 'chevyray';
+            }).catch(() => {});
+        }
         const readSettings = () => ({ nickFontSize: parseInt(box.querySelector('#_stNick_n').value)||20, chatFontSize: parseInt(box.querySelector('#_stChat_n').value)||20, uiFont: box.querySelector('#_stUIFont').value, uiFontSize: parseInt(box.querySelector('#_stUIFontSize').value)||12, uiFontStyle: box.querySelector('#_stUIFontStyle').value, uiScale: Math.round(parseInt(box.querySelector('#_stUIScale_n').value)||100) / 100, voidColor: box.querySelector('#_stVoidColor').value || '#000000' });
         const syncSlider = (id) => {
             const r = box.querySelector(`#${id}_r`), n = box.querySelector(`#${id}_n`);

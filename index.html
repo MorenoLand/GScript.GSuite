@@ -745,7 +745,7 @@
                         const update = await check();
                         if (update?.available) {
                             const ok = confirm(`Update ${update.version} available. Install now?`);
-                            if (ok) { await update.downloadAndInstall(); window.__TAURI__.process.relaunch(); }
+                            if (ok) { await window.__TAURI__.core.invoke('do_update'); }
                         }
                     } catch(e) {}
                 }, 3000);

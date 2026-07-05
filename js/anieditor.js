@@ -1049,7 +1049,7 @@ function resizeCanvas() {
 }
 
 function getFontFamily(font) {
-    const customFonts = ["PressStart2P", "Silkscreen", "Tempus Sans ITC", "MesloLGS NF", "chevyray", "chevyrayOeuf"];
+    const customFonts = ["PressStart2P", "Silkscreen", "Tempus Sans ITC", "chevyray", "chevyrayOeuf"];
     if (customFonts.includes(font)) {
         return `"${font}", monospace`;
     } else if (font === "monospace") {
@@ -10452,7 +10452,6 @@ async function initGaniEditorStartup() {
             if (selectedValue === "PressStart2P") buttonFontFamily = '"PressStart2P", monospace';
             else if (selectedValue === "Silkscreen") buttonFontFamily = '"Silkscreen", monospace';
             else if (selectedValue === "Tempus Sans ITC") buttonFontFamily = '"Tempus Sans ITC", monospace';
-            else if (selectedValue === "MesloLGS NF") buttonFontFamily = '"MesloLGS NF", monospace';
             else if (selectedValue === "chevyray") buttonFontFamily = '"chevyray", monospace';
             else if (selectedValue === "chevyrayOeuf") buttonFontFamily = '"chevyrayOeuf", monospace';
             else if (selectedValue === "monospace") buttonFontFamily = "monospace";
@@ -10507,7 +10506,6 @@ async function initGaniEditorStartup() {
                 if (fontValue === "PressStart2P") fontFamily = '"PressStart2P", monospace';
                 else if (fontValue === "Silkscreen") fontFamily = '"Silkscreen", monospace';
                 else if (fontValue === "Tempus Sans ITC") fontFamily = '"Tempus Sans ITC", monospace';
-                else if (fontValue === "MesloLGS NF") fontFamily = '"MesloLGS NF", monospace';
                 else if (fontValue === "chevyray") fontFamily = '"chevyray", monospace';
                 else if (fontValue === "chevyrayOeuf") fontFamily = '"chevyrayOeuf", monospace';
                 else if (fontValue === "monospace") fontFamily = "monospace";
@@ -10541,7 +10539,6 @@ async function initGaniEditorStartup() {
                     if (fontValue === "PressStart2P") newFontFamily = '"PressStart2P", monospace';
                     else if (fontValue === "Silkscreen") newFontFamily = '"Silkscreen", monospace';
                     else if (fontValue === "Tempus Sans ITC") newFontFamily = '"Tempus Sans ITC", monospace';
-                    else if (fontValue === "MesloLGS NF") newFontFamily = '"MesloLGS NF", monospace';
                     else if (fontValue === "chevyray") newFontFamily = '"chevyray", monospace';
                     else if (fontValue === "chevyrayOeuf") newFontFamily = '"chevyrayOeuf", monospace';
                     else if (fontValue === "monospace") newFontFamily = "monospace";
@@ -10602,7 +10599,6 @@ async function initGaniEditorStartup() {
                 if (selectedValue === "PressStart2P") newFontFamily = '"PressStart2P", monospace';
                 else if (selectedValue === "Silkscreen") newFontFamily = '"Silkscreen", monospace';
                 else if (selectedValue === "Tempus Sans ITC") newFontFamily = '"Tempus Sans ITC", monospace';
-                else if (selectedValue === "MesloLGS NF") newFontFamily = '"MesloLGS NF", monospace';
                 else if (selectedValue === "chevyray") newFontFamily = '"chevyray", monospace';
                 else if (selectedValue === "chevyrayOeuf") newFontFamily = '"chevyrayOeuf", monospace';
                 else if (selectedValue === "monospace") newFontFamily = "monospace";
@@ -10688,7 +10684,7 @@ async function initGaniEditorStartup() {
         const settingsCancel = $("settingsCancel");
         const settingsDefaults = $("settingsDefaults");
         const settingsReset = $("settingsReset");
-        const _builtinFonts = ["chevyray", "chevyrayOeuf", "MesloLGS NF", "PressStart2P", "Silkscreen"];
+        const _builtinFonts = ["chevyray", "chevyrayOeuf", "PressStart2P", "Silkscreen"];
         const _fallbackFonts = ["Arial", "Comic Sans MS", "Courier New", "Georgia", "Helvetica", "Impact", "monospace", "Tahoma", "Tempus Sans ITC", "Times New Roman", "Trebuchet MS", "Verdana"];
         const _populateFontList = (fonts) => {
             if (!settingsFont) return;
@@ -10706,7 +10702,7 @@ async function initGaniEditorStartup() {
         };
         (async () => {
             let fonts = [..._builtinFonts];
-            if (window.queryLocalFonts && !window.__TAURI__) {
+            if (window.queryLocalFonts) {
                 try {
                     const local = await window.queryLocalFonts();
                     const systemNames = [...new Set(local.map(f => f.family))].filter(n => !_builtinFonts.includes(n)).sort();
@@ -11189,7 +11185,6 @@ async function initGaniEditorStartup() {
                                 if (fontValue === "PressStart2P") newFontFamily = '"PressStart2P", monospace';
                                 else if (fontValue === "Silkscreen") newFontFamily = '"Silkscreen", monospace';
                                 else if (fontValue === "Tempus Sans ITC") newFontFamily = '"Tempus Sans ITC", monospace';
-                                else if (fontValue === "MesloLGS NF") newFontFamily = '"MesloLGS NF", monospace';
                                 else if (fontValue === "chevyray") newFontFamily = '"chevyray", monospace';
                                 else if (fontValue === "chevyrayOeuf") newFontFamily = '"chevyrayOeuf", monospace';
                                 else if (fontValue === "monospace") newFontFamily = "monospace";
