@@ -1,6 +1,6 @@
 [package]
 name = "GSuite"
-version = "0.1.71"
+version = "0.1.72"
 description = "Open-source Graal editor suite for levels, animations, and maps"
 authors = ["Denveous"]
 license = "GPL-3.0"
