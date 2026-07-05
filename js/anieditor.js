@@ -1252,23 +1252,9 @@ function drawSprite(ctx, sprite, x, y, level = 0, drawnSprites = null) {
         }
         ctx.restore();
     } else if (!(sprite.type === "CUSTOM" && sprite.customImageName === ".png") && localStorage.getItem("editorShowPlaceholders") !== "false") {
-        ctx.save();
-        ctx.globalAlpha = 0.65;
         const placeholderWidth = sprite.width > 0 ? sprite.width : 32;
         const placeholderHeight = sprite.height > 0 ? sprite.height : 32;
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, placeholderWidth, placeholderHeight);
-        ctx.strokeStyle = "#000000";
-        ctx.lineWidth = 1;
-        ctx.strokeRect(0, 0, placeholderWidth, placeholderHeight);
-        ctx.strokeStyle = "#ff0000";
-        ctx.beginPath();
-        ctx.moveTo(2, 2);
-        ctx.lineTo(placeholderWidth - 2, placeholderHeight - 2);
-        ctx.moveTo(2, placeholderHeight - 2);
-        ctx.lineTo(placeholderWidth - 2, 2);
-        ctx.stroke();
-        ctx.restore();
+        ctx.drawImage(_getPlaceholderCanvas(placeholderWidth, placeholderHeight), 0, 0);
     }
     for (let i = sprite.m_drawIndex; i < sprite.attachedSprites.length; i++) {
         const attached = sprite.attachedSprites[i];
@@ -1280,6 +1266,21 @@ function drawSprite(ctx, sprite, x, y, level = 0, drawnSprites = null) {
 
 const _spriteCompositeCache = new Map();
 const _spriteCompositeCacheMax = 128;
+const _placeholderCanvasCache = new Map();
+function _getPlaceholderCanvas(width, height) {
+    const w = Math.max(1, Math.round(width || 32)), h = Math.max(1, Math.round(height || 32));
+    const key = `${w}x${h}`;
+    let canvas = _placeholderCanvasCache.get(key);
+    if (canvas) return canvas;
+    canvas = document.createElement("canvas"); canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.globalAlpha = 0.65;
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = "#000000"; ctx.lineWidth = 1; ctx.strokeRect(0, 0, w, h);
+    ctx.strokeStyle = "#ff0000"; ctx.beginPath(); ctx.moveTo(2, 2); ctx.lineTo(w - 2, h - 2); ctx.moveTo(2, h - 2); ctx.lineTo(w - 2, 2); ctx.stroke();
+    _placeholderCanvasCache.set(key, canvas);
+    return canvas;
+}
 
 function _spriteTreeHasAttachments(sprite, level = 0, seen = null) {
     if (!sprite || level > 10) return false;
@@ -4009,10 +4010,7 @@ function _attachSpriteCanvas(item, sprite) {
     } else if (localStorage.getItem("editorShowPlaceholders") !== "false") {
         const pw = sprite.width > 0 ? sprite.width : 32, ph = sprite.height > 0 ? sprite.height : 32;
         const sc = Math.min(maxSize/pw, maxSize/ph, 1), sw = pw*sc, sh = ph*sc, ox = (canvas.width-sw)/2, oy = (canvas.height-sh)/2;
-        itemCtx.globalAlpha = 0.65; itemCtx.fillStyle = "#ffffff"; itemCtx.fillRect(ox,oy,sw,sh);
-        itemCtx.strokeStyle = "#000000"; itemCtx.lineWidth = 1; itemCtx.strokeRect(ox,oy,sw,sh);
-        itemCtx.strokeStyle = "#ff0000"; itemCtx.beginPath(); itemCtx.moveTo(ox+2,oy+2); itemCtx.lineTo(ox+sw-2,oy+sh-2); itemCtx.moveTo(ox+2,oy+sh-2); itemCtx.lineTo(ox+sw-2,oy+2); itemCtx.stroke();
-        itemCtx.globalAlpha = 1.0;
+        itemCtx.drawImage(_getPlaceholderCanvas(pw, ph), ox, oy, sw, sh);
     }
     item.insertBefore(canvas, item.firstChild);
     delete item.dataset.needsCanvas;
