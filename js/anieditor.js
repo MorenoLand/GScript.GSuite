@@ -1139,7 +1139,7 @@ function drawSprite(ctx, sprite, x, y, level = 0, drawnSprites = null) {
         ctx.imageSmoothingEnabled = false;
         if (isLightImage) {
             const colorKey = sprite.colorEffectEnabled && sprite.colorEffect ? `${sprite.colorEffect.r},${sprite.colorEffect.g},${sprite.colorEffect.b},${sprite.colorEffect.a}` : "none";
-            const cacheKey = `${img.src}_${colorKey}`;
+            const cacheKey = `${img.src}_${sprite.left},${sprite.top},${sprite.width},${sprite.height}_${colorKey}`;
             if (!sprite._lightCanvas || sprite._lightCacheKey !== cacheKey) {
                 const tempCanvas = document.createElement("canvas");
                 tempCanvas.width = sprite.width;
@@ -1179,7 +1179,8 @@ function drawSprite(ctx, sprite, x, y, level = 0, drawnSprites = null) {
             ctx.globalCompositeOperation = "source-over";
         } else if (sprite.mode === 1) {
             const colorKey = sprite.colorEffectEnabled && sprite.colorEffect ? `${sprite.colorEffect.r},${sprite.colorEffect.g},${sprite.colorEffect.b},${sprite.colorEffect.a}` : "none";
-            if (!sprite._cachedColorCanvas || sprite._cachedColorKey !== colorKey || sprite._cachedImageSrc !== img.src) {
+            const cacheKey = `${img.src}_${sprite.left},${sprite.top},${sprite.width},${sprite.height}_${colorKey}`;
+            if (!sprite._cachedColorCanvas || sprite._cachedColorKey !== cacheKey) {
                 const tempCanvas = document.createElement("canvas");
                 tempCanvas.width = sprite.width;
                 tempCanvas.height = sprite.height;
@@ -1194,8 +1195,7 @@ function drawSprite(ctx, sprite, x, y, level = 0, drawnSprites = null) {
                     tempCtx.drawImage(img, sprite.left, sprite.top, sprite.width, sprite.height, 0, 0, sprite.width, sprite.height);
                 }
                 sprite._cachedColorCanvas = tempCanvas;
-                sprite._cachedColorKey = colorKey;
-                sprite._cachedImageSrc = img.src;
+                sprite._cachedColorKey = cacheKey;
             }
             const alpha = sprite.colorEffectEnabled && sprite.colorEffect ? (sprite.colorEffect.a / 255) : 1.0;
             ctx.globalAlpha = alpha;
@@ -1204,7 +1204,8 @@ function drawSprite(ctx, sprite, x, y, level = 0, drawnSprites = null) {
             ctx.globalAlpha = 1.0;
         } else if (sprite.mode === 2) {
             const colorKey = sprite.colorEffectEnabled && sprite.colorEffect ? `${sprite.colorEffect.r},${sprite.colorEffect.g},${sprite.colorEffect.b},${sprite.colorEffect.a}` : "none";
-            if (!sprite._cachedColorCanvas || sprite._cachedColorKey !== colorKey || sprite._cachedImageSrc !== img.src) {
+            const cacheKey = `${img.src}_${sprite.left},${sprite.top},${sprite.width},${sprite.height}_${colorKey}`;
+            if (!sprite._cachedColorCanvas || sprite._cachedColorKey !== cacheKey) {
                 const tempCanvas = document.createElement("canvas");
                 tempCanvas.width = sprite.width;
                 tempCanvas.height = sprite.height;
@@ -1219,8 +1220,7 @@ function drawSprite(ctx, sprite, x, y, level = 0, drawnSprites = null) {
                     tempCtx.drawImage(img, sprite.left, sprite.top, sprite.width, sprite.height, 0, 0, sprite.width, sprite.height);
                 }
                 sprite._cachedColorCanvas = tempCanvas;
-                sprite._cachedColorKey = colorKey;
-                sprite._cachedImageSrc = img.src;
+                sprite._cachedColorKey = cacheKey;
             }
             ctx.globalCompositeOperation = "destination-out";
             ctx.imageSmoothingEnabled = false;
@@ -1228,7 +1228,8 @@ function drawSprite(ctx, sprite, x, y, level = 0, drawnSprites = null) {
             ctx.globalCompositeOperation = "source-over";
         } else if (sprite.colorEffectEnabled && sprite.colorEffect) {
             const colorKey = `${sprite.colorEffect.r},${sprite.colorEffect.g},${sprite.colorEffect.b},${sprite.colorEffect.a}`;
-            if (!sprite._cachedColorCanvas || sprite._cachedColorKey !== colorKey || sprite._cachedImageSrc !== img.src) {
+            const cacheKey = `${img.src}_${sprite.left},${sprite.top},${sprite.width},${sprite.height}_${colorKey}`;
+            if (!sprite._cachedColorCanvas || sprite._cachedColorKey !== cacheKey) {
             const tempCanvas = document.createElement("canvas");
             tempCanvas.width = sprite.width;
             tempCanvas.height = sprite.height;
@@ -1239,10 +1240,9 @@ function drawSprite(ctx, sprite, x, y, level = 0, drawnSprites = null) {
             tempCtx.fillStyle = `rgb(${sprite.colorEffect.r}, ${sprite.colorEffect.g}, ${sprite.colorEffect.b})`;
             tempCtx.fillRect(0, 0, sprite.width, sprite.height);
             tempCtx.globalCompositeOperation = "destination-in";
-            tempCtx.drawImage(img, sprite.left, sprite.top, sprite.width, sprite.height, 0, 0, sprite.width, sprite.height);
+                tempCtx.drawImage(img, sprite.left, sprite.top, sprite.width, sprite.height, 0, 0, sprite.width, sprite.height);
                 sprite._cachedColorCanvas = tempCanvas;
-                sprite._cachedColorKey = colorKey;
-                sprite._cachedImageSrc = img.src;
+                sprite._cachedColorKey = cacheKey;
             }
             ctx.imageSmoothingEnabled = false;
             ctx.drawImage(sprite._cachedColorCanvas, 0, 0);

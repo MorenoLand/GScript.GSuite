@@ -911,7 +911,7 @@ class LevelEditor {
                 this.panY = midY - rect.top - cy * this.zoom;
                 this._pinchDist = dist; this._pinchMidX = midX; this._pinchMidY = midY;
                 this._syncZoomUI();
-                this.render();
+                this.requestRender();
             }
         }, { passive:false });
         this.canvas.addEventListener('touchend', (e) => {
@@ -1125,7 +1125,7 @@ class LevelEditor {
             if (axis === 'w') { const nw = (ex - sx + 1) + delta; if (nw < 1) return; this.selectionEndX = this.selectionStartX >= this.selectionEndX ? sx : sx + nw - 1; }
             else { const nh = (ey - sy + 1) + delta; if (nh < 1) return; this.selectionEndY = this.selectionStartY >= this.selectionEndY ? sy : sy + nh - 1; }
             this.updateSelectionInfo();
-            this.render();
+            this.requestRender();
         };
         const btnWidthUp = this.$('btnWidthUp');
         if (btnWidthUp) btnWidthUp.addEventListener('click', () => _resizeSel('w', 1));
@@ -1430,7 +1430,7 @@ class LevelEditor {
                 const dragOrigin = this.snapGrid ? coords : this.getCanvasCoordsRaw(e);
                 this.draggingObjectOffsetX = dragOrigin.x - hitObj.x;
                 this.draggingObjectOffsetY = dragOrigin.y - hitObj.y;
-                this.render();
+                this.requestRender();
                 e.preventDefault();
                 return;
             }
@@ -1494,12 +1494,12 @@ class LevelEditor {
             } else if (this.currentTool === 'draw' && this.floodFillEnabled) {
                 this.pushUndo();
                 this.floodFill(coords.x, coords.y);
-                this.render();
+                this.requestRender();
             } else if (this.currentTool === 'draw' || this.currentTool === 'eraser') {
                 this.pushUndo();
                 this.isDrawing = true;
                 this.drawAt(coords.x, coords.y);
-                this.render();
+                this.requestRender();
             } else {
                 this.pendingSelection = true;
                 this.pendingSelectionStartX = coords.x;
@@ -1650,7 +1650,7 @@ class LevelEditor {
             obj.x = ox; obj.y = oy;
             if (!obj.properties) obj.properties = {};
             obj.properties.width = w; obj.properties.height = ht;
-            this.render();
+            this.requestRender();
             return;
         }
         if (this.draggingObject) {
@@ -1685,7 +1685,7 @@ class LevelEditor {
                 }
             }
             if (changed) {
-                this.render();
+                this.requestRender();
             }
             return;
         }
@@ -1762,7 +1762,7 @@ class LevelEditor {
                 this.selectionEndX = maxX;
                 this.selectionEndY = maxY;
                 this.updateSelectionInfo();
-                this.render();
+                this.requestRender();
             }
         } else if (this.isMovingSelection && this.selectionTiles) {
             const startX = Math.min(this.selectionStartX, this.selectionEndX);
@@ -1775,12 +1775,12 @@ class LevelEditor {
             this.selectionStartY = newStartY;
             this.selectionEndX = newStartX + width - 1;
             this.selectionEndY = newStartY + height - 1;
-            this.render();
+            this.requestRender();
         } else if (this.isSelecting && this.selectionStartX >= 0) {
             this.selectionEndX = coords.x;
             this.selectionEndY = coords.y;
             this.updateSelectionInfo();
-            this.render();
+            this.requestRender();
         } else if (this.isDraggingFromTileset) {
         } else if (this.isDrawing && !this.isSelecting && !this.isDraggingTileSelection) {
             this.drawAt(coords.x, coords.y);
@@ -2632,14 +2632,18 @@ class LevelEditor {
         if (_sy < 0) relPy = ipH - 1 - relPy;
         const px = relPx + (ip ? ip.x : 0), py = relPy + (ip ? ip.y : 0);
         if (px < 0 || py < 0 || px >= cached.naturalWidth || py >= cached.naturalHeight) return false;
-        if (!this._hitCanvas) { this._hitCanvas = document.createElement('canvas'); this._hitCanvas.width = 1; this._hitCanvas.height = 1; this._hitCtx = this._hitCanvas.getContext('2d', { willReadFrequently: true }); }
-        this._hitCtx.clearRect(0, 0, 1, 1);
-        this._hitCtx.drawImage(cached, px, py, 1, 1, 0, 0, 1, 1);
-        if (this._hitCtx.getImageData(0, 0, 1, 1).data[3] > 10) return true;
         const tb = this._getTightBounds(obj);
-        if (!tb?.mask) return false;
         const localX = px - (ip ? ip.x : 0);
         const localY = py - (ip ? ip.y : 0);
+        if (tb?.mask) {
+            if (tb.mask[localY * tb.srcW + localX]) return true;
+        } else {
+            if (!this._hitCanvas) { this._hitCanvas = document.createElement('canvas'); this._hitCanvas.width = 1; this._hitCanvas.height = 1; this._hitCtx = this._hitCanvas.getContext('2d', { willReadFrequently: true }); }
+            this._hitCtx.clearRect(0, 0, 1, 1);
+            this._hitCtx.drawImage(cached, px, py, 1, 1, 0, 0, 1, 1);
+            if (this._hitCtx.getImageData(0, 0, 1, 1).data[3] > 10) return true;
+            return false;
+        }
         const radius = 2;
         for (let dy = -radius; dy <= radius; dy++) {
             for (let dx = -radius; dx <= radius; dx++) {
