@@ -1254,7 +1254,7 @@ function drawSprite(ctx, sprite, x, y, level = 0, drawnSprites = null, opts = nu
     } else if (!opts?.skipPlaceholders && !(sprite.type === "CUSTOM" && sprite.customImageName === ".png") && localStorage.getItem("editorShowPlaceholders") !== "false") {
         const placeholderWidth = sprite.width > 0 ? sprite.width : 32;
         const placeholderHeight = sprite.height > 0 ? sprite.height : 32;
-        ctx.drawImage(_getPlaceholderCanvas(placeholderWidth, placeholderHeight), 0, 0);
+        ctx.drawImage(_getPlaceholderCanvas(), 0, 0, placeholderWidth, placeholderHeight);
     }
     for (let i = sprite.m_drawIndex; i < sprite.attachedSprites.length; i++) {
         const attached = sprite.attachedSprites[i];
@@ -1266,20 +1266,18 @@ function drawSprite(ctx, sprite, x, y, level = 0, drawnSprites = null, opts = nu
 
 const _spriteCompositeCache = new Map();
 const _spriteCompositeCacheMax = 128;
-const _placeholderCanvasCache = new Map();
-function _getPlaceholderCanvas(width, height) {
-    const w = Math.max(1, Math.round(width || 32)), h = Math.max(1, Math.round(height || 32));
-    const key = `${w}x${h}`;
-    let canvas = _placeholderCanvasCache.get(key);
-    if (canvas) return canvas;
-    canvas = document.createElement("canvas"); canvas.width = w; canvas.height = h;
+let _placeholderCanvas = null;
+function _getPlaceholderCanvas() {
+    if (_placeholderCanvas) return _placeholderCanvas;
+    const w = 64, h = 64;
+    const canvas = document.createElement("canvas"); canvas.width = w; canvas.height = h;
     const ctx = canvas.getContext("2d");
     ctx.globalAlpha = 0.65;
     ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, h);
     ctx.strokeStyle = "#000000"; ctx.lineWidth = 1; ctx.strokeRect(0, 0, w, h);
     ctx.strokeStyle = "#ff0000"; ctx.beginPath(); ctx.moveTo(2, 2); ctx.lineTo(w - 2, h - 2); ctx.moveTo(2, h - 2); ctx.lineTo(w - 2, 2); ctx.stroke();
-    _placeholderCanvasCache.set(key, canvas);
-    return canvas;
+    _placeholderCanvas = canvas;
+    return _placeholderCanvas;
 }
 
 function _spriteTreeHasAttachments(sprite, level = 0, seen = null) {
@@ -1752,7 +1750,7 @@ function drawFrame(ctx, frame, dir, opts = null) {
             const sprite = currentAnimation.getAniSprite(piece.spriteIndex, piece.spriteName);
             if (sprite) {
                 const isSelected = selectedPieces.has(piece);
-                if (isSelected) {
+                if (isSelected && !opts?.skipSelection) {
                     const _rs2 = getComputedStyle(document.documentElement);
                     const borderColor = _rs2.getPropertyValue('--selection-border-color').trim() || localStorage.getItem("editorSelectionBorderColor") || "#00ff00";
                     const _cssThick = _rs2.getPropertyValue('--selection-border-thickness').trim();
@@ -2755,7 +2753,7 @@ function drawTimeline() {
                 timelineCtx.translate(previewCenterX, previewCenterY);
                 timelineCtx.scale(scale, scale);
                 timelineCtx.translate(-frameCenterX, -frameCenterY);
-                drawFrame(timelineCtx, frame, currentDir, {skipPlaceholders: true});
+                drawFrame(timelineCtx, frame, currentDir, {skipPlaceholders: true, skipSelection: true});
                 timelineCtx.restore();
             }
         }
@@ -2827,7 +2825,7 @@ function drawTimeline() {
                 timelineCtx.translate(previewCenterX, previewCenterY);
                 timelineCtx.scale(scale, scale);
                 timelineCtx.translate(-frameCenterX, -frameCenterY);
-                drawFrame(timelineCtx, frame, currentDir, {skipPlaceholders: true});
+                drawFrame(timelineCtx, frame, currentDir, {skipPlaceholders: true, skipSelection: true});
                 timelineCtx.restore();
             }
         }
@@ -4010,7 +4008,7 @@ function _attachSpriteCanvas(item, sprite) {
     } else if (localStorage.getItem("editorShowPlaceholders") !== "false") {
         const pw = sprite.width > 0 ? sprite.width : 32, ph = sprite.height > 0 ? sprite.height : 32;
         const sc = Math.min(maxSize/pw, maxSize/ph, 1), sw = pw*sc, sh = ph*sc, ox = (canvas.width-sw)/2, oy = (canvas.height-sh)/2;
-        itemCtx.drawImage(_getPlaceholderCanvas(pw, ph), ox, oy, sw, sh);
+        itemCtx.drawImage(_getPlaceholderCanvas(), ox, oy, sw, sh);
     }
     item.insertBefore(canvas, item.firstChild);
     delete item.dataset.needsCanvas;

@@ -11,8 +11,8 @@
       "Improved level editor redraws while dragging, resizing, and selecting",
       "Improved level editor NPC image selection",
       "Fixed animation sprite effect cache invalidation",
-      "Cached animation editor missing-sprite placeholders",
-      "Stopped drawing missing-sprite placeholders in animation timeline thumbnails"
+      "Cached animation editor missing-sprite placeholders as a stretched bitmap",
+      "Stopped drawing missing-sprite placeholders and selection handles in animation timeline thumbnails"
     ]
   },
   {
