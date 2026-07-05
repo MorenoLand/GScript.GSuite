@@ -4,15 +4,15 @@
     "date": "2026-07-05",
     "tag": "GSuite",
     "changes": [
-      "Reduced the Windows app exe from about 17.6 MB to about 9.0 MB",
-      "Removed unused Tauri process/log plugin dependencies",
-      "Removed bundled Meslo font files and removed Meslo from editor font choices",
-      "Stopped bundling Monaco editor translation files",
-      "Settings font lists can include installed local fonts",
-      "Improved level editor drag, resize, and selection redraws so repeated mouse movement is coalesced per frame",
-      "Improved level editor NPC hit testing by using cached alpha masks before falling back to canvas pixel reads",
-      "Fixed animation sprite effect caches so cached effect canvases update when the source sprite region changes",
-      "Cached missing-sprite placeholder drawings in the animation editor instead of redrawing the placeholder box and diagonals every frame"
+      "Removed unused desktop runtime plugins",
+      "Removed bundled Meslo fonts",
+      "Removed Monaco editor translation files",
+      "Added installed system fonts to editor font choices",
+      "Improved level editor redraws while dragging, resizing, and selecting",
+      "Improved level editor NPC image selection",
+      "Fixed animation sprite effect cache invalidation",
+      "Cached animation editor missing-sprite placeholders",
+      "Stopped drawing missing-sprite placeholders in animation timeline thumbnails"
     ]
   },
   {

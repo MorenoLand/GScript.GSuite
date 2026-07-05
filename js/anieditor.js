@@ -1109,7 +1109,7 @@ function drawPixelGrid(ctx) {
     ctx.restore();
 }
 
-function drawSprite(ctx, sprite, x, y, level = 0, drawnSprites = null) {
+function drawSprite(ctx, sprite, x, y, level = 0, drawnSprites = null, opts = null) {
     if (level > 3) return;
     if (!sprite) return;
     if (drawnSprites === null) drawnSprites = new Set();
@@ -1129,7 +1129,7 @@ function drawSprite(ctx, sprite, x, y, level = 0, drawnSprites = null) {
     for (let i = 0; i < sprite.m_drawIndex && i < sprite.attachedSprites.length; i++) {
         const attached = sprite.attachedSprites[i];
         const child = currentAnimation.getAniSprite(attached.index, "");
-        if (child && level < 10) drawSprite(ctx, child, attached.offset.x, attached.offset.y, level + 1, drawnSprites);
+        if (child && level < 10) drawSprite(ctx, child, attached.offset.x, attached.offset.y, level + 1, drawnSprites, opts);
     }
     const img = getSpriteImage(sprite);
     if (img) {
@@ -1251,7 +1251,7 @@ function drawSprite(ctx, sprite, x, y, level = 0, drawnSprites = null) {
             ctx.drawImage(img, sprite.left, sprite.top, sprite.width, sprite.height, 0, 0, sprite.width, sprite.height);
         }
         ctx.restore();
-    } else if (!(sprite.type === "CUSTOM" && sprite.customImageName === ".png") && localStorage.getItem("editorShowPlaceholders") !== "false") {
+    } else if (!opts?.skipPlaceholders && !(sprite.type === "CUSTOM" && sprite.customImageName === ".png") && localStorage.getItem("editorShowPlaceholders") !== "false") {
         const placeholderWidth = sprite.width > 0 ? sprite.width : 32;
         const placeholderHeight = sprite.height > 0 ? sprite.height : 32;
         ctx.drawImage(_getPlaceholderCanvas(placeholderWidth, placeholderHeight), 0, 0);
@@ -1259,7 +1259,7 @@ function drawSprite(ctx, sprite, x, y, level = 0, drawnSprites = null) {
     for (let i = sprite.m_drawIndex; i < sprite.attachedSprites.length; i++) {
         const attached = sprite.attachedSprites[i];
         const child = currentAnimation.getAniSprite(attached.index, "");
-        if (child && level < 10) drawSprite(ctx, child, attached.offset.x, attached.offset.y, level + 1, drawnSprites);
+        if (child && level < 10) drawSprite(ctx, child, attached.offset.x, attached.offset.y, level + 1, drawnSprites, opts);
     }
     ctx.restore();
 }
@@ -1316,7 +1316,7 @@ function _spriteTreeCanCompositeCache(sprite, level = 0, seen = null) {
     return true;
 }
 
-function _spriteCompositeSignature(sprite, level = 0, seen = null) {
+function _spriteCompositeSignature(sprite, level = 0, seen = null, opts = null) {
     if (!sprite || level > 10) return "";
     if (!seen) seen = new Set();
     if (seen.has(sprite.index)) return `cycle:${sprite.index}`;
@@ -1327,24 +1327,24 @@ function _spriteCompositeSignature(sprite, level = 0, seen = null) {
         sprite.index, sprite.type, sprite.customImageName, sprite.left, sprite.top, sprite.width, sprite.height,
         sprite.xscale, sprite.yscale, sprite._zoom, sprite.rotation, sprite.mode,
         sprite.colorEffectEnabled ? `${color.r},${color.g},${color.b},${color.a}` : "",
-        localStorage.getItem("editorShowPlaceholders") !== "false" ? "placeholders:on" : "placeholders:off",
+        opts?.skipPlaceholders ? "placeholders:skip" : (localStorage.getItem("editorShowPlaceholders") !== "false" ? "placeholders:on" : "placeholders:off"),
         img ? `${img.src}:${img.naturalWidth || img.width}:${img.naturalHeight || img.height}:${img.complete}` : "noimg",
         sprite.m_drawIndex
     ];
     for (const attached of sprite.attachedSprites || []) {
         const child = currentAnimation ? currentAnimation.getAniSprite(attached.index, "") : null;
-        parts.push(`a:${attached.index}:${attached.offset?.x || 0}:${attached.offset?.y || 0}:${_spriteCompositeSignature(child, level + 1, seen)}`);
+        parts.push(`a:${attached.index}:${attached.offset?.x || 0}:${attached.offset?.y || 0}:${_spriteCompositeSignature(child, level + 1, seen, opts)}`);
     }
     seen.delete(sprite.index);
     return parts.join("|");
 }
 
-function drawSpriteCached(ctx, sprite, x, y) {
+function drawSpriteCached(ctx, sprite, x, y, opts = null) {
     if (!_spriteTreeHasAttachments(sprite) || !_spriteTreeCanCompositeCache(sprite)) {
-        drawSprite(ctx, sprite, x, y);
+        drawSprite(ctx, sprite, x, y, 0, null, opts);
         return;
     }
-    const signature = _spriteCompositeSignature(sprite);
+    const signature = _spriteCompositeSignature(sprite, 0, null, opts);
     let cached = _spriteCompositeCache.get(signature);
     if (!cached) {
         const bounds = _getSpritePreviewBounds(sprite);
@@ -1352,7 +1352,7 @@ function drawSpriteCached(ctx, sprite, x, y) {
         const width = Math.max(1, Math.ceil(bounds.width + pad * 2));
         const height = Math.max(1, Math.ceil(bounds.height + pad * 2));
         if (width > 2048 || height > 2048) {
-            drawSprite(ctx, sprite, x, y);
+            drawSprite(ctx, sprite, x, y, 0, null, opts);
             return;
         }
         const canvas = document.createElement("canvas");
@@ -1360,7 +1360,7 @@ function drawSpriteCached(ctx, sprite, x, y) {
         canvas.height = height;
         const cacheCtx = canvas.getContext("2d");
         cacheCtx.imageSmoothingEnabled = false;
-        drawSprite(cacheCtx, sprite, pad - bounds.x, pad - bounds.y);
+        drawSprite(cacheCtx, sprite, pad - bounds.x, pad - bounds.y, 0, null, opts);
         cached = {canvas, bounds, pad};
         if (_spriteCompositeCache.size >= _spriteCompositeCacheMax) _spriteCompositeCache.clear();
         _spriteCompositeCache.set(signature, cached);
@@ -1734,7 +1734,7 @@ function _schedulePostRestoreRefresh() {
     });
 }
 
-function drawFrame(ctx, frame, dir) {
+function drawFrame(ctx, frame, dir, opts = null) {
     if (!frame) return;
     if (currentAnimation?.isMovieMode) {
         drawMovieFrame(ctx, getMovieRenderFrameId(Math.max(0, currentAnimation.frames.indexOf(frame))));
@@ -1806,7 +1806,7 @@ function drawFrame(ctx, frame, dir) {
                     }
                     ctx.restore();
                 }
-                drawSpriteCached(ctx, sprite, piece.xoffset, piece.yoffset);
+                drawSpriteCached(ctx, sprite, piece.xoffset, piece.yoffset, opts);
             }
         } else if (!_isExportRender && piece.type === "sound") {
             ctx.fillStyle = "#ffff00";
@@ -2755,7 +2755,7 @@ function drawTimeline() {
                 timelineCtx.translate(previewCenterX, previewCenterY);
                 timelineCtx.scale(scale, scale);
                 timelineCtx.translate(-frameCenterX, -frameCenterY);
-                drawFrame(timelineCtx, frame, currentDir);
+                drawFrame(timelineCtx, frame, currentDir, {skipPlaceholders: true});
                 timelineCtx.restore();
             }
         }
@@ -2827,7 +2827,7 @@ function drawTimeline() {
                 timelineCtx.translate(previewCenterX, previewCenterY);
                 timelineCtx.scale(scale, scale);
                 timelineCtx.translate(-frameCenterX, -frameCenterY);
-                drawFrame(timelineCtx, frame, currentDir);
+                drawFrame(timelineCtx, frame, currentDir, {skipPlaceholders: true});
                 timelineCtx.restore();
             }
         }
