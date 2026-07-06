@@ -12,7 +12,8 @@
       "Improved level editor NPC image selection",
       "Fixed animation sprite effect cache invalidation",
       "Cached animation editor missing-sprite placeholders as a stretched bitmap",
-      "Stopped drawing missing-sprite placeholders and selection handles in animation timeline thumbnails"
+      "Stopped drawing missing-sprite placeholders and selection handles in animation timeline thumbnails",
+      "Fixed CI release creation race"
     ]
   },
   {
