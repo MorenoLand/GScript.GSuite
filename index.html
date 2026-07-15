@@ -25,13 +25,21 @@
 <script src="js/gmonaco.js"></script>
 <link rel="stylesheet" href="css/global.css">
 <style>
+#tbParticleEmuBtn img, #tbLevelGenBtn img, #tbShapesBtn img { width:20px !important; height:20px !important; display:block; image-rendering:pixelated; }
 .editor-root { width: 100%; height: 100%; min-width: 0; min-height: 0; flex: 1 1 auto; }
 .editor-root.hidden { display: none !important; }
 
 #editorContainer { width: 100%; min-width: 0; flex: 1 1 auto; overflow: hidden; }
-#levelRoot, #ganiRoot, #beautifyRoot, #setshapeRoot, #levelgenRoot { width: 100%; min-width: 0; max-width: none; align-self: stretch; }
+#levelRoot, #ganiRoot, #beautifyRoot, #setshapeRoot, #levelgenRoot, #particleemuRoot { width: 100%; min-width: 0; max-width: none; align-self: stretch; }
+#levelgenRoot div:has(> [data-lg="newBtn"]), #particleemuRoot .topbar { background:#353535 !important; border-top-color:#404040 !important; }
+#particleemuRoot .topbar { flex:0 0 40px !important; padding:4px 12px !important; }
+#particleemuRoot .topbar button { height:28px !important; padding:0 9px !important; }
+#particleemuRoot .container { padding:0 !important; }
+#particleemuRoot .particleemu-workspace { gap:0 !important; }
+#particleemuRoot .particleemu-splitter { flex:0 0 6px; background:#1a1a1a; border-left:1px solid #3f3f3f; border-right:1px solid #0a0a0a; cursor:col-resize; position:relative; z-index:3; }
+#particleemuRoot .particleemu-splitter:hover,#particleemuRoot .particleemu-splitter:active { background:#4a9eff; }
 .editor-root > .main-container { width: 100%; min-width: 0; max-width: none; flex: 1 1 auto; }
-#beautifyRoot .content-area, #setshapeRoot .content-area, #levelgenRoot .content-area { width: 100%; min-width: 0; max-width: none; }
+#beautifyRoot .content-area, #setshapeRoot .content-area, #levelgenRoot .content-area, #particleemuRoot .content-area { width: 100%; min-width: 0; max-width: none; }
 
 .tab-ctx-menu { position: fixed; background: #2b2b2b; border: 1px solid #404040; box-shadow: 0 2px 8px rgba(0,0,0,0.5); z-index: 100000; min-width: 140px; font-family: 'chevyray',monospace; font-size: 12px; color: #e0e0e0; }
 .tab-ctx-item { padding: 6px 12px; cursor: pointer; }
@@ -45,6 +53,7 @@
   <div class="tb-leading" data-tauri-drag-region></div>
   <div class="tb-title"><img src="favicon.ico"><span id="tbTitle">GSuite</span></div>
   <div class="tb-trailing" data-tauri-drag-region>
+    <button id="tbParticleEmuBtn" title="Particle Emulator" onclick="injectParticleEmu()"><img src="icons/particleemu.png" width="14" height="14" style="image-rendering:pixelated;"></button>
     <button id="tbLevelGenBtn" title="Level Generator" onclick="typeof LevelGenEditor!=='undefined'&&LevelGenEditor.open()"><img src="icons/levelgen.ico" width="14" height="14" style="image-rendering:pixelated;"></button>
     <button id="tbShapesBtn" title="Setshape2 Editor" onclick="typeof SetshapeEditor!=='undefined'&&SetshapeEditor.open()"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAACbUlEQVQ4y52P20uTcRzGn9972MEdHBvOw1JZZk4dTjyXhGEGUgkWFJH1P3QTQXgVne6UThCEFxVBYWVgWCCBQ6IM0cBkouLxTbc5NJzv67b39/66SG2pQfXcfPnC83y/n4fgP1RZd8JAeJ4nIDH+X8OFpQdyKE2063T6S5QmwgIAVNUdE0yWVCMhAGMbTgYQAjAAK5FwS2Zm5sGhgf6LvCC0rq4s3fBV13Z+HRwAceXuE1PtzisAvAD5/R0BwBisNkfxKbfsGdHcseHRQF35oYbHfW9ePZweH2kTIqEFc15Rme/chTOKOz+/eiMFgDCAEQBsKbzk6H/WQWrNU3pDZUW3v7fnqiJH72mUMmHzGdVojijq8vCrAQAgHoth/EMv0uk3+OfNpMwxnDbrSi9YNJrIwuwk45KJ2bYZi63jXVcXrMHPWLSWYH/jWfi/u+LrTGyKhCQOAITtlTcnpRSTYxNw5XkgGS1objyCGSmMZUXt9fe8OOnM2KPuOJAsjufg8RZCmplDia8IgigCAHhB0ADEQ4vzP327hdkGB8fxyHbnQhBFKLKMdUUBRzh9fVOLbtO7KwHZtklzEtpv3eyU12QZYLA50i+X1tRfH/74XtuVIJkkGo3iwe07jxi0+0Vl5a8bmk+vBr586jNZbW1bBIQQHiA81bQdB1SVQlW1YNXho63dTzuOuwuK07wVNXaAtwOAoFFKOY7kTEwHfRPTwR0UaiIBg8nsefv8ybW9Hm+9McWUPTo0GLLY7IGtunpDSkaK2VL4pyrOrNzzdmeWh+O4OGOANDX2UllbvRtamGUEfyczCDEk7ctgjALAD3gS6nZ20OQgAAAAAElFTkSuQmCC" width="14" height="14"></button>
     <button id="tbGmapBtn" title="Gmap Generator" onclick="typeof GmapGenerator!=='undefined'&&GmapGenerator.open()" style="border-left:none;display:inline-flex;align-items:center;gap:4px;"><img src="icons/gmapgen.ico" width="14" height="14" style="image-rendering:pixelated;"></button>
@@ -61,6 +70,7 @@
     <div id="beautifyRoot" class="editor-root" style="display:none;flex:1;min-height:0;height:0;"></div>
     <div id="setshapeRoot" class="editor-root" style="display:none;flex:1;min-height:0;height:0;"></div>
     <div id="levelgenRoot" class="editor-root" style="display:none;flex:1;min-height:0;height:0;"></div>
+    <div id="particleemuRoot" class="editor-root" style="display:none;flex:1;min-height:0;height:0;"></div>
 </div>
     <div id="infoDialog" class="dialog-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:transparent;z-index:10000;justify-content:center;align-items:center;">
     <div class="dialog-content" style="border:2px solid #1a1a1a;width:600px;max-width:92vw;height:420px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 4px 16px rgba(0,0,0,0.9);">
@@ -367,12 +377,22 @@
         const beautifyRoot = document.getElementById('beautifyRoot');
         const setshapeRoot = document.getElementById('setshapeRoot');
         const levelgenRoot = document.getElementById('levelgenRoot');
-        const utilityRoot = type === 'setshape' ? setshapeRoot : (type === 'levelgen' ? levelgenRoot : beautifyRoot);
-        const otherRoots = [beautifyRoot, setshapeRoot, levelgenRoot].filter(root => root && root !== utilityRoot);
+        const particleemuRoot = document.getElementById('particleemuRoot');
+        const utilityRoot = type === 'setshape' ? setshapeRoot : (type === 'levelgen' ? levelgenRoot : (type === 'particleemu' ? particleemuRoot : beautifyRoot));
+        const otherRoots = [beautifyRoot, setshapeRoot, levelgenRoot, particleemuRoot].filter(root => root && root !== utilityRoot);
 
         _utilityShellApp = _currentApp === 'gani' ? 'gani' : 'level';
         setUtilityToolbarState('gani', true);
         setUtilityToolbarState('level', true);
+        document.querySelectorAll('[data-utility-shell-toolbar]').forEach(parkedToolbar => {
+            const ownerRoot = parkedToolbar.dataset.utilityShellToolbar === 'gani' ? ganiRoot : levelRoot;
+            const ownerMain = ownerRoot.querySelector('.main-container');
+            const ownerAnchor = parkedToolbar.dataset.utilityShellToolbar === 'gani' ? ownerMain?.querySelector('.content-area') : document.getElementById('levelToolbar');
+            if (ownerMain && ownerAnchor) ownerMain.insertBefore(parkedToolbar, ownerAnchor);
+            parkedToolbar.removeAttribute('data-utility-shell-toolbar');
+        });
+        [ganiRoot, levelRoot, beautifyRoot, setshapeRoot, levelgenRoot, particleemuRoot].forEach(root => root?.classList.add('hidden'));
+        utilityRoot.classList.remove('hidden');
         ganiRoot.style.display = 'none';
         ganiRoot.style.flex = '';
         ganiRoot.style.height = '0';
@@ -380,48 +400,6 @@
         levelRoot.style.flex = '';
         levelRoot.style.height = '0';
         otherRoots.forEach(root => { root.style.display = 'none'; root.style.flex = ''; root.style.height = '0'; });
-
-        if (_utilityShellApp === 'gani') {
-            ganiRoot.style.display = 'flex';
-            ganiRoot.style.flex = '0 0 auto';
-            ganiRoot.style.height = 'auto';
-            ganiRoot.style.position = 'relative';
-            ganiRoot.style.zIndex = '140';
-            const ganiMc = ganiRoot.querySelector('.main-container');
-            const ganiToolbar = ganiMc?.querySelector(':scope > .toolbar');
-            const ganiContent = ganiMc?.querySelector('.content-area');
-            if (ganiToolbar) {
-                ganiToolbar.style.display = 'flex';
-                ganiToolbar.style.position = 'relative';
-                ganiToolbar.style.zIndex = '120';
-            }
-            if (ganiContent) ganiContent.style.display = 'none';
-            setUtilityToolbarState('gani', false);
-        } else {
-            levelRoot.style.display = 'flex';
-            levelRoot.style.flex = '0 0 auto';
-            levelRoot.style.height = 'auto';
-            levelRoot.style.position = 'relative';
-            levelRoot.style.zIndex = '140';
-            const levelMc = levelRoot.querySelector('.main-container');
-            if (levelMc) {
-                levelMc.style.height = 'auto';
-                levelMc.style.overflow = 'visible';
-                const toolbar = levelMc.querySelector(':scope > .toolbar');
-                const levelToolbar = document.getElementById('levelToolbar');
-                const levelArea = document.getElementById('levelArea');
-                const statusBar = levelMc.querySelector(':scope > .status-bar');
-                if (toolbar) {
-                    toolbar.style.display = 'flex';
-                    toolbar.style.position = 'relative';
-                    toolbar.style.zIndex = '120';
-                }
-                if (levelToolbar) levelToolbar.style.display = 'none';
-                if (levelArea) levelArea.style.display = 'none';
-                if (statusBar) statusBar.style.display = 'none';
-            }
-            setUtilityToolbarState('level', false);
-        }
 
         utilityRoot.style.display = 'flex';
         utilityRoot.style.flex = '1';
@@ -444,7 +422,16 @@
             utilityContent.style.minWidth = '0';
             utilityContent.style.maxWidth = 'none';
         }
-        if (suiteTabs && utilityMc && utilityContent) utilityMc.insertBefore(suiteTabs, utilityContent);
+        if (suiteTabs && utilityMc && utilityContent) {
+            utilityMc.insertBefore(suiteTabs, utilityContent);
+            suiteTabs.style.display = 'flex'; suiteTabs.style.height = '32px'; suiteTabs.style.flex = '0 0 32px';
+        }
+        const sharedToolbar = levelRoot.querySelector(':scope > .main-container > .toolbar');
+        if (sharedToolbar && utilityMc && suiteTabs) {
+            sharedToolbar.dataset.utilityShellToolbar = 'level';
+            utilityMc.insertBefore(sharedToolbar, suiteTabs);
+            sharedToolbar.style.display = 'flex';
+        }
         _currentApp = type;
         setAppTitle(title);
         window.refreshUtilityToolTheme?.();
@@ -458,14 +445,28 @@
         window.SetshapeEditor?.applyTheme?.();
         window.__setshapeEditorInstance?._render?.();
         window.LevelGenEditor?._instance?._render?.();
+        window.ParticleEmuRuntime?.resizeViewport?.();
     };
 
     function switchToTab(type) {
+        if (type !== 'particleemu') {
+            const particleemuRoot = document.getElementById('particleemuRoot');
+            if (particleemuRoot) { particleemuRoot.style.display = 'none'; particleemuRoot.style.flex = ''; particleemuRoot.style.height = '0'; }
+        }
         const suiteTabs = document.getElementById('suiteTabs');
         const ganiRoot = document.getElementById('ganiRoot');
         const levelRoot = document.getElementById('levelRoot');
         const beautifyRoot = document.getElementById('beautifyRoot');
+        const parkedLevelToolbar = document.querySelector('[data-utility-shell-toolbar="level"]');
+        const levelMain = levelRoot?.querySelector('.main-container');
+        const levelToolbar = document.getElementById('levelToolbar');
+        if (parkedLevelToolbar && levelMain && levelToolbar) {
+            levelMain.insertBefore(parkedLevelToolbar, levelToolbar);
+            parkedLevelToolbar.removeAttribute('data-utility-shell-toolbar');
+        }
         if (type === 'gani') {
+            ganiRoot.classList.remove('hidden');
+            levelRoot.classList.add('hidden');
             setUtilityToolbarState('gani', true);
             setUtilityToolbarState('level', true);
             levelRoot.style.display = 'none';
@@ -493,6 +494,8 @@
             ganiRoot.style.zIndex = '';
             const ganiMc = ganiRoot.querySelector('.main-container');
             const ganiContent = ganiMc?.querySelector('.content-area');
+            const parkedGaniToolbar = document.querySelector('[data-utility-shell-toolbar="gani"]');
+            if (parkedGaniToolbar && ganiMc && ganiContent) { ganiMc.insertBefore(parkedGaniToolbar, ganiContent); parkedGaniToolbar.removeAttribute('data-utility-shell-toolbar'); }
             if (suiteTabs && ganiMc && ganiContent) ganiMc.insertBefore(suiteTabs, ganiContent);
             if (ganiContent) ganiContent.style.display = 'flex';
             const ganiToolbar = ganiMc?.querySelector(':scope > .toolbar');
@@ -512,10 +515,12 @@
             setTimeout(() => { if (typeof resizeCanvas === 'function') resizeCanvas(); }, 50);
             setTimeout(() => { if (typeof resizeCanvas === 'function') resizeCanvas(); }, 200);
         } else {
-            if (type === 'beautify' || type === 'setshape' || type === 'levelgen') {
-                showUtilityRoot(type, type === 'beautify' ? 'Code Beautify' : (type === 'setshape' ? 'Setshape2' : 'Level Generator'));
+            if (type === 'beautify' || type === 'setshape' || type === 'levelgen' || type === 'particleemu') {
+                showUtilityRoot(type, type === 'beautify' ? 'Code Beautify' : (type === 'setshape' ? 'Setshape2' : (type === 'levelgen' ? 'Level Generator' : 'ParticleEmu')));
                 return;
             }
+            levelRoot.classList.remove('hidden');
+            ganiRoot.classList.add('hidden');
             setUtilityToolbarState('gani', true);
             setUtilityToolbarState('level', true);
             ganiRoot.style.display = 'none';
@@ -545,7 +550,6 @@
             levelRoot.style.position = '';
             levelRoot.style.zIndex = '';
             const levelMc = levelRoot.querySelector('.main-container');
-            const levelToolbar = document.getElementById('levelToolbar');
             if (suiteTabs && levelMc && levelToolbar) levelMc.insertBefore(suiteTabs, levelToolbar);
             if (levelMc) {
                 levelMc.style.width = '100%';
@@ -566,6 +570,27 @@
     }
     window.switchToTab = switchToTab;
 
+    function ensureParticleEmuSplitter() {
+        const workspace = document.querySelector('#particleemuRoot .particleemu-workspace');
+        if (!workspace || workspace.querySelector('.particleemu-splitter')) return;
+        const left = workspace.querySelector(':scope > .left'), right = workspace.querySelector(':scope > .right');
+        if (!left || !right) return;
+        const splitter = document.createElement('div');
+        splitter.className = 'particleemu-splitter';
+        splitter.onpointerdown = event => {
+            const rect = workspace.getBoundingClientRect(), startWidth = left.getBoundingClientRect().width, startX = event.clientX;
+            splitter.setPointerCapture(event.pointerId); event.preventDefault();
+            splitter.onpointermove = move => {
+                if (!splitter.hasPointerCapture(move.pointerId)) return;
+                const width = Math.max(280, Math.min(rect.width - 280, startWidth + move.clientX - startX));
+                left.style.flex = `0 0 ${width}px`; right.style.flex = '1 1 0'; window.ParticleEmuRuntime?.resizeViewport?.();
+            };
+            splitter.onpointerup = up => { if (splitter.hasPointerCapture(up.pointerId)) splitter.releasePointerCapture(up.pointerId); splitter.onpointermove = null; splitter.onpointerup = null; };
+        };
+        workspace.insertBefore(splitter, right);
+    }
+    document.addEventListener('tabswitch', event => { if (event.detail?.type === 'particleemu') requestAnimationFrame(ensureParticleEmuSplitter); });
+
     function showEmptyEditorState() {
         const suiteTabs = document.getElementById('suiteTabs');
         const ganiRoot = document.getElementById('ganiRoot');
@@ -573,9 +598,11 @@
         const beautifyRoot = document.getElementById('beautifyRoot');
         const setshapeRoot = document.getElementById('setshapeRoot');
         const levelgenRoot = document.getElementById('levelgenRoot');
-        const keepType = _currentApp === 'gani' ? 'gani' : ((_currentApp === 'beautify' || _currentApp === 'setshape' || _currentApp === 'levelgen') ? _utilityShellApp : 'level');
+        const keepType = _currentApp === 'gani' ? 'gani' : ((_currentApp === 'beautify' || _currentApp === 'setshape' || _currentApp === 'levelgen' || _currentApp === 'particleemu') ? _utilityShellApp : 'level');
         if (suiteTabs) suiteTabs.style.display = 'none';
         if (keepType === 'gani') {
+            ganiRoot?.classList.remove('hidden');
+            levelRoot?.classList.add('hidden');
             if (levelRoot) {
                 levelRoot.style.display = 'none';
                 levelRoot.style.flex = '';
@@ -607,6 +634,8 @@
                 if (ganiContent) ganiContent.style.display = 'none';
             }
         } else {
+            levelRoot?.classList.remove('hidden');
+            ganiRoot?.classList.add('hidden');
             if (ganiRoot) {
                 ganiRoot.style.display = 'none';
                 ganiRoot.style.flex = '';
@@ -757,6 +786,23 @@
         }
     }
 
+    function injectParticleEmu() {
+        const particleemuRoot = document.getElementById('particleemuRoot');
+        if (!particleemuRoot.querySelector('.main-container')) {
+            particleemuRoot.innerHTML = '<div class="main-container"><div class="content-area"><div id="particleemuTabHost" style="flex:1;min-height:0;min-width:0;width:100%;display:flex;flex-direction:column;background:#1e1e1e;"></div></div></div>';
+            particleemuRoot.style.display = 'none';
+        }
+        if (!document.querySelector('script[src="js/particleemu.js"]')) {
+            const pes = document.createElement('script');
+            pes.src = 'js/particleemu.js';
+            pes.onload = () => ParticleEmuEditor.open();
+            document.head.appendChild(pes);
+        } else if (typeof ParticleEmuEditor !== 'undefined') {
+            ParticleEmuEditor.open();
+        }
+    }
+    window.injectParticleEmu = injectParticleEmu;
+
     function injectLevel() {
         const levelRoot = document.getElementById('levelRoot');
         if (levelRoot.querySelector('.main-container')) return;
@@ -830,7 +876,11 @@
         const vw = window.innerWidth, vh = window.innerHeight, gap = 12;
         let x = mx - tw / 2;
         let y = my - th - gap;
-        if (y < 4) y = my + gap;
+        if (y < 4) {
+            x = mx + gap + 6;
+            y = my + 6;
+            if (x + tw > vw - 4) x = mx - tw - gap - 6;
+        }
         x = Math.max(4, Math.min(x, vw - tw - 4));
         y = Math.max(4, Math.min(y, vh - th - 4));
         _tooltipEl.style.left = x + 'px';
@@ -978,6 +1028,9 @@
             if (saved.some(t => t?.type === 'levelgen') && !window.tabManager?.getTabsByType?.('levelgen')?.length) {
                 injectLevelGen();
                 wait(() => !!window.LevelGenEditor?.open, () => window.LevelGenEditor.open());
+            }
+            if (saved.some(t => t?.type === 'particleemu') && !window.tabManager?.getTabsByType?.('particleemu')?.length) {
+                injectParticleEmu();
             }
         };
         const restoreActiveSuiteTab = (tries = 60) => {
@@ -1241,6 +1294,7 @@
                 </div>
             </div>
             <div style="display:${_isTauri ? 'none' : 'inline-flex'};align-items:center;gap:0;">
+                <button title="Particle Emulator" id="${p}btnParticleEmu" onclick="injectParticleEmu()"><img src="icons/particleemu.png" width="14" height="14" style="image-rendering:pixelated;"></button>
                 <button title="Level Generator" id="${p}btnLevelGen" onclick="typeof LevelGenEditor!=='undefined'&&LevelGenEditor.open()"><img src="icons/levelgen.ico" width="14" height="14" style="image-rendering:pixelated;"></button>
                 <button title="Setshape2 Editor" id="${p}btnSetshape2" onclick="typeof SetshapeEditor!=='undefined'&&SetshapeEditor.open()"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAACbUlEQVQ4y52P20uTcRzGn9972MEdHBvOw1JZZk4dTjyXhGEGUgkWFJH1P3QTQXgVne6UThCEFxVBYWVgWCCBQ6IM0cBkouLxTbc5NJzv67b39/66SG2pQfXcfPnC83y/n4fgP1RZd8JAeJ4nIDH+X8OFpQdyKE2063T6S5QmwgIAVNUdE0yWVCMhAGMbTgYQAjAAK5FwS2Zm5sGhgf6LvCC0rq4s3fBV13Z+HRwAceXuE1PtzisAvAD5/R0BwBisNkfxKbfsGdHcseHRQF35oYbHfW9ePZweH2kTIqEFc15Rme/chTOKOz+/eiMFgDCAEQBsKbzk6H/WQWrNU3pDZUW3v7fnqiJH72mUMmHzGdVojijq8vCrAQAgHoth/EMv0uk3+OfNpMwxnDbrSi9YNJrIwuwk45KJ2bYZi63jXVcXrMHPWLSWYH/jWfi/u+LrTGyKhCQOAITtlTcnpRSTYxNw5XkgGS1objyCGSmMZUXt9fe8OOnM2KPuOJAsjufg8RZCmplDia8IgigCAHhB0ADEQ4vzP327hdkGB8fxyHbnQhBFKLKMdUUBRzh9fVOLbtO7KwHZtklzEtpv3eyU12QZYLA50i+X1tRfH/74XtuVIJkkGo3iwe07jxi0+0Vl5a8bmk+vBr586jNZbW1bBIQQHiA81bQdB1SVQlW1YNXho63dTzuOuwuK07wVNXaAtwOAoFFKOY7kTEwHfRPTwR0UaiIBg8nsefv8ybW9Hm+9McWUPTo0GLLY7IGtunpDSkaK2VL4pyrOrNzzdmeWh+O4OGOANDX2UllbvRtamGUEfyczCDEk7ctgjALAD3gS6nZ20OQgAAAAAElFTkSuQmCC" width="14" height="14"></button>
                 <button title="Gmap Generator" id="${p}btnGmapGen" onclick="typeof GmapGenerator!=='undefined'&&GmapGenerator.open()"><img src="icons/gmapgen.ico" width="14" height="14" style="image-rendering:pixelated;"></button>

@@ -26,6 +26,8 @@ const TabManager = {
                     ? 'setshapeRoot'
                     : tab.type === 'levelgen'
                         ? 'levelgenRoot'
+                        : tab.type === 'particleemu'
+                            ? 'particleemuRoot'
                     : 'levelRoot';
         const root = document.getElementById(rootId);
         if (!root) return null;
@@ -176,7 +178,18 @@ const TabManager = {
             const activeState = this._pendingActiveState || (activeTab ? { type: activeTab.type, name: activeTab.name, data: this._serializeTabData(activeTab) } : null);
             if (activeState) localStorage.setItem('graalSuiteActiveTab', JSON.stringify(activeState));
             else localStorage.removeItem('graalSuiteActiveTab');
-        } catch (e) { console.warn('[TabManager saveState] failed:', e); }
+        } catch (e) {
+            if (e?.name !== 'QuotaExceededError') { console.warn('[TabManager saveState] failed:', e); return; }
+            try {
+                const compactState = this._tabs.map(tab => ({ type: tab.type, name: tab.name, data: tab.type === 'gani' || tab.type === 'level' ? this._serializeTabData(tab) : tab.type === 'particleemu' ? { kind: 'particleemu' } : {} }));
+                const activeTab = this.getActiveTab();
+                const compactActive = activeTab ? compactState.find(state => state.type === activeTab.type && state.name === activeTab.name) : null;
+                localStorage.removeItem('graalSuiteTabs');
+                localStorage.removeItem('graalSuiteActiveTab');
+                localStorage.setItem('graalSuiteTabs', JSON.stringify(compactState));
+                if (compactActive) localStorage.setItem('graalSuiteActiveTab', JSON.stringify(compactActive));
+            } catch (fallbackError) { console.warn('[TabManager saveState] failed:', fallbackError); }
+        }
     },
 
     clearState() {
@@ -235,6 +248,7 @@ const TabManager = {
         else if (tab.type === 'beautify' && typeof window.closeBeautifyTab === 'function') window.closeBeautifyTab(tab);
         else if (tab.type === 'setshape' && typeof window.closeSetshapeTab === 'function') window.closeSetshapeTab(tab);
         else if (tab.type === 'levelgen' && typeof window.closeLevelGenTab === 'function') window.closeLevelGenTab(tab);
+        else if (tab.type === 'particleemu' && typeof window.closeParticleEmuTab === 'function') window.closeParticleEmuTab(tab);
         this._forceRemoveTab(id);
     },
 
@@ -266,6 +280,7 @@ const TabManager = {
             else if (prev.type === 'beautify' && typeof window.deactivateBeautifyTab === 'function') window.deactivateBeautifyTab(prev);
             else if (prev.type === 'setshape' && typeof window.deactivateSetshapeTab === 'function') window.deactivateSetshapeTab(prev);
             else if (prev.type === 'levelgen' && typeof window.deactivateLevelGenTab === 'function') window.deactivateLevelGenTab(prev);
+            else if (prev.type === 'particleemu' && typeof window.deactivateParticleEmuTab === 'function') window.deactivateParticleEmuTab(prev);
         }
         this._activeTabId = id;
         if (tab.type === 'gani' && typeof window.activateGaniTab === 'function') {
@@ -282,9 +297,11 @@ const TabManager = {
             window.activateSetshapeTab(tab);
         } else if (tab.type === 'levelgen' && typeof window.activateLevelGenTab === 'function') {
             window.activateLevelGenTab(tab);
+        } else if (tab.type === 'particleemu' && typeof window.activateParticleEmuTab === 'function') {
+            window.activateParticleEmuTab(tab);
         }
         if (typeof window.switchToTab === 'function') {
-            const targetUI = tab.type === 'gani' ? 'gani' : (tab.type === 'beautify' ? 'beautify' : (tab.type === 'setshape' ? 'setshape' : (tab.type === 'levelgen' ? 'levelgen' : 'level')));
+            const targetUI = tab.type === 'gani' ? 'gani' : (tab.type === 'beautify' ? 'beautify' : (tab.type === 'setshape' ? 'setshape' : (tab.type === 'levelgen' ? 'levelgen' : (tab.type === 'particleemu' ? 'particleemu' : 'level'))));
             if (targetUI === 'gani' && window.levelEditor?._playMode) window.levelEditor.exitPlayMode();
             window.switchToTab(targetUI);
         }
@@ -453,6 +470,7 @@ const TabManager = {
             gani: { src: 'icons/user.svg', cls: 'svg-icon' },
             beautify: { src: 'icons/code.svg', cls: 'svg-icon' },
             levelgen: { src: 'icons/levelgen.ico', cls: '' },
+            particleemu: { src: 'icons/particleemu.png', cls: '' },
             setshape: { src: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAACbUlEQVQ4y52P20uTcRzGn9972MEdHBvOw1JZZk4dTjyXhGEGUgkWFJH1P3QTQXgVne6UThCEFxVBYWVgWCCBQ6IM0cBkouLxTbc5NJzv67b39/66SG2pQfXcfPnC83y/n4fgP1RZd8JAeJ4nIDH+X8OFpQdyKE2063T6S5QmwgIAVNUdE0yWVCMhAGMbTgYQAjAAK5FwS2Zm5sGhgf6LvCC0rq4s3fBV13Z+HRwAceXuE1PtzisAvAD5/R0BwBisNkfxKbfsGdHcseHRQF35oYbHfW9ePZweH2kTIqEFc15Rme/chTOKOz+/eiMFgDCAEQBsKbzk6H/WQWrNU3pDZUW3v7fnqiJH72mUMmHzGdVojijq8vCrAQAgHoth/EMv0uk3+OfNpMwxnDbrSi9YNJrIwuwk45KJ2bYZi63jXVcXrMHPWLSWYH/jWfi/u+LrTGyKhCQOAITtlTcnpRSTYxNw5XkgGS1objyCGSmMZUXt9fe8OOnM2KPuOJAsjufg8RZCmplDia8IgigCAHhB0ADEQ4vzP327hdkGB8fxyHbnQhBFKLKMdUUBRzh9fVOLbtO7KwHZtklzEtpv3eyU12QZYLA50i+X1tRfH/74XtuVIJkkGo3iwe07jxi0+0Vl5a8bmk+vBr586jNZbW1bBIQQHiA81bQdB1SVQlW1YNXho63dTzuOuwuK07wVNXaAtwOAoFFKOY7kTEwHfRPTwR0UaiIBg8nsefv8ybW9Hm+9McWUPTo0GLLY7IGtunpDSkaK2VL4pyrOrNzzdmeWh+O4OGOANDX2UllbvRtamGUEfyczCDEk7ctgjALAD3gS6nZ20OQgAAAAAElFTkSuQmCC', cls: '' }
         };
         const icon = iconMap[entry.type];

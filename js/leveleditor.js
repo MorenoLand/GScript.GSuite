@@ -7,7 +7,7 @@ const _DEFAULT_KB = {
     delete:'Delete', playMode:'F4', about:'F1', settings:'F2',
     selectTool:'s', drawTool:'d', eraseTool:'e', fillTool:'f',
     toggleGrid:'g', centerView:'c', snapGrid:'m', swapTiles:'x',
-    openChat:'Enter', debugInfo:'1', debugOverlay:'2', editBypass:'3', grab:'e',
+    openChat:'Enter', debugInfo:'1', debugOverlay:'2', editBypass:'3', grab:'e', hide:'e',
 };
 function _matchKB(e, b) {
     if (!b) return false;
@@ -60,6 +60,11 @@ function parseNPCScript(script) {
     const td2Ms = [...script.matchAll(/addtiledef2\s*\(\s*["']([^"']+)["']\s*,\s*["']([^"']+)["']\s*,\s*(\d+)\s*,\s*(\d+)/gi)];
     if (td2Ms.length) r.tiledefs2 = td2Ms.map(m => ({ img: m[1].trim(), levelstart: m[2].trim(), x: +m[3], y: +m[4] }));
     const nM = script.match(/this\.nick(?:name)?\s*=\s*["']([^"']*)["']/i); if (nM) r.nick = nM[1];
+    const touchBody = script.match(/function\s+onPlayerTouchsMe\s*\(\s*\)\s*\{([\s\S]*?)\}/i)?.[1] || script.match(/if\s*\(\s*playertouchsme\s*\)\s*\{?([\s\S]*?)(?:\}|$)/i)?.[1];
+    const touchSay = touchBody?.match(/say2\s*(?:\(\s*)?(?:"([\s\S]*?)"|'([\s\S]*?)'|([^;\n)]+))/i);
+    if (touchSay) r.touchText = (touchSay[1] ?? touchSay[2] ?? touchSay[3] ?? '').trim().replace(/#b/gi, '\n');
+    const touchSign = touchBody?.match(/\bsay\s*(?:\(\s*)?(\d+)\s*\)?\s*;/i);
+    if (touchSign) r.touchSignIndex = +touchSign[1];
     const sipM = script.match(/set(?:img|gif)part\s*\(\s*["']([^"']+)["']\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
     if (sipM) r.imgpart = { img: sipM[1], x: +sipM[2], y: +sipM[3], w: +sipM[4], h: +sipM[5] };
     const szM = script.match(/setzoomeffect\s*[(]?\s*(-?[\d.]+)/i); if (szM) r.zoom = parseFloat(szM[1]);
@@ -95,8 +100,17 @@ function parseGaniLE(txt) {
         if (!t || t.startsWith('GANI') || t === 'CONTINUOUS') continue;
         if (t === 'LOOP') { loop = true; continue; }
         if (t.startsWith('SETBACKTO')) { const _sb = t.split(/\s+/)[1] || null; setbackto = _sb ? (_sb.includes('.') ? _sb : _sb.toLowerCase() + '.gani') : null; continue; }
-        if (t.startsWith('WAIT')) { const gi = Math.floor(rawFrames.length / 4) - 1; if (gi >= 0) rawWaits[gi] = parseInt(t.split(/\s+/)[1]) || 1; continue; }
-        if (t.startsWith('PLAYSOUND')) { if (inAni) pendingSound = t.substring(9).trim().split(/\s+/)[0]; continue; }
+        if (t.startsWith('WAIT')) { const gi = Math.floor(rawFrames.length / 4) - 1; if (gi >= 0) rawWaits[gi] = (parseInt(t.split(/\s+/)[1]) || 1) + 1; continue; }
+        if (t.startsWith('PLAYSOUND')) {
+            if (inAni) {
+                const sound = t.substring(9).trim().split(/\s+/)[0];
+                const current = Math.floor((rawFrames.length - 1) / 4);
+                const target = Math.max(0, current - 1) * 4;
+                if (rawFrames[target]) rawFrames[target].sound = sound;
+                else pendingSound = sound;
+            }
+            continue;
+        }
         if (t === 'ANI') { inAni = true; continue; }
         if (t === 'ANIEND') break;
         if (t.startsWith('SPRITE ')) { const p = t.split(/\s+/); sprites[+p[1]] = { type: p[2], sx: +p[3], sy: +p[4], w: +p[5], h: +p[6] }; continue; }
@@ -129,6 +143,7 @@ const BADDY_CROPS = [
 ];
 
 const _SIGN_TEXT = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!?-.,#>()#####"\':/~&### <####;\n';
+const _SIGN_WIDTHS = [6,6,6,6,6,6,6,6,3,6,6,6,7,6,6,6,6,6,6,7,6,7,7,7,7,6,6,6,6,6,6,6,6,6,3,5,6,3,7,6,6,6,6,5,6,6,6,7,7,7,7,6,6,4,6,6,6,6,6,6,3,7,6,4,4,6,6,6,6,6,6,8,8,5,7,7,7,7,4,3,7,8,7,8,8,8,4,6,8,8,8,8,6,0,0,0];
 const _SIGN_SYMS = 'ABXYudlrhxyz#4.';
 const _SIGN_CTAB = [91,92,93,94,77,78,79,80,74,75,71,72,73,86,86,87,88,67];
 const _SIGN_CTABI = [0,1,2,3,4,5,6,7,8,10,11,12,13,15,17];
@@ -592,7 +607,7 @@ class Level {
 }
 
 class LevelEditor {
-    static _PREFIXED_IDS = new Set(['bgColorInput','btnAbout','btnBeautify','btnCenterView','btnCloseAll','btnColorScheme','btnCustomCSS','btnGmapGen','btnLevelGen','btnNew','btnOpen','btnOpenDefault','btnPlay','btnPlayerSetup','btnRedo','btnReset','btnSave','btnSaveAll','btnSaveAs','btnSetshape2','btnSettings','btnUndo','btnWorkingDir','colorSchemeDropdown','fileInput','folderInput','imageInput','mainCanvas','mainSplitter','switchBtn','zoomSlider']);
+    static _PREFIXED_IDS = new Set(['bgColorInput','btnAbout','btnBeautify','btnCenterView','btnCloseAll','btnColorScheme','btnCustomCSS','btnGmapGen','btnLevelGen','btnParticleEmu','btnNew','btnOpen','btnOpenDefault','btnPlay','btnPlayerSetup','btnRedo','btnReset','btnSave','btnSaveAll','btnSaveAs','btnSetshape2','btnSettings','btnUndo','btnWorkingDir','colorSchemeDropdown','fileInput','folderInput','imageInput','mainCanvas','mainSplitter','switchBtn','zoomSlider']);
     $(id) { return document.getElementById(LevelEditor._PREFIXED_IDS.has(id) ? 'level-' + id : id); }
     constructor() {
         this.levels = [];
@@ -1319,6 +1334,16 @@ class LevelEditor {
         if (e.button === 2) {
             if (this.selectedTilesetTiles) {
                 this._clearSelectedTileStampPreview();
+                e.preventDefault();
+                return;
+            }
+            const link = this.level.objects.filter(o => o.type === 'link').find(o => {
+                const p = o.properties || {}, w = p.width || 2, h = p.height || 2;
+                return coords.x >= o.x && coords.x < o.x + w && coords.y >= o.y && coords.y < o.y + h;
+            });
+            if (link) {
+                this.setSelectedObject(link);
+                this.openLinkEditor(link);
                 e.preventDefault();
                 return;
             }
@@ -2215,6 +2240,20 @@ class LevelEditor {
             this.drawGmapDividers();
         }
 
+        if (this._playMode && this._player?.nick && this._player.nickTimer > 0) {
+            const p = this._player, _gs = this._getSettings();
+            const _nickSz = Math.max(_gs.nickFontSize * this.zoom, 8);
+            const _sprCX = (p._ganiOX ?? 0) + (p._imgW ?? 0) / 2;
+            const _feetY = p.y + (p._ganiOY ?? 0) + (p._imgH ?? 48);
+            this.ctx.save();
+            this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+            this.ctx.textAlign = 'center';
+            this.ctx.shadowColor = 'rgba(20,40,200,1)'; this.ctx.shadowOffsetX = 2; this.ctx.shadowOffsetY = 2; this.ctx.shadowBlur = 0;
+            this.ctx.font = `bold ${_nickSz}px 'TempusSansITC','Tempus Sans ITC',sans-serif`;
+            this.ctx.fillStyle = '#fff'; this.ctx.fillText(p.nick + (p.guild ? ` (${p.guild})` : ''), (p.x + _sprCX) * this.zoom + this.panX, _feetY * this.zoom + this.panY + _nickSz - 6);
+            this.ctx.restore();
+        }
+
         this.drawObjects();
 
         if (this.selectionStartX >= 0 && this.selectionEndX >= 0) {
@@ -2374,17 +2413,13 @@ class LevelEditor {
             }
             this.ctx.restore();
             const _gs = this._getSettings();
-            const _nickSz = Math.max(_gs.nickFontSize * this.zoom, 8), _chatSz = Math.max(_gs.chatFontSize * this.zoom, 8);
+            const _chatSz = Math.max(_gs.chatFontSize * this.zoom, 8);
             const _cx = (p.x + _sprCX) * this.zoom + this.panX;
             this.ctx.textAlign = 'center';
             this.ctx.shadowColor = 'rgba(20,40,200,1)'; this.ctx.shadowOffsetX = 2; this.ctx.shadowOffsetY = 2; this.ctx.shadowBlur = 0;
             if (this._playerChat) {
                 this.ctx.font = `bold ${_chatSz}px 'TempusSansITC','Tempus Sans ITC',sans-serif`;
                 this.ctx.fillStyle = '#fff'; this.ctx.fillText(this._playerChat, _cx, _chatHeadY * this.zoom + this.panY - 16);
-            }
-            if (p.nick && p.nickTimer > 0) {
-                this.ctx.font = `bold ${_nickSz}px 'TempusSansITC','Tempus Sans ITC',sans-serif`;
-                this.ctx.fillStyle = '#fff'; this.ctx.fillText(p.nick + (p.guild ? ` (${p.guild})` : ''), _cx, _chatFeetY * this.zoom + this.panY + _nickSz + 4);
             }
             this.ctx.shadowColor = 'transparent'; this.ctx.shadowOffsetX = 0; this.ctx.shadowOffsetY = 0; this.ctx.textAlign = 'left';
             const _tw = this.level.tileWidth || 16, _th = this.level.tileHeight || 16;
@@ -2411,12 +2446,6 @@ class LevelEditor {
             this.ctx.font = '13px monospace'; this.ctx.fillStyle = 'rgba(0,0,0,0.6)';
             this.ctx.fillRect(6, this.canvas.height - 22, this.ctx.measureText(dbg).width + 8, 16);
             this.ctx.fillStyle = '#aef'; this.ctx.fillText(dbg, 10, this.canvas.height - 9);
-        }
-        if (this._editBypass) {
-            const _em = 'EDIT MODE'; this.ctx.font = 'bold 12px monospace';
-            const _ew = this.ctx.measureText(_em).width;
-            this.ctx.fillStyle = 'rgba(0,0,0,0.55)'; this.ctx.fillRect(this.canvas.width - _ew - 14, 6, _ew + 8, 18);
-            this.ctx.fillStyle = '#ffcc44'; this.ctx.fillText(_em, this.canvas.width - _ew - 10, 19);
         }
         this._syncPlayGifOverlays();
     }
@@ -3012,6 +3041,7 @@ class LevelEditor {
         if (tilePixelSize < 4 && (this.level.width > 64 || this.level.height > 64)) {
             const cached = this._getLayerCache(layerIndex);
             this.ctx.drawImage(cached, 0, 0, cached.width, cached.height, 0, 0, this.level.width * tw, this.level.height * th);
+            if (this._playMode) this._drawPlayFlowers(layerIndex, tw, th, Math.floor(this.level.tilesetImage.width / tw));
             return;
         }
         const tilesPerRow = Math.floor(this.level.tilesetImage.width / tw);
@@ -3024,12 +3054,41 @@ class LevelEditor {
         for (let y = startY; y < endY; y += skip) {
             for (let x = startX; x < endX; x += skip) {
                 const tileIndex = layer.tiles[y * this.level.width + x];
-                const drawIndex = tileIndex < 0 ? (layerIndex === 0 ? 0 : -1) : tileIndex;
+                const drawIndex = tileIndex < 0 ? (layerIndex === 0 ? 0 : -1) : (this._playMode ? this._getPlayFlowerFrame(tileIndex, x, y) : tileIndex);
                 if (drawIndex < 0) continue;
                 const tileX = (drawIndex % tilesPerRow) * tw;
                 const tileY = Math.floor(drawIndex / tilesPerRow) * th;
                 this.ctx.drawImage(this.level.tilesetImage, tileX, tileY, tw, th, x * tw, y * th, tw * skip, th * skip);
             }
+        }
+    }
+
+    _getPlayFlowerFrame(tileIndex, x, y) {
+        if (tileIndex !== 128 && tileIndex !== 453 && tileIndex !== 454 && tileIndex !== 455) return tileIndex;
+        const frameTime = 0.14 + ((x * 17 + y * 31) % 7) * 0.018;
+        const frameOffset = ((x * 43 + y * 19) % 23) * 0.037;
+        return [128, 453, 454, 455][Math.floor(((this._playFlowerTime || 0) + frameOffset) / frameTime) % 4];
+    }
+
+    _collectPlayFlowers() {
+        this._playFlowersByLayer = this.level.layers.map(layer => {
+            const flowers = [];
+            layer.tiles.forEach((tileIndex, index) => { if (tileIndex === 128 || tileIndex === 453 || tileIndex === 454 || tileIndex === 455) flowers.push([index % this.level.width, Math.floor(index / this.level.width)]); });
+            return flowers;
+        });
+    }
+
+    _drawPlayFlowers(layerIndex, tw, th, tilesPerRow) {
+        const flowers = this._playFlowersByLayer?.[layerIndex];
+        if (!this._getSettings().playFlowers || !flowers?.length) return;
+        const minX = Math.floor(-this.panX / (this.zoom * tw)) - 1, minY = Math.floor(-this.panY / (this.zoom * th)) - 1;
+        const maxX = minX + Math.ceil(this.canvas.width / (this.zoom * tw)) + 2, maxY = minY + Math.ceil(this.canvas.height / (this.zoom * th)) + 2;
+        const layer = this.level.layers[layerIndex];
+        for (const [x, y] of flowers) {
+            if (x < minX || y < minY || x > maxX || y > maxY) continue;
+            const drawIndex = this._getPlayFlowerFrame(layer.tiles[y * this.level.width + x], x, y);
+            const tileX = (drawIndex % tilesPerRow) * tw, tileY = Math.floor(drawIndex / tilesPerRow) * th;
+            this.ctx.drawImage(this.level.tilesetImage, tileX, tileY, tw, th, x * tw, y * th, tw, th);
         }
     }
 
@@ -4367,6 +4426,54 @@ class LevelEditor {
         this._chatInput.value = ''; this._chatInput.focus();
     }
 
+    _createPlaySignUI() {
+        const panel = document.createElement('canvas');
+        panel.id = '_playSignPanel';
+        panel.width = 384; panel.height = 144;
+        panel.style.cssText = 'display:none;position:fixed;top:62%;left:50%;transform:translate(-50%,-50%);width:min(384px,calc(100vw - 32px));height:auto;image-rendering:pixelated;z-index:9999;';
+        document.body.appendChild(panel);
+        this._signPanel = panel;
+    }
+
+    _showPlaySign(sign) {
+        const lines = String(sign._playText ?? sign.properties?.text ?? '').replace(/\r/g, '').split('\n').filter(Boolean);
+        if (!lines.length) return false;
+        this._activePlaySign = { lines, page: 0 };
+        this._renderPlaySign();
+        return true;
+    }
+
+    _renderPlaySign() {
+        const active = this._activePlaySign;
+        if (!active || !this._signPanel) return;
+        this._signPanel.style.display = 'block';
+        const ctx = this._signPanel.getContext('2d'), img = this._getGaniImage('letters.png');
+        ctx.clearRect(0, 0, 384, 144);
+        if (!img?.complete || !img.naturalWidth) { img?.addEventListener('load', () => this._renderPlaySign(), { once: true }); return; }
+        const glyph = (index, x, y) => ctx.drawImage(img, (index % 16) * 16, Math.floor(index / 16) * 32, 16, 32, Math.round(x), Math.round(y), 16, 32);
+        ctx.fillStyle = 'rgb(255,247,206)'; ctx.fillRect(16, 24, 352, 88); ctx.fillRect(24, 16, 336, 8);
+        for (let column = 1; column < 23; column++) { glyph(0x64, column * 16, 0); glyph(0x65, column * 16, 112); }
+        for (let row = 1; row <= 3; row++) { glyph(0x66, 0, row * 32); glyph(0x67, 368, row * 32); }
+        glyph(0x60, 0, 0); glyph(0x61, 368, 0); glyph(0x62, 0, 112); glyph(0x63, 368, 112);
+        active.lines.slice(active.page, active.page + 3).forEach((line, row) => {
+            let x = 16;
+            for (let i = 0; i < line.length; i++) {
+                const index = _SIGN_TEXT.indexOf(line[i]);
+                if (index < 0) continue;
+                if (line[i] !== ' ') glyph(index, x, 18 + row * 32);
+                x += _SIGN_WIDTHS[index] * 1.78 + (line[i] >= 'A' && line[i] <= 'Z' && line[i + 1] >= 'a' && line[i + 1] <= 'z' ? 1 : 0);
+            }
+        });
+    }
+
+    _advancePlaySign() {
+        if (!this._activePlaySign) return false;
+        this._playSound('nextpage.wav');
+        if (this._activePlaySign.page + 3 < this._activePlaySign.lines.length) { this._activePlaySign.page += 3; this._renderPlaySign(); }
+        else { this._activePlaySign = null; if (this._signPanel) this._signPanel.style.display = 'none'; }
+        return true;
+    }
+
     _closePlayChat() {
         this._chatOpen = false;
         this._chatBar.style.display = 'none';
@@ -4420,7 +4527,9 @@ class LevelEditor {
             uiFontSize: d.uiFontSize ?? (parseInt(localStorage.getItem('editorFontSize') || '12', 10) || 12),
             uiFontStyle: d.uiFontStyle ?? localStorage.getItem('editorFontStyle') ?? 'normal',
             uiScale: d.uiScale ?? 1,
-            voidColor: d.voidColor ?? '#000000'
+            voidColor: d.voidColor ?? '#000000',
+            playFlowers: d.playFlowers ?? true,
+            objectPickup: d.objectPickup ?? true
         };
     }
     _saveSettings(s) {
@@ -4521,7 +4630,7 @@ class LevelEditor {
             { section: 'Play Mode' },
             { key:'openChat', label:'Open Chat' }, { key:'debugInfo', label:'Debug Info' },
             { key:'debugOverlay', label:'Debug Overlay' }, { key:'editBypass', label:'Edit Bypass' },
-            { key:'grab', label:'Grab/Interact' },
+            { key:'grab', label:'Grab/Interact' }, { key:'hide', label:'Hide/Unhide' },
         ];
         const kbRows = _kbActions.map(a => a.section
             ? `<div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;margin:10px 0 4px;">${a.section}</div>`
@@ -4547,6 +4656,9 @@ class LevelEditor {
                 <div style="border-top:1px solid #1a1a1a;padding-top:10px;font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">Play Mode — Labels</div>
                 ${sliderRow('Nick font size','_stNick',s.nickFontSize,8,48)}
                 ${sliderRow('Chat font size','_stChat',s.chatFontSize,8,48)}
+                <div style="border-top:1px solid #1a1a1a;padding-top:10px;font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">Play Mode</div>
+                <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="_stPlayFlowers" ${s.playFlowers ? 'checked' : ''}><span>Animate Flowers</span></label>
+                <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="_stObjectPickup" ${s.objectPickup ? 'checked' : ''}><span>Enable Object Pickup</span></label>
                 ${_isTauri ? `<div style="border-top:1px solid #1a1a1a;padding-top:10px;font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">System</div><div style="display:flex;align-items:center;gap:10px;"><button id="_stRegAssoc" style="padding:4px 14px;cursor:pointer;background:#353535;color:#ddd;border:1px solid #0a0a0a;border-top:1px solid #555;border-left:1px solid #555;font-family:chevyray,monospace;font-size:12px;">Register File Associations</button><span id="_stRegAssocStatus" style="font-size:11px;color:#6c6;"></span></div>` : ''}
             </div>
             <div id="_stKeybinds" style="display:none;padding:12px 16px;overflow-y:auto;font-family:chevyray,monospace;">
@@ -4576,7 +4688,7 @@ class LevelEditor {
                 select.value = have.has(s.uiFont) || [...select.options].some(o => o.value === s.uiFont) ? s.uiFont : 'chevyray';
             }).catch(() => {});
         }
-        const readSettings = () => ({ nickFontSize: parseInt(box.querySelector('#_stNick_n').value)||20, chatFontSize: parseInt(box.querySelector('#_stChat_n').value)||20, uiFont: box.querySelector('#_stUIFont').value, uiFontSize: parseInt(box.querySelector('#_stUIFontSize').value)||12, uiFontStyle: box.querySelector('#_stUIFontStyle').value, uiScale: Math.round(parseInt(box.querySelector('#_stUIScale_n').value)||100) / 100, voidColor: box.querySelector('#_stVoidColor').value || '#000000' });
+        const readSettings = () => ({ nickFontSize: parseInt(box.querySelector('#_stNick_n').value)||20, chatFontSize: parseInt(box.querySelector('#_stChat_n').value)||20, uiFont: box.querySelector('#_stUIFont').value, uiFontSize: parseInt(box.querySelector('#_stUIFontSize').value)||12, uiFontStyle: box.querySelector('#_stUIFontStyle').value, uiScale: Math.round(parseInt(box.querySelector('#_stUIScale_n').value)||100) / 100, voidColor: box.querySelector('#_stVoidColor').value || '#000000', playFlowers: box.querySelector('#_stPlayFlowers').checked, objectPickup: box.querySelector('#_stObjectPickup').checked });
         const syncSlider = (id) => {
             const r = box.querySelector(`#${id}_r`), n = box.querySelector(`#${id}_n`);
             r.addEventListener('input', () => { n.value = r.value; const ns = readSettings(); this._saveSettings(ns); this._applyUISettings(ns); this.requestRender(); });
@@ -4585,6 +4697,7 @@ class LevelEditor {
         syncSlider('_stNick'); syncSlider('_stChat'); syncSlider('_stUIScale');
         ['#_stUIFont','#_stUIFontSize','#_stUIFontStyle'].forEach(sel => box.querySelector(sel).addEventListener('change', () => { const ns = readSettings(); this._saveSettings(ns); this._applyUISettings(ns); }));
         box.querySelector('#_stVoidColor').addEventListener('input', () => { const ns = readSettings(); this._saveSettings(ns); this.requestRender(); });
+        ['#_stPlayFlowers','#_stObjectPickup'].forEach(sel => box.querySelector(sel).addEventListener('change', () => { const ns = readSettings(); this._saveSettings(ns); this.requestRender(); }));
         box.querySelector('#_stDefaults').onclick = () => {
             const defaults = {
                 nickFontSize: 20,
@@ -4593,7 +4706,9 @@ class LevelEditor {
                 uiFontSize: 12,
                 uiFontStyle: 'normal',
                 uiScale: 1,
-                voidColor: '#000000'
+                voidColor: '#000000',
+                playFlowers: true,
+                objectPickup: true
             };
             box.querySelector('#_stNick_r').value = defaults.nickFontSize;
             box.querySelector('#_stNick_n').value = defaults.nickFontSize;
@@ -4605,6 +4720,8 @@ class LevelEditor {
             box.querySelector('#_stUIScale_r').value = 100;
             box.querySelector('#_stUIScale_n').value = 100;
             box.querySelector('#_stVoidColor').value = defaults.voidColor;
+            box.querySelector('#_stPlayFlowers').checked = defaults.playFlowers;
+            box.querySelector('#_stObjectPickup').checked = defaults.objectPickup;
             this._saveSettings(defaults);
             this._applyUISettings(defaults);
             box.querySelectorAll('select').forEach(select => {
@@ -4649,13 +4766,15 @@ class LevelEditor {
             };
             btn.oncontextmenu = (ev) => { ev.preventDefault(); const cur = this._getKeybinds(); cur[btn.dataset.action] = _DEFAULT_KB[btn.dataset.action]; this._saveKeybinds({ ...cur }); this._updateToolButtonTooltips(); btn.textContent = _fmtKB(_DEFAULT_KB[btn.dataset.action]); };
         });
-        const close = () => { if (box.parentNode) box.parentNode.removeChild(box); };
-        box.querySelector('#_stClose').onclick = () => { this._saveSettings(_snapSettings); this._saveKeybinds({ ..._snapKB }); this.requestRender(); close(); };
-        box.querySelector('#_stCancel').onclick = () => { this._saveSettings(_snapSettings); this._saveKeybinds({ ..._snapKB }); this.requestRender(); close(); };
-        box.querySelector('#_stOk').onclick = () => { this._saveSettings(readSettings()); close(); };
+        const close = () => box.remove();
+        const cancel = e => { e?.preventDefault(); e?.stopPropagation(); close(); this._saveSettings(_snapSettings); this._saveKeybinds({ ..._snapKB }); this.requestRender(); };
+        box.querySelector('#_stClose').onmousedown = e => e.stopPropagation();
+        box.querySelector('#_stClose').onclick = cancel;
+        box.querySelector('#_stCancel').onclick = cancel;
+        box.querySelector('#_stOk').onclick = e => { e.preventDefault(); e.stopPropagation(); close(); this._saveSettings(readSettings()); };
         const tb = box.querySelector('#_stTitlebar');
         let _dx = 0, _dy = 0, _drag = false;
-        tb.addEventListener('mousedown', e => { _drag = true; _dx = e.clientX - box.offsetLeft; _dy = e.clientY - box.offsetTop; tb.style.cursor = 'grabbing'; e.preventDefault(); });
+        tb.addEventListener('mousedown', e => { if (e.target.closest('button')) return; _drag = true; _dx = e.clientX - box.offsetLeft; _dy = e.clientY - box.offsetTop; tb.style.cursor = 'grabbing'; e.preventDefault(); });
         document.addEventListener('mousemove', e => { if (!_drag) return; box.style.left = (e.clientX-_dx)+'px'; box.style.top = (e.clientY-_dy)+'px'; });
         document.addEventListener('mouseup', () => { _drag = false; tb.style.cursor = 'grab'; });
     }
@@ -4925,10 +5044,11 @@ class LevelEditor {
         const spawnX = (this.canvas.width / 2 - this.panX) / this.zoom;
         const spawnY = (this.canvas.height / 2 - this.panY) / this.zoom;
         this._player = { x: spawnX, y: spawnY, dir: 2, gani: 'idle.gani', frame: 0, frameTimer: 0, speed: tw * 12, nick: null, nickTimer: 0 };
+        this._playFlowerTime = 0; this._collectPlayFlowers(); this._playLiftRespawns = []; this._playThrownObjects = []; this._playLeaps = [];
         if (!this._playerSettings) { try { this._playerSettings = JSON.parse(localStorage.getItem('graal_playerSettings') || 'null'); } catch(e) {} }
         if (!this._playerSettings) this._playerSettings = this._defaultPlayerSettings();
         const _ps = this._playerSettings, _pG = _ps.ganis || {};
-        const _preloadGanis = [...new Set(['idle.gani','walk.gani','push.gani','pull.gani','grab.gani','sword.gani','sit.gani',_pG.idle,_pG.walk,_pG.push,_pG.pull,_pG.grab,_pG.sword,_pG.sit,_pG.sleep].filter(Boolean))];
+        const _preloadGanis = [...new Set(['idle.gani','walk.gani','push.gani','pull.gani','grab.gani','sword.gani','sit.gani','swim.gani','lift.gani','carry.gani','carrystill.gani',_pG.idle,_pG.walk,_pG.push,_pG.pull,_pG.grab,_pG.sword,_pG.sit,_pG.sleep].filter(Boolean))];
         for (const g of _preloadGanis) this._drawGaniNPC(-9999, -9999, g, 0, 0, {}, {});
         this._playerOverrides = { ATTR1: _ps.ATTR1||'', SHIELD: _ps.SHIELD||'no-shield.png', SWORD: _ps.SWORD||'sword1.png', HEAD: _ps.HEAD||'moondeath-head.png', BODY: _ps.BODY||'suit32.png', colors: _ps.colors||[12,null,null,null,null] };
         if (_ps.nick) { this._player.nick = _ps.nick; this._player.nickTimer = 5; }
@@ -4936,6 +5056,9 @@ class LevelEditor {
         this._chatOpen = false; this._chatMsg = ''; this._chatHistory = []; this._chatHistoryIdx = -1;
         this._playerChat = null; this._playerChatTimer = 0;
         this._createPlayChatUI();
+        this._createPlaySignUI();
+        this._signCanvasClick = e => { if (e.button === 0 && this._activePlaySign) { this._advancePlaySign(); if (this._player) this._player._signReopenLock = true; } };
+        this.canvas.addEventListener('mousedown', this._signCanvasClick);
         this._playKeyDown = (e) => {
             const _ae = document.activeElement;
             if (this._chatOpen) {
@@ -4950,6 +5073,7 @@ class LevelEditor {
             if (e.key === 'Tab' || _matchKB(e, _pkb.openChat)) { e.preventDefault(); this._openPlayChat(); return; }
             if (_matchKB(e, _pkb.debugInfo)) { this._showMouseTile = !this._showMouseTile; return; }
             if (_matchKB(e, _pkb.debugOverlay)) { this._showColDebug = !this._showColDebug; return; }
+            if (_matchKB(e, _pkb.hide) && this._tryHide()) { e.preventDefault(); return; }
             if (_matchKB(e, _pkb.grab)) { this._tryGrab(); }
             if (_matchKB(e, _pkb.editBypass)) { this._editBypass = !this._editBypass; if (this._editBypass) { (this._hiddenEls || []).forEach(([el, disp]) => el.style.display = disp || ''); this.resizeCanvas(); } else { (this._hiddenEls || []).forEach(([el]) => el.style.display = 'none'); this.resizeCanvas(); } return; }
             if (e.key === ' ' && this._linkPickMode) {
@@ -4980,19 +5104,23 @@ class LevelEditor {
     }
 
     exitPlayMode() {
+        for (const change of this._playLiftRespawns || []) this._setPlayLiftTiles(change, change.tiles);
+        this.invalidateLayerCache();
         this._playMode = false;
         const btn = this.$('btnPlay');
         if (btn) btn.innerHTML = '&#9654; Play';
         this.canvas.parentElement?.classList.remove('play-mode');
         (this._hiddenEls || []).forEach(([el, disp]) => el.style.display = disp);
-        this._hiddenEls = null; this._player = null; this._playKeys = {}; this._playNoclip = false; this._mngAnimCache = null; this._gifAnimCache = null;
+        this._hiddenEls = null; this._player = null; this._playKeys = {}; this._playNoclip = false; this._mngAnimCache = null; this._gifAnimCache = null; this._playFlowersByLayer = null; this._playLiftRespawns = null; this._playThrownObjects = null; this._playLeaps = null;
         if (this._liveGifCache) { for (const [, e] of this._liveGifCache) { if (e.wrapper?.parentNode) e.wrapper.parentNode.removeChild(e.wrapper); } this._liveGifCache = null; }
         this._mobileStickDir = null; this._mobileStickVal = {x:0,y:0}; this._mobileControlsEl = null; this._mobileKnobs = null; this._mobileRelease = null;
         this._removeMobileControls();
         this._chatOpen = false; this._playerChat = null;
         this._clearPlayGifLayer();
         this.$('_playChatBar')?.remove();
+        this.$('_playSignPanel')?.remove(); this._activePlaySign = null; this._signPanel = null;
         if (this._chatCanvasClick) this.canvas.removeEventListener('mousedown', this._chatCanvasClick);
+        if (this._signCanvasClick) this.canvas.removeEventListener('mousedown', this._signCanvasClick);
         if (this._playMouseMove) this.canvas.removeEventListener('mousemove', this._playMouseMove);
         this.resizeCanvas();
         window.removeEventListener('keydown', this._playKeyDown);
@@ -5018,9 +5146,18 @@ class LevelEditor {
         return 0;
     }
 
+    _tryHide() {
+        const p = this._player; if (!p || p._attacking) return;
+        if (p._hidden) { this._unhidePlayObject(); p._eWas = true; return true; }
+        if (p._carrying === 'bush' || p._carrying === 'stone' || p._carrying === 'blackstone') { this._hidePlayObject(); p._eWas = true; return true; }
+        return false;
+    }
+
     _tryGrab() {
         const p = this._player; if (!p || p._attacking) return;
+        if (this._activePlaySign) return;
         const tw = this.level.tileWidth || 16, th = this.level.tileHeight || 16;
+        if (p.dir === 0) for (const [wx, wy] of this._getPlaySignTouchPoints()) { const sign = this._findPlaySignAt(wx, wy); if (sign && this._showPlaySign(sign)) { p._signMoveWasDown = true; p._signReopenLock = true; return; } }
         const facing = [[0,-1],[-1,0],[0,1],[1,0]][p.dir];
         const reach = tw * 2;
         const cx = p.x + (p._ganiOX ?? 0) + (p._imgW ?? tw) / 2;
@@ -5033,6 +5170,190 @@ class LevelEditor {
             return Math.abs(fx - ox) < reach && Math.abs(fy - oy) < reach;
         });
         if (tileBlocking || nearby) { this._setani(this._playerSettings?.ganis?.grab||'grab.gani'); p._grabbing = true; p._grabDir = p.dir; }
+    }
+
+    _hidePlayObject() {
+        const p = this._player; if (!p?._carrying) return;
+        p._hidden = true; p._hiddenType = p._carrying; p._carrying = null;
+        this._spawnPlayLeaps(p.x + 24, p.y + 32, p._hiddenType); this._playSound('crush.wav');
+    }
+
+    _unhidePlayObject() {
+        const p = this._player; if (!p?._hidden) return;
+        p._hidden = false; p._carrying = p._hiddenType || 'bush'; p._hiddenType = null;
+        this._spawnPlayLeaps(p.x + 24, p.y + 32, p._carrying); this._playSound('crush.wav');
+    }
+
+    _tryTouchPlaySign(dx, dy) {
+        const p = this._player;
+        if (!p) return false;
+        if (p.dir !== 0 || p._signTouchTimer > 0 || p._signReopenLock || dx === 0 && dy === 0 || this._activePlaySign) return false;
+        if (dy >= 0) return false;
+        for (const [x, y] of this._getPlaySignTouchPoints()) { const sign = this._findPlaySignAt(x, y); if (sign && this._showPlaySign(sign)) { p._signTouchTimer = 0.4; p._signMoveWasDown = true; p._signReopenLock = true; return true; } }
+        return false;
+    }
+
+    _tryTouchPlayNPC() {
+        const p = this._player;
+        if (!p || this._activePlaySign || p._signTouchTimer > 0) return false;
+        const tw = this.level.tileWidth || 16, th = this.level.tileHeight || 16;
+        const px = p.x + (p._ganiOX ?? 0) + (p._imgW ?? tw) / 2, py = p.y + (p._ganiOY ?? 0) + (p._imgH ?? 48) - 16;
+        const npc = (this.level.objects || []).find(obj => {
+            if (obj.type !== 'npc' && obj.type !== 'character') return false;
+            const sp = parseNPCScript(obj.properties?.code || '');
+            if (!sp.touchText && sp.touchSignIndex == null) return false;
+            const ox = obj.x * tw + (obj._xOff || 0) * tw, oy = obj.y * th + (obj._yOff || 0) * th;
+            const ow = Math.max(obj._imgW || 0, tw * 2), oh = Math.max(obj._imgH || 0, th * 3);
+            const npcX = ox + ow / 2, npcY = oy + oh - 16;
+            return Math.abs(px - npcX) <= ow / 2 + (this._colHW ?? 15) && Math.abs(py - npcY) <= th + (this._colHH ?? 15);
+        });
+        if (!npc) { p._npcTouchLock = null; return false; }
+        if (p._npcTouchLock === npc) return false;
+        return this._showPlayNPCTouch(npc);
+    }
+
+    _showPlayNPCTouch(npc) {
+        const p = this._player;
+        if (!p || this._activePlaySign || p._signTouchTimer > 0 || p._npcTouchLock === npc) return false;
+        const script = parseNPCScript(npc.properties?.code || '');
+        const text = script.touchText ?? this.level.objects?.filter(obj => obj.type === 'sign')[script.touchSignIndex]?.properties?.text;
+        if (text == null || !this._showPlaySign({ _playText: text })) return false;
+        p._npcTouchLock = npc; p._signTouchTimer = 0.4; p._signMoveWasDown = true;
+        return true;
+    }
+
+    _getPlaySignTouchPoints() {
+        const p = this._player, tw = this.level.tileWidth || 16;
+        const x = p.x + (p._ganiOX ?? 0) + (p._imgW ?? tw) / 2, y = p.y + (p._ganiOY ?? 0) + (p._imgH ?? 48) - 16;
+        return [[x, y - 6], [x - 5, y - 6], [x + 5, y - 6]];
+    }
+
+    _findPlaySignAt(x, y) {
+        const tw = this.level.tileWidth || 16, th = this.level.tileHeight || 16;
+        return (this.level.objects || []).find(obj => obj.type === 'sign' && x >= obj.x * tw && x < (obj.x + 2) * tw && y >= obj.y * th && y < (obj.y + 2) * th) || null;
+    }
+
+    _setPlayLiftTiles(change, tiles) {
+        const level = change.level || this.level;
+        for (let i = 0; i < 4; i++) level.setTile(change.layer, change.x + (i > 1 ? 1 : 0), change.y + (i % 2), tiles[i]);
+    }
+
+    _getPlayActionPoints() {
+        const p = this._player, tw = this.level.tileWidth || 16, th = this.level.tileHeight || 16;
+        const [dx, dy] = [[0,-1],[-1,0],[0,1],[1,0]][p.dir];
+        const cx = p.x + (p._ganiOX ?? 0) + (p._imgW ?? tw) / 2, cy = p.y + (p._ganiOY ?? 0) + (p._imgH ?? 48) - 16;
+        const baseX = cx + dx * 22, baseY = cy + dy * 22, sideX = -dy * 7, sideY = dx * 7;
+        return [[baseX, baseY], [baseX + sideX, baseY + sideY], [baseX - sideX, baseY - sideY]];
+    }
+
+    _findPlayLiftObject(wx, wy, bushesOnly = false) {
+        const tw = this.level.tileWidth || 16, th = this.level.tileHeight || 16;
+        const tx = Math.floor(wx / tw), ty = Math.floor(wy / th);
+        const objects = [
+            ['bush', [2,130,3,131], [1301,1429,1302,1430]],
+            ['bush', [3332,3460,3333,3461], [1301,1429,1302,1430]],
+            ['vase', [1308,1436,1309,1437], [1850,1978,1851,1979]],
+            ['stone', [258,386,259,387], [2362,2490,2363,2491]],
+            ['blackstone', [3742,3870,3743,3871], [2362,2490,2363,2491]],
+            ['sign', [16,144,17,145], [2106,2234,2107,2235]]
+        ];
+        for (let layer = 0; layer < this.level.layers.length; layer++) for (let ox = 0; ox < 2; ox++) for (let oy = 0; oy < 2; oy++) {
+            const x = tx - ox, y = ty - oy;
+            if (x < 0 || y < 0 || x + 1 >= this.level.width || y + 1 >= this.level.height) continue;
+            const tiles = [this.level.getTile(layer, x, y), this.level.getTile(layer, x, y + 1), this.level.getTile(layer, x + 1, y), this.level.getTile(layer, x + 1, y + 1)];
+            for (const [type, pattern, replacement] of objects) {
+                if ((bushesOnly && type !== 'bush') || !tiles.every((tile, i) => tile === pattern[i])) continue;
+                return { layer, x, y, tiles, replacement, type };
+            }
+        }
+        return null;
+    }
+
+    _tryLiftPlayObject() {
+        const p = this._player;
+        if (!p || p._attacking || p._carrying || p._liftTimer > 0) return false;
+        for (const [x, y] of this._getPlayActionPoints()) {
+            const change = this._findPlayLiftObject(x, y);
+            if (!change) continue;
+            change.level = this.level;
+            change.respawnAt = performance.now() + 12000;
+            this._setPlayLiftTiles(change, change.replacement); this._playLiftRespawns.push(change); this.invalidateLayerCache();
+            p._carrying = change.type; p._liftTimer = 0.2; p._liftDuration = 0.2; p._freezeTimer = 0.2; if (change.type === 'sign') this._playSound('sign.wav'); this._setani('lift.gani', true);
+            return true;
+        }
+        return false;
+    }
+
+    _trySlayBush() {
+        for (const [x, y] of this._getPlayActionPoints()) {
+            const change = this._findPlayLiftObject(x, y, true);
+            if (!change) continue;
+            change.level = this.level;
+            change.respawnAt = performance.now() + 12000;
+            this._setPlayLiftTiles(change, change.replacement); this._playLiftRespawns.push(change); this.invalidateLayerCache();
+            const tw = this.level.tileWidth || 16, th = this.level.tileHeight || 16;
+            this._spawnPlayLeaps(change.x * tw + tw, change.y * th + th, 'bush'); this._playSound('crush.wav');
+            return true;
+        }
+        return false;
+    }
+
+    _throwPlayObject() {
+        const p = this._player;
+        if (!p?._carrying || p._liftTimer > 0) return;
+        const tw = this.level.tileWidth || 16, th = this.level.tileHeight || 16;
+        const [dx, dy] = [[0,-0.8],[-1,0.2],[0,1.2],[1,0.2]][p.dir];
+        const startX = p.x + (p._ganiOX ?? 0) + (p._imgW ?? tw) / 2, startY = p.y + (p._ganiOY ?? 0) - 9;
+        let endX = startX, endY = startY;
+        for (let step = 1; step <= 9; step++) {
+            const testX = startX + dx * tw * step, testY = startY + dy * th * step;
+            const tileType = this._getTileType(testX, testY);
+            endX = testX; endY = testY;
+            if (tileType === 21 || tileType === 22) break;
+        }
+        this._playThrownObjects.push({ type: p._carrying, startX, startY, endX, endY, age: 0, duration: 0.5 * Math.max(Math.hypot(endX - startX, endY - startY) / (tw * 9), 1 / 9) });
+        p._carrying = null;
+    }
+
+    _updatePlayLiftObjects(dt) {
+        this._playFlowerTime += dt;
+        const now = performance.now();
+        for (let i = (this._playLiftRespawns?.length || 0) - 1; i >= 0; i--) {
+            const change = this._playLiftRespawns[i];
+            if (change.respawnAt > now) continue;
+            this._setPlayLiftTiles(change, change.tiles); this._playLiftRespawns.splice(i, 1); this.invalidateLayerCache();
+        }
+        for (let i = (this._playThrownObjects?.length || 0) - 1; i >= 0; i--) {
+            const thrown = this._playThrownObjects[i]; thrown.age += dt;
+            if (thrown.age >= thrown.duration) {
+                if (this._getTileType(thrown.endX, thrown.endY) === 11) this._playSound('water.wav');
+                else { this._spawnPlayLeaps(thrown.endX, thrown.endY, thrown.type); this._playSound('crush.wav'); }
+                this._playThrownObjects.splice(i, 1);
+            }
+        }
+        for (let i = (this._playLeaps?.length || 0) - 1; i >= 0; i--) {
+            const leap = this._playLeaps[i]; leap.age += dt; leap.x += leap.vx * dt; leap.y += leap.vy * dt; leap.vy += 360 * dt; leap.rotation += leap.spin * dt;
+            if (leap.age >= leap.life) this._playLeaps.splice(i, 1);
+        }
+    }
+
+    _spawnPlayLeaps(x, y, type) {
+        const rects = {
+            bush: [[35,8,9,8], [44,0,15,16], [60,0,16,16]],
+            vase: [[56,82,16,14], [72,82,16,14], [56,96,16,14], [72,96,16,14]],
+            stone: [[24,82,16,16], [40,82,16,16], [24,98,16,16], [40,98,16,16]],
+            blackstone: [[56,82,16,14], [72,82,16,14], [56,96,16,14], [72,96,16,14]],
+            sign: [[56,82,16,14], [72,82,16,14], [56,96,16,14], [72,96,16,14]]
+        }[type] || [];
+        if (type !== 'bush') {
+            const offsets = [[-16,-16],[0,-16],[-16,0],[0,0]], velocities = [[-92,-82],[92,-82],[-82,76],[82,76]];
+            rects.slice(0, 4).forEach((src, i) => this._playLeaps.push({ x:x + offsets[i][0], y:y + offsets[i][1], vx:velocities[i][0], vy:velocities[i][1], src, age:0, life:0.32, rotation:0, spin:0, centered:false }));
+            return;
+        }
+        for (let i = 0; i < 4; i++) {
+            const angle = Math.random() * Math.PI * 2 - Math.PI, speed = 55 + Math.random() * 60;
+            this._playLeaps.push({ x:x - 5 + Math.random() * 10, y:y - 4 + Math.random() * 7, vx:Math.cos(angle) * speed, vy:Math.sin(angle) * speed - 80 + Math.random() * 50, src:rects[Math.floor(Math.random() * rects.length)], age:0, life:0.24 + Math.random() * 0.12, rotation:Math.random() * Math.PI * 2 - Math.PI, spin:-6 + Math.random() * 12, centered:true });
+        }
     }
 
     _canMoveTo(nx, ny) {
@@ -5066,7 +5387,7 @@ class LevelEditor {
             if (sc.type === 2) {
                 for (let ty2 = 0; ty2 < sc.h; ty2++) for (let tx2 = 0; tx2 < sc.w; tx2++) {
                     if (!sc.tiles[ty2 * sc.w + tx2]) continue;
-                    if (pcx+hw > ox+tx2*tw && pcx-hw < ox+(tx2+1)*tw && pcy+hh > oy+ty2*th && pcy-hh < oy+(ty2+1)*th) return false;
+                    if (pcx+hw > ox+tx2*tw && pcx-hw < ox+(tx2+1)*tw && pcy+hh > oy+ty2*th && pcy-hh < oy+(ty2+1)*th) { this._showPlayNPCTouch(obj); return false; }
                 }
             } else {
                 let bx, by, bw, bh;
@@ -5084,29 +5405,58 @@ class LevelEditor {
                         if (_sx < 0) rx = tb.srcW - 1 - rx;
                         if (rx >= 0 && ry >= 0 && rx < tb.srcW && ry < tb.srcH && tb.mask[ry * tb.srcW + rx]) { hit = true; break; }
                     }
-                    if (hit) return false;
+                    if (hit) { this._showPlayNPCTouch(obj); return false; }
                     continue;
                 }
-                if (pcx+hw > bx && pcx-hw < bx+bw && pcy+hh > by && pcy-hh < by+bh) return false;
+                if (pcx+hw > bx && pcx-hw < bx+bw && pcy+hh > by && pcy-hh < by+bh) { this._showPlayNPCTouch(obj); return false; }
             }
         }
         return true;
     }
 
-    _playSound(filename) {
-        if (!filename) return;
-        if (!this._audioCache) this._audioCache = new Map();
-        let src = this._audioCache.get(filename);
-        if (!src) { src = filename.includes('.') ? `sounds/${filename}` : `sounds/${filename}.wav`; this._audioCache.set(filename, src); }
-        const a = new Audio(src); a.volume = 0.5; a.play().catch(() => {});
+    _tryPlayCornerSlide(stepX, stepY, proactive = false, wantedX = 0, wantedY = 0) {
+        const p = this._player;
+        const sideX = -Math.sign(stepY), sideY = Math.sign(stepX);
+        if (!sideX && !sideY) return false;
+        const length = Math.hypot(stepX, stepY);
+        const dirX = stepX / length, dirY = stepY / length;
+        if (proactive && this._canMoveTo(p.x + dirX * 9, p.y + dirY * 9)) return false;
+        const sideDot = wantedX * sideX + wantedY * sideY;
+        const directions = sideDot > 0 ? [1] : sideDot < 0 ? [-1] : [-1, 1];
+        const lookahead = Math.max(length, 1);
+        for (const direction of directions) for (const amount of [1, 2, 3]) {
+            const offsetX = sideX * direction * amount, offsetY = sideY * direction * amount;
+            if (this._canMoveTo(p.x + offsetX, p.y + offsetY) && this._canMoveTo(p.x + offsetX + dirX * lookahead, p.y + offsetY + dirY * lookahead)) {
+                p.x += sideX * direction;
+                p.y += sideY * direction;
+                return true;
+            }
+        }
+        return false;
     }
 
-    _setani(name) {
+    _playSound(filename, rate = 1) {
+        if (!filename) return;
+        if (typeof filename === 'object') { rate = filename.rate || rate; filename = filename.name; }
+        if (!this._audioCache) this._audioCache = new Map();
+        let base = this._audioCache.get(filename);
+        if (!base) { const src = filename.includes('.') ? `sounds/${filename}` : `sounds/${filename}.wav`; base = new Audio(src); base.preload = 'auto'; this._audioCache.set(filename, base); }
+        const a = base.cloneNode(); a.volume = 0.8; a.playbackRate = rate; a.play().catch(() => {});
+    }
+
+    _playGaniFrameSound(name, frame = 0) {
+        const sound = this._ganiCache?.get(name)?.frames?.[frame]?.sound;
+        if (sound) this._playSound(sound);
+    }
+
+    _setani(name, playFrameSound = false) {
         const p = this._player; if (!p || p.gani === name) return;
         p.gani = name; p.frame = 0; p.frameTimer = 0;
+        if (playFrameSound) this._playGaniFrameSound(name);
     }
     _updatePlayer(dt) {
         const p = this._player, k = this._playKeys;
+        this._updatePlayLiftObjects(dt);
         if (k['Shift'] && !p._shiftWas) { this._playNoclip = !this._playNoclip; delete this._playKeys['Shift']; }
         p._shiftWas = k['Shift'];
         const tw = this.level.tileWidth || 16, th = this.level.tileHeight || 16;
@@ -5115,6 +5465,16 @@ class LevelEditor {
         const left = k['ArrowLeft'] || k['a'] || (this._mobileStickDir === 'left' && this._mobileStickVal.x < -0.35);
         const right = k['ArrowRight'] || k['d'] || (this._mobileStickDir === 'left' && this._mobileStickVal.x > 0.35);
         let dx = 0, dy = 0;
+        p._signTouchTimer = Math.max(0, (p._signTouchTimer || 0) - dt);
+        if (this._activePlaySign) {
+            const signAction = up || down || left || right || k[' '] || k['e'] || k['E'];
+            if (signAction && !p._signMoveWasDown) { this._advancePlaySign(); p._signReopenLock = true; }
+            p._signMoveWasDown = signAction; p._attacking = false; p._grabbing = false; p._freezeTimer = 0;
+            this._setani(p._carrying ? 'carrystill.gani' : (this._playerSettings?.ganis?.idle || 'idle.gani'));
+            return;
+        }
+        p._signMoveWasDown = false;
+        if (!up && !down && !left && !right) p._signReopenLock = false;
         let _pulling = false;
         if (p._grabbing) {
             if (k['e'] || k['E']) {
@@ -5125,8 +5485,10 @@ class LevelEditor {
             } else { p._grabbing = false; }
         } else if ((k['e'] || k['E']) && !p._eWas) { this._tryGrab(); }
         p._eWas = k['e'] || k['E'];
-        if (k[' '] && !p._spaceWas) { this._setani(this._playerSettings?.ganis?.sword||'sword.gani'); p._attacking = true; p._attackDir = p.dir; p._freezeTimer = 0.15; p._attackFrameCount = 0; }
-        if (this._mobileStickDir === 'right' && !p._spaceWas) { const sv = this._mobileStickVal, ax = Math.abs(sv.x), ay = Math.abs(sv.y); if (ax > 0.35 || ay > 0.35) { const rd = ay > ax ? (sv.y < 0 ? 0 : 2) : (sv.x > 0 ? 3 : 1); p._attacking = true; p._attackDir = rd; p.dir = rd; p._freezeTimer = 0.15; p._attackFrameCount = 0; this._setani(this._playerSettings?.ganis?.sword||'sword.gani'); } }
+        if ((k['f'] || k['F']) && !p._fWas) { if (p._carrying) this._throwPlayObject(); else if (!this._getSettings().objectPickup || !this._tryLiftPlayObject()) this._tryGrab(); }
+        p._fWas = k['f'] || k['F'];
+        if (k[' '] && !p._spaceWas) { if (p._carrying) this._throwPlayObject(); else { this._setani(this._playerSettings?.ganis?.sword||'sword.gani', true); p._attacking = true; p._attackDir = p.dir; p._freezeTimer = 0.15; p._attackFrameCount = 0; this._trySlayBush(); } }
+        if (this._mobileStickDir === 'right' && !p._spaceWas) { const sv = this._mobileStickVal, ax = Math.abs(sv.x), ay = Math.abs(sv.y); if (ax > 0.35 || ay > 0.35) { const rd = ay > ax ? (sv.y < 0 ? 0 : 2) : (sv.x > 0 ? 3 : 1); p._attacking = true; p._attackDir = rd; p.dir = rd; p._freezeTimer = 0.15; p._attackFrameCount = 0; this._setani(this._playerSettings?.ganis?.sword||'sword.gani', true); } }
         p._spaceWas = k[' '] || (this._mobileStickDir === 'right' && (Math.abs(this._mobileStickVal.x) > 0.35 || Math.abs(this._mobileStickVal.y) > 0.35));
         if (p._freezeTimer > 0) { p._freezeTimer -= dt; }
         if (!_pulling) {
@@ -5135,49 +5497,35 @@ class LevelEditor {
                 if (left) { dx = -1; p.dir = 1; } else if (right) { dx = 1; p.dir = 3; }
             } else { p.dir = p._attackDir; }
         }
-        const moving = dx !== 0 || dy !== 0;
+        const moving = dx !== 0 || dy !== 0; p._isMoving = moving;
         let walkedIntoSomething = false;
-        if (moving && !p._attacking && !(p._freezeTimer > 0)) {
+        const moveCX = p.x + (p._ganiOX ?? 0) + (p._imgW ?? tw) / 2, moveCY = p.y + (p._ganiOY ?? 0) + (p._imgH ?? 48) - 16;
+        const moveSurface = this._getTileType(moveCX, moveCY), moveSpeed = moveSurface === 3 ? 0.3 : moveSurface === 11 ? 0.6 : 1;
+        if (moving && !p._attacking && !(p._liftTimer > 0) && !(p._freezeTimer > 0)) {
             const len = Math.sqrt(dx*dx + dy*dy);
-            const mx = (dx/len) * p.speed * dt, my = (dy/len) * p.speed * dt;
-            const nudge = 1;
-            const nudgeTest = (this._colHH ?? 12) + 4;
+            const speed = p.speed * moveSpeed * (p._hidden ? 0.55 : 1), mx = (dx/len) * speed * dt, my = (dy/len) * speed * dt;
             const px0 = p.x, py0 = p.y;
             if (mx !== 0) {
-                if (this._canMoveTo(p.x + mx, p.y)) { p.x += mx; }
-                else {
-                    const cUp = this._canMoveTo(p.x + mx, p.y - nudgeTest);
-                    const cDn = this._canMoveTo(p.x + mx, p.y + nudgeTest);
-                    if (cUp && !cDn) { p.x += mx; p.y -= nudge; }
-                    else if (cDn && !cUp) { p.x += mx; p.y += nudge; }
-                    else if (!cUp && !cDn) {
-                        for (let d = 1; d < nudgeTest; d++) {
-                            if (this._canMoveTo(p.x + mx, p.y - d)) { p.y -= nudge; break; }
-                            if (this._canMoveTo(p.x + mx, p.y + d)) { p.y += nudge; break; }
-                        }
-                    }
-                }
+                let nextX = p.x + mx, nextY = p.y;
+                if (this._canMoveTo(nextX, nextY)) {
+                    if (this._tryPlayCornerSlide(mx, 0, true, mx, my)) { nextX = p.x + mx; nextY = p.y; }
+                    p.x = nextX; p.y = nextY;
+                } else this._tryPlayCornerSlide(mx, 0, false, mx, my);
             }
             if (my !== 0) {
-                if (this._canMoveTo(p.x, p.y + my)) { p.y += my; }
-                else {
-                    const cLt = this._canMoveTo(p.x - nudgeTest, p.y + my);
-                    const cRt = this._canMoveTo(p.x + nudgeTest, p.y + my);
-                    if (cLt && !cRt) { p.y += my; p.x -= nudge; }
-                    else if (cRt && !cLt) { p.y += my; p.x += nudge; }
-                    else if (!cLt && !cRt) {
-                        for (let d = 1; d < nudgeTest; d++) {
-                            if (this._canMoveTo(p.x + d, p.y + my)) { p.x += nudge; break; }
-                            if (this._canMoveTo(p.x - d, p.y + my)) { p.x -= nudge; break; }
-                        }
-                    }
-                }
+                let nextX = p.x, nextY = p.y + my;
+                if (this._canMoveTo(nextX, nextY)) {
+                    if (this._tryPlayCornerSlide(0, my, true, mx, my)) { nextX = p.x; nextY = p.y + my; }
+                    p.x = nextX; p.y = nextY;
+                } else this._tryPlayCornerSlide(0, my, false, mx, my);
             }
             const _ox = p._ganiOX ?? 0, _oy = p._ganiOY ?? 0, _iw = p._imgW ?? tw, _ih = p._imgH ?? th;
             p.x = Math.max(-_ox, Math.min(p.x, this.level.width * tw - _ox - _iw));
             p.y = Math.max(-_oy, Math.min(p.y, this.level.height * th - _oy - _ih));
             if (p.x === px0 && p.y === py0) walkedIntoSomething = true;
         }
+        this._tryTouchPlaySign(dx, dy);
+        this._tryTouchPlayNPC();
         if (!_pulling) {
             if (walkedIntoSomething) {
                 p._pushTimer = (p._pushTimer || 0) + dt;
@@ -5190,23 +5538,29 @@ class LevelEditor {
         } else { p._pushTimer = 0; p._pushActive = false; p._pushHold = 0; }
         const pushing = !!p._pushActive;
         const _scx = p.x + (p._ganiOX ?? 0) + (p._imgW ?? 32) / 2, _scy = p.y + (p._ganiOY ?? 0) + (p._imgH ?? 48) - 16;
-        const sitting = this._getTileType(_scx, _scy) === 3;
+        const surfaceType = this._getTileType(_scx, _scy);
+        if (p._carrying && (surfaceType === 3 || surfaceType === 11)) this._throwPlayObject();
+        const sitting = surfaceType === 3, swimming = surfaceType === 11;
         if (!p._attacking) {
             const _pG2 = this._playerSettings?.ganis||{};
-            const nextGani = _pulling ? (_pG2.pull||'pull.gani') : (sitting ? (_pG2.sit||'sit.gani') : pushing ? (_pG2.push||'push.gani') : (moving ? (_pG2.walk||'walk.gani') : (_pG2.idle||'idle.gani')));
+            const nextGani = p._liftTimer > 0 ? 'lift.gani' : (swimming ? 'swim.gani' : (p._hidden ? (_pG2.idle||'idle.gani') : (p._carrying ? (moving ? 'carry.gani' : 'carrystill.gani') : (_pulling ? (_pG2.pull||'pull.gani') : (sitting ? (_pG2.sit||'sit.gani') : pushing ? (_pG2.push||'push.gani') : (moving ? (_pG2.walk||'walk.gani') : (_pG2.idle||'idle.gani')))))));
             this._setani(nextGani);
         }
         const ganiData = this._ganiCache?.get(p.gani);
         const totalFrames = ganiData?.frames?.length || 4;
         p.frameTimer += dt;
         let frameWait = ganiData?.frames?.[p.frame]?.wait || 1;
-        let frameDuration = Math.max(frameWait / 22, 1 / 120);
+        let frameDuration = Math.max(frameWait / 20, 1 / 120);
         let frameSafety = 0;
         while (p.frameTimer >= frameDuration && frameSafety < 8) {
             p.frameTimer -= frameDuration;
             const nextFrame = p.frame + 1;
             if (nextFrame >= totalFrames) {
-                if (ganiData?.setbackto) { this._setani(ganiData.setbackto); }
+                if (ganiData?.setbackto) {
+                    this._setani(ganiData.setbackto);
+                    if (p._attacking) { p._attacking = false; p._grabbing = false; p._attackFrameCount = 0; }
+                    break;
+                }
                 else if (ganiData?.loop || !ganiData) { p.frame = 0; }
             } else { p.frame = nextFrame; }
             const frameData = ganiData?.frames?.[p.frame];
@@ -5214,10 +5568,11 @@ class LevelEditor {
             if (p._attacking && p.frame === 0 && p._attackFrameCount > 0) { p._attacking = false; p._grabbing = false; p._attackFrameCount = 0; }
             if (p._attacking) p._attackFrameCount = (p._attackFrameCount || 0) + 1;
             frameWait = ganiData?.frames?.[p.frame]?.wait || 1;
-            frameDuration = Math.max(frameWait / 22, 1 / 120);
+            frameDuration = Math.max(frameWait / 20, 1 / 120);
             frameSafety++;
         }
-        if (!moving && !sitting && !p._attacking && !_pulling && !p._grabbing) { p.frame = 0; p.frameTimer = 0; }
+        if (p._liftTimer > 0) p._liftTimer = Math.max(0, p._liftTimer - dt);
+        if (!moving && !sitting && !swimming && !p._attacking && !_pulling && !p._grabbing && !p._carrying && !p._hidden && p._liftTimer <= 0) { p.frame = 0; p.frameTimer = 0; }
         if (this._playerChatTimer > 0) { this._playerChatTimer -= dt; if (this._playerChatTimer <= 0) this._playerChat = null; }
         if (p.nickTimer > 0) p.nickTimer -= dt;
         if (this._warpCooldown > 0) { this._warpCooldown -= dt; }
@@ -6731,7 +7086,20 @@ class LevelEditor {
         for (const _item of _drawItems) {
             if (_item.isPlayer) {
                 const _p = this._player, _pb = {};
-                this._drawGaniNPC(_p.x, _p.y, _p.gani, _p.dir, _p.frame, _pb, this._playerOverrides || {});
+                if (_p._hidden) {
+                    const shake = _p._isMoving ? [-1, 0, 1, 0][Math.floor(performance.now() / 70) % 4] : 0;
+                    this._drawPlayLiftSprite(_p._hiddenType || 'bush', _p.x + 8 + shake, _p.y + 16);
+                } else this._drawGaniNPC(_p.x, _p.y, _p.gani, _p.dir, _p.frame, _pb, this._playerOverrides || {});
+                if (_p._carrying && !_p._hidden) {
+                    const baseX = _p.x + (_p._ganiOX ?? 0) + (_p._imgW ?? tw) / 2, baseY = _p.y + (_p._ganiOY ?? 0);
+                    let itemX = baseX - 16, itemY = baseY - 22;
+                    if (_p._liftTimer > 0) {
+                        const t = 1 - _p._liftTimer / (_p._liftDuration || 0.2), [fromX, fromY, toX, toY] = [[-16,-28,-16,-34],[-31,-12,-17,-31],[-16,0,-16,-26],[-1,-12,-15,-31]][_p.dir];
+                        itemX = baseX + fromX + (toX - fromX) * t;
+                        itemY = baseY + fromY + (toY - fromY) * t;
+                    }
+                    this._drawPlayLiftSprite(_p._carrying, itemX, itemY);
+                }
                 if (!_p._boundsLocked && _pb._imgW != null) {
                     Object.assign(_p, { _ganiOX: _pb._ganiOX, _ganiOY: _pb._ganiOY, _imgW: _pb._imgW, _imgH: _pb._imgH });
                     _p._boundsLocked = true;
@@ -6792,6 +7160,18 @@ class LevelEditor {
                 }
             }
         }
+        for (const thrown of this._playThrownObjects || []) {
+            const progress = Math.min(1, thrown.age / thrown.duration);
+            const worldX = thrown.startX + (thrown.endX - thrown.startX) * progress;
+            const worldY = thrown.startY + (thrown.endY - thrown.startY) * progress;
+            const x = worldX - 16;
+            const y = worldY - Math.sin(progress * Math.PI) * 28 - 16;
+            const img = this._getGaniImage('sprites.png');
+            if (img?.complete && img.naturalWidth) this.ctx.drawImage(img, 0, 0, 24, 12, worldX - 12, worldY + 3, 24, 12);
+            this._drawPlayLiftSprite(thrown.type, x, y);
+        }
+        this._drawPlayLeaps();
+        this._drawPlayShallowWater();
         for (const obj of _deferredSelected) {
             const x = obj.x * tw;
             const y = obj.y * th;
@@ -6855,6 +7235,39 @@ class LevelEditor {
             this.ctx.lineWidth = 1 / this.zoom;
             this.ctx.strokeRect(x, y, sw, sh);
         }
+    }
+
+    _drawPlayLiftSprite(type, x, y) {
+        const crop = { bush:[0,338], vase:[64,340], stone:[96,338], blackstone:[96,370], sign:[32,340] }[type];
+        if (!crop) return;
+        const img = this._getGaniImage('sprites.png');
+        if (!img?.complete || !img.naturalWidth) return;
+        this.ctx.drawImage(img, crop[0], crop[1], 32, 32, x, y, 32, 32);
+    }
+
+    _drawPlayLeaps() {
+        const img = this._getGaniImage('sprites.png');
+        if (!img?.complete || !img.naturalWidth) return;
+        for (const leap of this._playLeaps || []) {
+            const [sx, sy, sw, sh] = leap.src;
+            this.ctx.save(); this.ctx.translate(leap.x, leap.y); this.ctx.rotate(leap.rotation);
+            this.ctx.drawImage(img, sx, sy, sw, sh, leap.centered ? -sw / 2 : 0, leap.centered ? -sh / 2 : 0, sw, sh);
+            this.ctx.restore();
+        }
+    }
+
+    _drawPlayShallowWater() {
+        const p = this._player;
+        if (!p || p._hidden) return;
+        const imgW = p._imgW ?? this.level.tileWidth ?? 16, imgH = p._imgH ?? 48;
+        const feetX = p.x + (p._ganiOX ?? 0) + imgW / 2;
+        const feetY = p.y + (p._ganiOY ?? 0) + imgH - 16;
+        if (this._getTileType(feetX, feetY) !== 8) return;
+        const img = this._getGaniImage('sprites.png');
+        if (!img?.complete || !img.naturalWidth) return;
+        const frame = Math.floor(performance.now() / 110) % 2;
+        const src = frame === 0 ? [4, 307, 24, 13] : [2, 324, 28, 14];
+        this.ctx.drawImage(img, src[0], src[1], src[2], src[3], feetX - src[2] / 2, p.y + 33, src[2], src[3]);
     }
 
     _getGaniImage(name) {

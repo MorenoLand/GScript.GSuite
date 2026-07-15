@@ -122,8 +122,17 @@ h1,h2,h3,h4,h5,h6,label,.sprite-item div,button { user-select:none; -webkit-user
 .settings-slider::-moz-range-thumb { width:12px; height:16px; background:#2b2d31; border:3px solid #404248; cursor:pointer; box-shadow:var(--slider-box-shadow); }
 #levelArea .canvas-container { position:relative !important; flex:1; overflow:auto; background:#006400; min-height:0; display:flex !important; flex-direction:column; width:auto !important; height:auto !important; top:auto !important; left:auto !important; z-index:auto !important; }
 .toolbar { background:#2b2b2b; border-bottom:1px solid #0a0a0a; padding:8px; display:flex; gap:4px; box-shadow:0 1px 0 rgba(255,255,255,0.05); position:relative; z-index:80; }
+#levelgenRoot div:has(> [data-lg="newBtn"]) { background:#3a3a3a !important; }
 #ganiRoot .tb-level-only { display:none !important; }
 #levelRoot .tb-gani-only { display:none !important; }
+#beautifyRoot .tb-gani-only,#beautifyRoot .tb-level-only,#setshapeRoot .tb-gani-only,#setshapeRoot .tb-level-only,#levelgenRoot .tb-gani-only,#levelgenRoot .tb-level-only,#particleemuRoot .tb-gani-only,#particleemuRoot .tb-level-only { display:none !important; }
+#particleemuRoot #particleGraph svg { z-index:2; }
+#particleemuRoot .particle-graph-node { z-index:1; }
+#particleemuRoot #particleGraph svg .graph-link { pointer-events:none; }
+#particleemuRoot .particle-graph-controls { z-index:3; }
+#particleemuRoot .particle-graph-node .graph-port { cursor:pointer; }
+#particleemuRoot .particle-graph-node.selected { outline:2px solid #78d8df; outline-offset:2px; }
+#particleemuRoot .particle-graph-selection { position:absolute;z-index:4;border:1px solid #78d8df;background:rgba(120,216,223,.16);pointer-events:none; }
 #btnSaveAs { display:none; }
 .toolbar button { background:#353535; border:1px solid #0a0a0a; border-top:1px solid #404040; border-left:1px solid #404040; color:#e0e0e0; padding:8px; cursor:pointer; font-family:"chevyray",monospace; font-size:12px; box-shadow:inset 0 1px 0 rgba(0,0,0,0.3),0 1px 0 rgba(255,255,255,0.1); line-height:0; }
 .toolbar button .fas { display:block; }
@@ -151,7 +160,8 @@ h1,h2,h3,h4,h5,h6,label,.sprite-item div,button { user-select:none; -webkit-user
 .tab-name { overflow:visible; min-width:0; flex:1; }
 .tabs::-webkit-scrollbar { display:none; }
 .tab:hover { background:rgba(255,255,255,0.05); color:#ccc; }
-.tab.active { background:#2b2b2b; border:1px solid #0a0a0a; border-top:1px solid #404040; border-left:1px solid #404040; border-bottom:none; color:#e0e0e0; margin-bottom:-1px; }
+.tab.active { background:#2b2b2b; border:1px solid #0a0a0a; border-top:1px solid #404040; border-left:1px solid #404040; border-bottom:none; color:#e0e0e0; margin-bottom:-1px; position:relative; }
+.tab.active::after { content:""; position:absolute; left:-1px; right:-1px; bottom:-2px; height:2px; background:#353535; z-index:1; }
 .tab-close { margin-left:8px; cursor:pointer; font-size:20px; font-weight:bold; color:#666; border-radius:3px; padding:0 3px; transition:color 0.1s,background 0.1s; flex-shrink:0; }
 .tab-close:hover { color:#ff6666; background:rgba(255,60,60,0.18); }
 .tab.dragging { opacity:1; cursor:grabbing; box-shadow:none; background:#2b2b2b; border:1px solid #0a0a0a; border-top:1px solid #404040; border-left:1px solid #404040; border-bottom:none; color:#e0e0e0; margin-bottom:-1px; }
@@ -436,7 +446,7 @@ button.active { background:#4472C4 !important; color:#ffffff; border-color:#6fa8
     .item-controls button { min-width:44px; min-height:44px; }
     .canvas-controls button { min-width:44px; min-height:44px; padding:8px 12px; }
     .tb-btn-text { display:none; }
-#switchBtn img,#switchBtn svg,#btnSetshape2 img,#btnGmapGen img,#btnBeautify img,#tbSwitchBtn svg,#tbLevelGenBtn img,#tbShapesBtn img,#tbGmapBtn img,#tbBeautifyBtn img { width:20px; height:20px; }
+#switchBtn img,#switchBtn svg,#btnSetshape2 img,#btnGmapGen img,#btnBeautify img,#tbSwitchBtn svg,#tbParticleEmuBtn img,#tbLevelGenBtn img,#tbShapesBtn img,#tbGmapBtn img,#tbBeautifyBtn img { width:20px; height:20px; }
     #tbSwitchBtn svg,#tbShapesBtn svg { width:18px; height:18px; }
     #switchBtn { font-size:18px; }
 }
@@ -445,9 +455,9 @@ button.active { background:#4472C4 !important; color:#ffffff; border-color:#6fa8
 #switchBtn:hover,#btnSetshape2:hover,#btnGmapGen:hover { background:#353535; }
 #switchBtn:active,#btnSetshape2:active,#btnGmapGen:active { background:#1a1a1a !important; }
 body.tauri-app #switchBtn, body.tauri-app #btnSetshape2, body.tauri-app #btnGmapGen, body.tauri-app #btnAbout { display:none !important; }
-#tbSwitchBtn,#tbLevelGenBtn,#tbShapesBtn,#tbGmapBtn,#tbBeautifyBtn,#tbAboutBtn { -webkit-app-region:no-drag; app-region:no-drag; background:none; border:none; border-right:1px solid #2a2a2a; color:#9a9a9e; cursor:pointer; display:flex; align-items:center; gap:5px; padding:0 12px; height:32px; font-family:"chevyray",monospace; font-size:12px; transition:background 0.1s,color 0.1s; }
+#tbSwitchBtn,#tbParticleEmuBtn,#tbLevelGenBtn,#tbShapesBtn,#tbGmapBtn,#tbBeautifyBtn,#tbAboutBtn { -webkit-app-region:no-drag; app-region:no-drag; background:none; border:none; border-right:1px solid #2a2a2a; color:#9a9a9e; cursor:pointer; display:flex; align-items:center; gap:5px; padding:0 12px; height:32px; font-family:"chevyray",monospace; font-size:12px; transition:background 0.1s,color 0.1s; }
 #tbSwitchBtn svg,#tbLevelGenBtn svg,#tbShapesBtn svg,#tbGmapBtn svg,#tbBeautifyBtn svg,#tbAboutBtn svg { width:16px; height:16px; }
-#tbSwitchBtn:hover,#tbLevelGenBtn:hover,#tbShapesBtn:hover,#tbGmapBtn:hover,#tbBeautifyBtn:hover,#tbAboutBtn:hover { background:#3a3a3e; color:#e0e0e0; }
+#tbSwitchBtn:hover,#tbParticleEmuBtn:hover,#tbLevelGenBtn:hover,#tbShapesBtn:hover,#tbGmapBtn:hover,#tbBeautifyBtn:hover,#tbAboutBtn:hover { background:#3a3a3e; color:#e0e0e0; }
 #tauriBar { display:none; height:32px; min-height:32px; background:#1e1e1f; border-bottom:1px solid #111; user-select:none; -webkit-user-select:none; flex-shrink:0; position:relative; align-items:stretch; }
 body { display:flex; flex-direction:column; }
 body.tauri-app #tauriBar { display:flex; }

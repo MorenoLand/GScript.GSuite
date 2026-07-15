@@ -4,16 +4,16 @@ A web-based editor suite for Graal files. Includes a Gani animation editor (.gan
 
 ![GSuite](https://raw.githubusercontent.com/MorenoLand/GScript.GSuite/refs/heads/master/gsuite.png)
 
-## Tools
+## Tools and Features
 
-- GANI Animation Editor
-- Level Editor
-- GMAP Generator
-- Setshape2/setimgpart Editor
-- Code Beautifier
-- Movie Mode for ganis
-- GIF/MP4 animation export
-- Custom CSS theme editor
+- **GANI Animation Editor**: edit `.gani` animations, sprites, effects, sounds, Movie Mode scenes, and export GIF/MP4 previews.
+- **Level Editor**: build `.nw`, `.graal`, and `.zelda` levels with layers, NPC scripts, tiles, objects, and an in-editor play mode.
+- **Level Generator**: paint a terrain map, then generate linked `.nw` levels and a `.gmap`; includes draw/fill tools, example maps, docs, and map import/export.
+- **GMAP Generator**: assemble and save connected world maps.
+- **ParticleEmu**: test GS2 particle effects in a live preview with raw-code and visual-editor views.
+- **Setshape2/setimgpart Editor**: build tile shapes and generate GS1 or GS2 `setshape2` and `setimgpart` output.
+- **Code Beautifier**: format GraalScript code.
+- **Custom CSS Theme Editor**: customize the suite's editor appearance.
 
 ## "Legal Stoof"
 
