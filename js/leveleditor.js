@@ -592,7 +592,7 @@ class Level {
 }
 
 class LevelEditor {
-    static _PREFIXED_IDS = new Set(['bgColorInput','btnAbout','btnBeautify','btnCenterView','btnCloseAll','btnColorScheme','btnCustomCSS','btnGmapGen','btnNew','btnOpen','btnOpenDefault','btnPlay','btnPlayerSetup','btnRedo','btnReset','btnSave','btnSaveAll','btnSaveAs','btnSetshape2','btnSettings','btnUndo','btnWorkingDir','colorSchemeDropdown','fileInput','folderInput','imageInput','mainCanvas','mainSplitter','switchBtn','zoomSlider']);
+    static _PREFIXED_IDS = new Set(['bgColorInput','btnAbout','btnBeautify','btnCenterView','btnCloseAll','btnColorScheme','btnCustomCSS','btnGmapGen','btnLevelGen','btnNew','btnOpen','btnOpenDefault','btnPlay','btnPlayerSetup','btnRedo','btnReset','btnSave','btnSaveAll','btnSaveAs','btnSetshape2','btnSettings','btnUndo','btnWorkingDir','colorSchemeDropdown','fileInput','folderInput','imageInput','mainCanvas','mainSplitter','switchBtn','zoomSlider']);
     $(id) { return document.getElementById(LevelEditor._PREFIXED_IDS.has(id) ? 'level-' + id : id); }
     constructor() {
         this.levels = [];

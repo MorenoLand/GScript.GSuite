@@ -1,5 +1,14 @@
 [
   {
+    "version": "0.1.76",
+    "date": "2026-07-14",
+    "tag": "GSuite",
+    "changes": [
+      "Added Level Generator map designer tab with example loading and built-in docs",
+      "Added setimgpart cut append and named comment shortcuts"
+    ]
+  },
+  {
     "version": "0.1.75",
     "date": "2026-07-06",
     "tag": "GSuite",

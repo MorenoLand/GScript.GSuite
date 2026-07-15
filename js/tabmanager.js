@@ -24,6 +24,8 @@ const TabManager = {
                 ? 'beautifyRoot'
                 : tab.type === 'setshape'
                     ? 'setshapeRoot'
+                    : tab.type === 'levelgen'
+                        ? 'levelgenRoot'
                     : 'levelRoot';
         const root = document.getElementById(rootId);
         if (!root) return null;
@@ -232,6 +234,7 @@ const TabManager = {
         else if (tab.type === 'level' && window.levelEditor?.closeLevelTabByData) window.levelEditor.closeLevelTabByData(tab);
         else if (tab.type === 'beautify' && typeof window.closeBeautifyTab === 'function') window.closeBeautifyTab(tab);
         else if (tab.type === 'setshape' && typeof window.closeSetshapeTab === 'function') window.closeSetshapeTab(tab);
+        else if (tab.type === 'levelgen' && typeof window.closeLevelGenTab === 'function') window.closeLevelGenTab(tab);
         this._forceRemoveTab(id);
     },
 
@@ -262,6 +265,7 @@ const TabManager = {
             else if (prev.type === 'level' && window.levelEditor && typeof window.levelEditor.deactivateLevelTab === 'function') window.levelEditor.deactivateLevelTab(prev);
             else if (prev.type === 'beautify' && typeof window.deactivateBeautifyTab === 'function') window.deactivateBeautifyTab(prev);
             else if (prev.type === 'setshape' && typeof window.deactivateSetshapeTab === 'function') window.deactivateSetshapeTab(prev);
+            else if (prev.type === 'levelgen' && typeof window.deactivateLevelGenTab === 'function') window.deactivateLevelGenTab(prev);
         }
         this._activeTabId = id;
         if (tab.type === 'gani' && typeof window.activateGaniTab === 'function') {
@@ -276,9 +280,11 @@ const TabManager = {
             window.activateBeautifyTab(tab);
         } else if (tab.type === 'setshape' && typeof window.activateSetshapeTab === 'function') {
             window.activateSetshapeTab(tab);
+        } else if (tab.type === 'levelgen' && typeof window.activateLevelGenTab === 'function') {
+            window.activateLevelGenTab(tab);
         }
         if (typeof window.switchToTab === 'function') {
-            const targetUI = tab.type === 'gani' ? 'gani' : (tab.type === 'beautify' ? 'beautify' : (tab.type === 'setshape' ? 'setshape' : 'level'));
+            const targetUI = tab.type === 'gani' ? 'gani' : (tab.type === 'beautify' ? 'beautify' : (tab.type === 'setshape' ? 'setshape' : (tab.type === 'levelgen' ? 'levelgen' : 'level')));
             if (targetUI === 'gani' && window.levelEditor?._playMode) window.levelEditor.exitPlayMode();
             window.switchToTab(targetUI);
         }
@@ -446,6 +452,7 @@ const TabManager = {
             level: { src: 'icons/rcfiles_nw.png', cls: '' },
             gani: { src: 'icons/user.svg', cls: 'svg-icon' },
             beautify: { src: 'icons/code.svg', cls: 'svg-icon' },
+            levelgen: { src: 'icons/levelgen.ico', cls: '' },
             setshape: { src: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAACbUlEQVQ4y52P20uTcRzGn9972MEdHBvOw1JZZk4dTjyXhGEGUgkWFJH1P3QTQXgVne6UThCEFxVBYWVgWCCBQ6IM0cBkouLxTbc5NJzv67b39/66SG2pQfXcfPnC83y/n4fgP1RZd8JAeJ4nIDH+X8OFpQdyKE2063T6S5QmwgIAVNUdE0yWVCMhAGMbTgYQAjAAK5FwS2Zm5sGhgf6LvCC0rq4s3fBV13Z+HRwAceXuE1PtzisAvAD5/R0BwBisNkfxKbfsGdHcseHRQF35oYbHfW9ePZweH2kTIqEFc15Rme/chTOKOz+/eiMFgDCAEQBsKbzk6H/WQWrNU3pDZUW3v7fnqiJH72mUMmHzGdVojijq8vCrAQAgHoth/EMv0uk3+OfNpMwxnDbrSi9YNJrIwuwk45KJ2bYZi63jXVcXrMHPWLSWYH/jWfi/u+LrTGyKhCQOAITtlTcnpRSTYxNw5XkgGS1objyCGSmMZUXt9fe8OOnM2KPuOJAsjufg8RZCmplDia8IgigCAHhB0ADEQ4vzP327hdkGB8fxyHbnQhBFKLKMdUUBRzh9fVOLbtO7KwHZtklzEtpv3eyU12QZYLA50i+X1tRfH/74XtuVIJkkGo3iwe07jxi0+0Vl5a8bmk+vBr586jNZbW1bBIQQHiA81bQdB1SVQlW1YNXho63dTzuOuwuK07wVNXaAtwOAoFFKOY7kTEwHfRPTwR0UaiIBg8nsefv8ybW9Hm+9McWUPTo0GLLY7IGtunpDSkaK2VL4pyrOrNzzdmeWh+O4OGOANDX2UllbvRtamGUEfyczCDEk7ctgjALAD3gS6nZ20OQgAAAAAElFTkSuQmCC', cls: '' }
         };
         const icon = iconMap[entry.type];

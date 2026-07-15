@@ -358,7 +358,7 @@ class Animation {
         return this.defaultImages.get(name.toUpperCase()) || "";
     }
 }
-const _GANI_PREFIXED_IDS = new Set(['btnAbout','btnBeautify','btnCenterView','btnCloseAll','btnColorScheme','btnCustomCSS','btnGmapGen','btnNew','btnOpen','btnOpenDefault','btnPlay','btnRedo','btnReset','btnSave','btnSaveAll','btnSaveAs','btnSetshape2','btnSettings','btnUndo','btnWorkingDir','colorSchemeDropdown','fileInput','folderInput','imageInput','mainCanvas','mainSplitter','switchBtn','zoomSlider','btnCollab','collabDropdown','collabToggleTrack','collabToggleThumb','collabStatus','collabDisconnect','collabPeers','collabCodeSection','collabMyCode','collabCopy','collabJoinCode','collabJoin','btnExportAnim']);
+const _GANI_PREFIXED_IDS = new Set(['btnAbout','btnBeautify','btnCenterView','btnCloseAll','btnColorScheme','btnCustomCSS','btnGmapGen','btnLevelGen','btnNew','btnOpen','btnOpenDefault','btnPlay','btnRedo','btnReset','btnSave','btnSaveAll','btnSaveAs','btnSetshape2','btnSettings','btnUndo','btnWorkingDir','colorSchemeDropdown','fileInput','folderInput','imageInput','mainCanvas','mainSplitter','switchBtn','zoomSlider','btnCollab','collabDropdown','collabToggleTrack','collabToggleThumb','collabStatus','collabDisconnect','collabPeers','collabCodeSection','collabMyCode','collabCopy','collabJoinCode','collabJoin','btnExportAnim']);
 function $(id) { return document.getElementById(_GANI_PREFIXED_IDS.has(id) ? 'gani-' + id : id); }
 
 const SPRITE_INDEX_STRING = -21374783;

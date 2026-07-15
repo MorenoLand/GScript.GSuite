@@ -436,7 +436,7 @@ button.active { background:#4472C4 !important; color:#ffffff; border-color:#6fa8
     .item-controls button { min-width:44px; min-height:44px; }
     .canvas-controls button { min-width:44px; min-height:44px; padding:8px 12px; }
     .tb-btn-text { display:none; }
-#switchBtn img,#switchBtn svg,#btnSetshape2 img,#btnGmapGen img,#btnBeautify img,#tbSwitchBtn svg,#tbShapesBtn img,#tbGmapBtn img,#tbBeautifyBtn img { width:20px; height:20px; }
+#switchBtn img,#switchBtn svg,#btnSetshape2 img,#btnGmapGen img,#btnBeautify img,#tbSwitchBtn svg,#tbLevelGenBtn img,#tbShapesBtn img,#tbGmapBtn img,#tbBeautifyBtn img { width:20px; height:20px; }
     #tbSwitchBtn svg,#tbShapesBtn svg { width:18px; height:18px; }
     #switchBtn { font-size:18px; }
 }
@@ -445,9 +445,9 @@ button.active { background:#4472C4 !important; color:#ffffff; border-color:#6fa8
 #switchBtn:hover,#btnSetshape2:hover,#btnGmapGen:hover { background:#353535; }
 #switchBtn:active,#btnSetshape2:active,#btnGmapGen:active { background:#1a1a1a !important; }
 body.tauri-app #switchBtn, body.tauri-app #btnSetshape2, body.tauri-app #btnGmapGen, body.tauri-app #btnAbout { display:none !important; }
-#tbSwitchBtn,#tbShapesBtn,#tbGmapBtn,#tbBeautifyBtn,#tbAboutBtn { -webkit-app-region:no-drag; app-region:no-drag; background:none; border:none; border-right:1px solid #2a2a2a; color:#9a9a9e; cursor:pointer; display:flex; align-items:center; gap:5px; padding:0 12px; height:32px; font-family:"chevyray",monospace; font-size:12px; transition:background 0.1s,color 0.1s; }
-#tbSwitchBtn svg,#tbShapesBtn svg,#tbGmapBtn svg,#tbBeautifyBtn svg,#tbAboutBtn svg { width:16px; height:16px; }
-#tbSwitchBtn:hover,#tbShapesBtn:hover,#tbGmapBtn:hover,#tbBeautifyBtn:hover,#tbAboutBtn:hover { background:#3a3a3e; color:#e0e0e0; }
+#tbSwitchBtn,#tbLevelGenBtn,#tbShapesBtn,#tbGmapBtn,#tbBeautifyBtn,#tbAboutBtn { -webkit-app-region:no-drag; app-region:no-drag; background:none; border:none; border-right:1px solid #2a2a2a; color:#9a9a9e; cursor:pointer; display:flex; align-items:center; gap:5px; padding:0 12px; height:32px; font-family:"chevyray",monospace; font-size:12px; transition:background 0.1s,color 0.1s; }
+#tbSwitchBtn svg,#tbLevelGenBtn svg,#tbShapesBtn svg,#tbGmapBtn svg,#tbBeautifyBtn svg,#tbAboutBtn svg { width:16px; height:16px; }
+#tbSwitchBtn:hover,#tbLevelGenBtn:hover,#tbShapesBtn:hover,#tbGmapBtn:hover,#tbBeautifyBtn:hover,#tbAboutBtn:hover { background:#3a3a3e; color:#e0e0e0; }
 #tauriBar { display:none; height:32px; min-height:32px; background:#1e1e1f; border-bottom:1px solid #111; user-select:none; -webkit-user-select:none; flex-shrink:0; position:relative; align-items:stretch; }
 body { display:flex; flex-direction:column; }
 body.tauri-app #tauriBar { display:flex; }

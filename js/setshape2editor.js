@@ -25,6 +25,7 @@ class SetshapeEditor {
         this.selectionStart = null; this.selectionEnd = null; this.currentSelection = null;
         this.selectionInteraction = null;
         this.selectionInteractionStart = null;
+        this.pendingSetimgpartComment = '';
         this.isDrawing = false; this.drawMode = 0;
         this.toolMode = 'pencil';
         this.snapToGrid = false;
@@ -341,14 +342,20 @@ class SetshapeEditor {
         this._q('gs1Checkbox').onchange = () => this._updateOutput();
         this._q('closeSetimgpartBtn').onclick = () => this._q('setimgpartModal').style.display = 'none';
         this._q('copySetimgpartBtn').onclick = () => this._copy(this._getOutputValue('setimgpart'), this._q('copySetimgpartBtn'));
+        this._q('closeSetimgpartNameBtn').onclick = () => this._q('setimgpartNameModal').style.display = 'none';
+        this._q('setimgpartNameInput').addEventListener('keydown', e => { if (e.key === 'Enter') this._confirmSetimgpartName(); });
+        this._q('confirmSetimgpartNameBtn').onclick = () => this._confirmSetimgpartName();
         this._q('closeImportBtn').onclick = () => this._q('importModal').style.display = 'none';
         this._q('importConfirmBtn').onclick = () => this._importSetshape();
 
         new ResizeObserver(() => { this._resizeCanvas(); this._render(); }).observe(container);
         document.addEventListener('keydown', e => {
             if (!this._isActive()) return;
+            const textTarget = e.target?.tagName === 'INPUT' || e.target?.tagName === 'TEXTAREA' || e.target?.isContentEditable;
             if (e.ctrlKey && !e.shiftKey && e.key === 'z') { e.preventDefault(); this._undo(); }
             else if (e.ctrlKey && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); this._redo(); }
+            else if (!textTarget && this.cutMode && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key === '1') { e.preventDefault(); this._appendSetimgpart(); }
+            else if (!textTarget && this.cutMode && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key === '2') { e.preventDefault(); this._showSetimgpartName(); }
         });
     }
 
@@ -774,12 +781,44 @@ class SetshapeEditor {
 
     _showSetimgpart() {
         const s = this.currentSelection; if (!s) return;
-        const name = this.currentImageFile ? this.currentImageFile.name : 'imagename.png';
-        this._setOutputValue('setimgpart', `setimgpart(${name}, ${Math.floor(s.x)}, ${Math.floor(s.y)}, ${Math.floor(s.width)}, ${Math.floor(s.height)});`);
+        this._setOutputValue('setimgpart', this._getSetimgpartLine());
         this._q('setimgpartModal').style.display = 'flex';
         this._ensureOutputEditors().then(() => {
             this._layoutOutputEditors();
         });
+    }
+
+    _getSetimgpartLine(comment = '') {
+        const s = this.currentSelection; if (!s) return '';
+        const name = this.currentImageFile ? this.currentImageFile.name : 'imagename.png';
+        const line = `setimgpart(${name}, ${Math.floor(s.x)}, ${Math.floor(s.y)}, ${Math.floor(s.width)}, ${Math.floor(s.height)});`;
+        return comment ? `${line} // ${comment.replace(/[\r\n]+/g, ' ').trim()}` : line;
+    }
+
+    _appendSetimgpart(named = false) {
+        const s = this.currentSelection; if (!s) return;
+        const comment = named ? this.pendingSetimgpartComment : '';
+        const current = this._getOutputValue('setimgpart').trim();
+        this._setOutputValue('setimgpart', `${current ? `${current}\n` : ''}${this._getSetimgpartLine(comment)}`);
+        this._q('setimgpartModal').style.display = 'flex';
+        this._ensureOutputEditors().then(() => {
+            this._layoutOutputEditors();
+        });
+    }
+
+    _showSetimgpartName() {
+        if (!this.currentSelection) return;
+        const input = this._q('setimgpartNameInput');
+        input.value = '';
+        this._q('setimgpartNameModal').style.display = 'flex';
+        setTimeout(() => input.focus(), 0);
+    }
+
+    _confirmSetimgpartName() {
+        this.pendingSetimgpartComment = this._q('setimgpartNameInput').value;
+        this._q('setimgpartNameModal').style.display = 'none';
+        this._appendSetimgpart(true);
+        this.pendingSetimgpartComment = '';
     }
 
     _showImport() { this._q('importModal').style.display = 'flex'; this._q('importText').value = ''; this._q('importText').focus(); }
@@ -1010,6 +1049,16 @@ class SetshapeEditor {
       <div style="display:flex;justify-content:flex-end;gap:8px;padding:8px 12px;border-top:1px solid #2a2a2a;">
         <button style="${btnStyle}" data-ss2="copySetimgpartBtn">Copy</button>
         <button style="${btnStyle}" data-ss2="closeSetimgpartBtn">Close</button>
+      </div>
+    </div>
+  </div>
+  <div data-ss2="setimgpartNameModal" style="display:none;position:fixed;inset:0;background:transparent;z-index:9101;align-items:center;justify-content:center;">
+    <div style="background:#1e1e1e;border:1px solid #3a3a3a;min-width:320px;display:flex;flex-direction:column;">
+      <div style="background:#2a2a2a;padding:8px 12px;color:#ddd;font-family:chevyray,monospace;">Name Cut</div>
+      <div style="padding:14px;"><input data-ss2="setimgpartNameInput" style="width:100%;background:#252525;color:#ddd;border:1px solid #444;padding:6px;font-family:monospace;box-sizing:border-box;" placeholder="comment name"></div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;padding:8px 12px;border-top:1px solid #2a2a2a;">
+        <button style="${btnStyle}" data-ss2="confirmSetimgpartNameBtn">Add</button>
+        <button style="${btnStyle}" data-ss2="closeSetimgpartNameBtn">Close</button>
       </div>
     </div>
   </div>
