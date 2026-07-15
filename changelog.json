@@ -1,6 +1,6 @@
 [
   {
-    "version": "0.1.76",
+    "version": "0.1.75",
     "date": "2026-07-15 ",
     "tag": "GSuite",
     "changes": [
@@ -13,7 +13,14 @@
       "Level Generator: added palette draw and flood-fill tools, map load/save, native .nw and .gmap world export, an example map, built-in docs, and undo/redo",
       "Level editor play mode: brought over bush breaking, lift and throw behavior, hiding, swimming, sign dialogs, and animated flowers from the Godot example",
       "Level editor settings: added switches for flower animation and liftable objects during play mode",
-      "Setshape2: added 1 to append another setimgpart cut and 2 to add an output comment name"
+      "Setshape2: added 1 to append another setimgpart cut and 2 to add an output comment name",
+      "Particle Emulator: added the Node Graph (Alpha) view with reconnectable particle, modifier, and value nodes",
+      "Particle Emulator: keeps the current script, visual editor, and graph state when reopening the tab",
+      "Particle Emulator: added animation export options for WebM, GIF, and Animated PNG",
+      "Level Generator: keeps the current map, edits, zoom, and pan position after reopening",
+      "Level Generator: generated gmap names now keep numbers from the filename prefix",
+      "Level editor: labeled the separate Saved Objects and Built-In Objects panels",
+      "Level Generator and Particle Emulator now follow the selected editor theme"
     ]
   },
   {

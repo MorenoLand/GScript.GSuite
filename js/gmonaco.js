@@ -152,6 +152,36 @@
                 'editorSuggestWidget.selectedBackground': '#444444'
             }
         });
+        monaco.editor.defineTheme('graal-light', {
+            base: 'vs',
+            inherit: false,
+            rules: [
+                { token: '', foreground: '1a1a1a' },
+                { token: 'comment', foreground: '68707a', fontStyle: 'italic' },
+                { token: 'string', foreground: '8a5a00' },
+                { token: 'number', foreground: '7a38a8' },
+                { token: 'number.float', foreground: '7a38a8' },
+                { token: 'keyword', foreground: 'b00045' },
+                { token: 'keyword.memory', foreground: 'b00045', fontStyle: 'bold' },
+                { token: 'keyword.builtin', foreground: '6b2f92' },
+                { token: 'keyword.extras', foreground: 'a04d00' },
+                { token: 'function.call', foreground: '23753d' },
+                { token: 'variable.property', foreground: '1d6a85' },
+                { token: 'operator', foreground: '9a1743' },
+                { token: 'delimiter', foreground: '303030' },
+                { token: 'identifier', foreground: '1a1a1a' }
+            ],
+            colors: {
+                'editor.background': '#ffffff', 'editor.foreground': '#1a1a1a',
+                'editorLineNumber.foreground': '#888888', 'editorLineNumber.activeForeground': '#333333',
+                'editorCursor.foreground': '#1a1a1a', 'editor.selectionBackground': '#cfe3ff',
+                'editor.lineHighlightBackground': '#f5f5f5', 'editor.lineHighlightBorder': '#f5f5f5',
+                'editorIndentGuide.background1': '#e0e0e0', 'editorIndentGuide.activeBackground1': '#b8b8b8',
+                'editorWidget.background': '#ffffff', 'editorWidget.border': '#d0d0d0',
+                'editorSuggestWidget.background': '#ffffff', 'editorSuggestWidget.border': '#d0d0d0',
+                'editorSuggestWidget.selectedBackground': '#e8e8e8'
+            }
+        });
         monaco.editor.defineTheme('neon-synthwave', {
             base: 'vs-dark',
             inherit: true,

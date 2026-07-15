@@ -20,7 +20,7 @@ class LevelGenEditor {
         this.tool = 'draw';
         this.palette = [
             ['Grass', 24, 140, 24], ['Trees', 181, 239, 189], ['Water', 0, 0, 255], ['Mountains', 128, 0, 0],
-            ['Flowers', 255, 0, 0], ['Sand', 150, 110, 0], ['Sand stones', 113, 82, 0], ['Big sand', 83, 61, 0],
+            ['Flowers', 255, 0, 0], ['Sand', 150, 110, 0], ['Sand stones', 113, 82, 0], ['Big Sand Stone', 83, 61, 0],
             ['Swamp', 0, 106, 0], ['Bushes', 0, 66, 0], ['Puddle', 0, 255, 255], ['Puddle stone', 0, 179, 179]
         ];
         this.pixels = new Array(this.width * this.height).fill(this._color(0));
@@ -145,7 +145,7 @@ class LevelGenEditor {
         this.palette.forEach((p, i) => {
             const b = document.createElement('button');
             b.title = p[0];
-            b.style.cssText = `width:28px;height:24px;background:${this._color(i)};border:2px solid ${i === this.selectedPalette ? '#fff' : '#111'};box-shadow:inset 0 0 0 1px #555;cursor:pointer;`;
+            b.style.cssText = `--levelgen-palette-color:${this._color(i)};width:28px;height:24px;background:var(--levelgen-palette-color);border:2px solid ${i === this.selectedPalette ? '#fff' : '#111'};box-shadow:inset 0 0 0 1px #555;cursor:pointer;`;
             b.onclick = () => { this.selectedPalette = i; this._renderPalette(); };
             host.appendChild(b);
         });
@@ -569,7 +569,7 @@ class LevelGenEditor {
                 }
                 await _tauri.fs.writeTextFile(`${output}/${this._levelStem(prefix, name)}.nw`, this._writeGeneratedLevel(levels[row * cols + col], links));
             }
-            const gmapName = [...prefix].filter(c => /[a-z]/i.test(c)).join('') || 'world';
+            const gmapName = [...prefix].filter(c => /[a-z0-9]/i.test(c)).join('') || 'world';
             const names = Array.from({ length: rows }, (_, row) => Array.from({ length: cols }, (_, col) => `"${this._levelStem(prefix, this._levelName(col, row, cols, rows))}.nw"`).join(','));
             await _tauri.fs.writeTextFile(`${output}/${gmapName}.gmap`, `GRMAP001\r\nWIDTH ${cols}\r\nHEIGHT ${rows}\r\nLEVELNAMES\r\n${names.join('\r\n')}\r\nLEVELNAMESEND\r\n`);
             status.textContent = `Generated ${cols * rows} level${cols * rows === 1 ? '' : 's'} and ${gmapName}.gmap.`;

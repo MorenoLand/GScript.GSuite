@@ -574,8 +574,8 @@ class Emitter {
     this.currentDelay = random(this.delaymin, this.delaymax);
     this.emissionRemainder = 0;
     this.activeParticles = [];
-    this.x = config.x || 24;
-    this.y = config.y || 24;
+    this.x = config.x ?? 24;
+    this.y = config.y ?? 24;
     this.dropemitter = config.dropemitter || null;
     this.dropwateremitter = config.dropwateremitter || null;
     this.dropemitters = [];

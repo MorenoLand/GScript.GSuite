@@ -82,6 +82,7 @@ window.ParticleEmuEditor = ParticleEmuEditor;
 window.activateParticleEmuTab = function() { ParticleEmuEditor.mountInto(document.getElementById('particleemuTabHost')); };
 window.deactivateParticleEmuTab = function() { window.ParticleEmuRuntime?.pauseForTab?.(); };
 window.closeParticleEmuTab = function() {
+    window.ParticleEmuRuntime?.saveSession?.();
     window.ParticleEmuRuntime?.stopParticles?.();
     if (ParticleEmuEditor._host) ParticleEmuEditor._host.replaceChildren();
     ParticleEmuEditor._tabId = null;
@@ -133,7 +134,7 @@ let particleGraphLinkDrag = null;
 let particleGraphRenderVersion = 0;
 function graphSnapshot() { return structuredClone({ editorState, positions:graphNodePositions, connections:particleGraphConnections, values:graphValueNodes }); }
 function restoreGraphSnapshot(snapshot) { editorState = structuredClone(snapshot.editorState); [graphNodePositions, particleGraphConnections, graphValueNodes].forEach((target, index) => { Object.keys(target).forEach(key => delete target[key]); Object.assign(target, structuredClone([snapshot.positions, snapshot.connections, snapshot.values][index])); }); graphSelectedNodes.clear(); syncCodeFromVisual(false); scheduleLivePreview(); renderVisualEditor(); }
-function recordParticleGraphHistory() { const snapshot = graphSnapshot(), current = particleGraphHistory[particleGraphHistoryIndex]; if (current && JSON.stringify(current) === JSON.stringify(snapshot)) return; particleGraphHistory.splice(particleGraphHistoryIndex + 1); particleGraphHistory.push(snapshot); particleGraphHistoryIndex = particleGraphHistory.length - 1; updateParticleGraphHistoryButtons(); }
+function recordParticleGraphHistory() { const snapshot = graphSnapshot(), current = particleGraphHistory[particleGraphHistoryIndex]; if (current && JSON.stringify(current) === JSON.stringify(snapshot)) return; particleGraphHistory.splice(particleGraphHistoryIndex + 1); particleGraphHistory.push(snapshot); particleGraphHistoryIndex = particleGraphHistory.length - 1; updateParticleGraphHistoryButtons(); queueParticleSessionSave(); }
 function ensureParticleGraphHistory() { if (particleGraphHistoryIndex < 0) recordParticleGraphHistory(); else updateParticleGraphHistoryButtons(); }
 function updateParticleGraphHistoryButtons() { const root = editorRoot(); const undo = root.querySelector('#btnGraphUndo'), redo = root.querySelector('#btnGraphRedo'); if (undo) undo.disabled = particleGraphHistoryIndex <= 0; if (redo) redo.disabled = particleGraphHistoryIndex >= particleGraphHistory.length - 1; }
 function undoParticleGraph() { if (particleGraphHistoryIndex <= 0) return; particleGraphHistoryIndex--; restoreGraphSnapshot(particleGraphHistory[particleGraphHistoryIndex]); updateParticleGraphHistoryButtons(); }
@@ -190,6 +191,10 @@ const particleEditorPresets = {
   }
 };
 let editorState = structuredClone(particleEditorPresets["Soft Light Stream"]);
+const particleSessionKey = 'gsuite.particleemu.session';
+let particleSessionRestored = false;
+let particleSessionRestoring = false;
+let particleSessionSaveTimer = 0;
 
 function getParticleCode() {
   return codeEditor ? codeEditor.getValue() : document.getElementById('codeInput').value;
@@ -198,7 +203,44 @@ function getParticleCode() {
 function setParticleCode(code) {
   document.getElementById('codeInput').value = code;
   if (codeEditor) codeEditor.setValue(code);
+  queueParticleSessionSave();
 }
+
+function particleSessionState() {
+  return { version:1, code:getParticleCode(), editorState:structuredClone(editorState), editorMode, visualEditorMode, selectedParticle, selectedModifier, positions:structuredClone(graphNodePositions), connections:structuredClone(particleGraphConnections), values:structuredClone(graphValueNodes), graphView:{...particleGraphView}, viewport:{bgColor, zoom:viewportZoom, panX:viewportPanX, panY:viewportPanY} };
+}
+
+function saveParticleSession() {
+  clearTimeout(particleSessionSaveTimer);
+  if (particleSessionRestoring) return;
+  try { localStorage.setItem(particleSessionKey, JSON.stringify(particleSessionState())); } catch {}
+}
+
+function queueParticleSessionSave() {
+  if (particleSessionRestoring) return;
+  clearTimeout(particleSessionSaveTimer);
+  particleSessionSaveTimer = setTimeout(saveParticleSession, 200);
+}
+
+function restoreParticleSession() {
+  if (particleSessionRestored) return;
+  particleSessionRestored = true;
+  try {
+    const state = JSON.parse(localStorage.getItem(particleSessionKey) || 'null');
+    if (!state || !state.editorState?.emitter || !Array.isArray(state.editorState.particles) || !Array.isArray(state.editorState.modifiers)) return;
+    particleSessionRestoring = true;
+    editorState = structuredClone(state.editorState);
+    selectedParticle = Math.max(0, Math.min(editorState.particles.length - 1, Number.isInteger(state.selectedParticle) ? state.selectedParticle : 0));
+    selectedModifier = Math.max(0, Math.min(Math.max(0, editorState.modifiers.length - 1), Number.isInteger(state.selectedModifier) ? state.selectedModifier : 0));
+    editorMode = state.editorMode === 'visual' ? 'visual' : 'raw'; visualEditorMode = state.visualEditorMode === 'graph' ? 'graph' : 'form';
+    [graphNodePositions, particleGraphConnections, graphValueNodes].forEach((target, index) => { Object.keys(target).forEach(key => delete target[key]); Object.assign(target, structuredClone([state.positions || {}, state.connections || {}, state.values || {}][index])); });
+    if (state.graphView && Number.isFinite(state.graphView.zoom)) Object.assign(particleGraphView, { x:Number(state.graphView.x) || 0, y:Number(state.graphView.y) || 0, zoom:Math.max(0.3, Math.min(2.5, state.graphView.zoom)) });
+    if (state.viewport) { bgColor = typeof state.viewport.bgColor === 'string' ? state.viewport.bgColor : bgColor; viewportZoom = Number.isFinite(state.viewport.zoom) ? state.viewport.zoom : viewportZoom; viewportPanX = Number.isFinite(state.viewport.panX) ? state.viewport.panX : viewportPanX; viewportPanY = Number.isFinite(state.viewport.panY) ? state.viewport.panY : viewportPanY; }
+    if (typeof state.code === 'string') setParticleCode(state.code);
+  } catch {} finally { particleSessionRestoring = false; }
+}
+
+window.addEventListener('beforeunload', saveParticleSession);
 
 function resizeCanvasToDisplay(canvas) {
   const rect = canvas.getBoundingClientRect();
@@ -254,11 +296,13 @@ function setEditorMode(mode) {
   editorElement('btnVisualMode')?.classList.toggle('active', mode === 'visual');
   if (mode === 'visual') renderVisualEditor();
   else ensureCodeEditor().then(() => requestAnimationFrame(() => codeEditor?.layout()));
+  queueParticleSessionSave();
 }
 
 function setVisualEditorMode(mode) {
   visualEditorMode = mode === 'graph' ? 'graph' : 'form';
   renderVisualEditor();
+  queueParticleSessionSave();
 }
 
 function fieldHtml(path, label, value, type = 'text', choices = null) {
@@ -289,6 +333,7 @@ function writePath(path, value) {
   if (typeof old === 'boolean') obj[key] = !!value;
   else if (typeof old === 'number') obj[key] = Number(value);
   else obj[key] = value;
+  queueParticleSessionSave();
 }
 
 function bindNumberWheel(input) {
@@ -482,6 +527,7 @@ function applyParticleGraphView(graph = editorRoot().querySelector('#particleGra
   const editor = graph.querySelector('.particle-graph-editor'); if (editor) editor.style.transform = `scale(${particleGraphView.zoom})`;
   const label = graph.querySelector('#particleGraphZoom'); if (label) label.textContent = `${Math.round(particleGraphView.zoom * 100)}%`;
   scheduleParticleGraphLinkRedraw(graph);
+  queueParticleSessionSave();
 }
 
 function scheduleParticleGraphLinkRedraw(graph) {
@@ -773,6 +819,7 @@ function ensureCodeEditor() {
       input.value = codeEditor.getValue();
       codeEditor.getAction('editor.unfoldAll')?.run();
       if (editorMode === 'raw') scheduleLivePreview();
+      queueParticleSessionSave();
     });
     codeEditor.getAction('editor.unfoldAll')?.run();
     host.closest('.particleemu-tab-content')?.classList.add('monaco-ready');
@@ -831,6 +878,7 @@ function initializeViewport() {
     localStorage.setItem('gsuiteParticleViewportPanX', viewportPanX);
     localStorage.setItem('gsuiteParticleViewportPanY', viewportPanY);
     localStorage.setItem('gsuiteParticleViewportBgColor', bgColor);
+    queueParticleSessionSave();
     drawViewport();
   };
   
@@ -847,6 +895,7 @@ function initializeViewport() {
     colorPicker.onchange = (event) => {
       bgColor = event.target.value;
       localStorage.setItem('gsuiteParticleViewportBgColor', bgColor);
+      queueParticleSessionSave();
       drawViewport();
     };
     colorPicker.click();
@@ -871,6 +920,7 @@ function initializeViewport() {
     localStorage.setItem('gsuiteParticleViewportZoom', viewportZoom);
     localStorage.setItem('gsuiteParticleViewportPanX', viewportPanX);
     localStorage.setItem('gsuiteParticleViewportPanY', viewportPanY);
+    queueParticleSessionSave();
     drawViewport();
   });
   
@@ -892,6 +942,7 @@ function initializeViewport() {
       viewportPanY = dragStartPanY + (e.clientY - dragStartY);
       localStorage.setItem('gsuiteParticleViewportPanX', viewportPanX);
       localStorage.setItem('gsuiteParticleViewportPanY', viewportPanY);
+      queueParticleSessionSave();
       drawViewport();
     }
   });
@@ -921,6 +972,7 @@ function initializeCodeInput() {
   codeInputInitialized = true;
   input.addEventListener('input', () => {
     if (editorMode === 'raw') scheduleLivePreview();
+    queueParticleSessionSave();
   });
 }
 
@@ -1052,11 +1104,12 @@ function animate() {
 function activate() {
   initializeViewport();
   initializeCodeInput();
+  restoreParticleSession();
   renderVisualEditor();
   setEditorMode(editorMode);
   ensureCodeEditor();
   if (!particleSystem) runParticles({silent: true});
 }
 
-return { getParticleCode: getParticleCode, setParticleCode: setParticleCode, resizeCanvasToDisplay: resizeCanvasToDisplay, formatOutputValue: formatOutputValue, writeOutput: writeOutput, clearOutput: clearOutput, updatePlaybackButton: updatePlaybackButton, scheduleLivePreview: scheduleLivePreview, setEditorMode: setEditorMode, setVisualEditorMode: setVisualEditorMode, zoomParticleGraph: zoomParticleGraph, resetParticleGraphView: resetParticleGraphView, undoParticleGraph: undoParticleGraph, redoParticleGraph: redoParticleGraph, addGraphValueNode: addGraphValueNode, fieldHtml: fieldHtml, imageSelectHtml: imageSelectHtml, readPath: readPath, writePath: writePath, bindEditorInputs: bindEditorInputs, renderVisualEditor: renderVisualEditor, addEditorParticle: addEditorParticle, removeEditorParticle: removeEditorParticle, addEditorModifier: addEditorModifier, removeEditorModifier: removeEditorModifier, loadEditorPreset: loadEditorPreset, modifierFunction: modifierFunction, editorValue: editorValue, buildEditorCode: buildEditorCode, syncCodeFromVisual: syncCodeFromVisual, applyVisualEditor: applyVisualEditor, syncVisualFromCode: syncVisualFromCode, lightenColor: lightenColor, drawGrid: drawGrid, togglePlayPause: togglePlayPause, stopParticles: stopParticles, animate: animate, activate: activate, resizeViewport: () => { const canvas = document.getElementById('viewport'); if (canvas) resizeCanvasToDisplay(canvas); }, pauseForTab: () => { isPaused = true; if (animId) cancelAnimationFrame(animId); animId = null; updatePlaybackButton(); } };
+return { getParticleCode: getParticleCode, setParticleCode: setParticleCode, saveSession: saveParticleSession, resizeCanvasToDisplay: resizeCanvasToDisplay, formatOutputValue: formatOutputValue, writeOutput: writeOutput, clearOutput: clearOutput, updatePlaybackButton: updatePlaybackButton, scheduleLivePreview: scheduleLivePreview, setEditorMode: setEditorMode, setVisualEditorMode: setVisualEditorMode, zoomParticleGraph: zoomParticleGraph, resetParticleGraphView: resetParticleGraphView, undoParticleGraph: undoParticleGraph, redoParticleGraph: redoParticleGraph, addGraphValueNode: addGraphValueNode, fieldHtml: fieldHtml, imageSelectHtml: imageSelectHtml, readPath: readPath, writePath: writePath, bindEditorInputs: bindEditorInputs, renderVisualEditor: renderVisualEditor, addEditorParticle: addEditorParticle, removeEditorParticle: removeEditorParticle, addEditorModifier: addEditorModifier, removeEditorModifier: removeEditorModifier, loadEditorPreset: loadEditorPreset, modifierFunction: modifierFunction, editorValue: editorValue, buildEditorCode: buildEditorCode, syncCodeFromVisual: syncCodeFromVisual, applyVisualEditor: applyVisualEditor, syncVisualFromCode: syncVisualFromCode, lightenColor: lightenColor, drawGrid: drawGrid, togglePlayPause: togglePlayPause, stopParticles: stopParticles, animate: animate, activate: activate, resizeViewport: () => { const canvas = document.getElementById('viewport'); if (canvas) resizeCanvasToDisplay(canvas); }, pauseForTab: () => { isPaused = true; if (animId) cancelAnimationFrame(animId); animId = null; updatePlaybackButton(); } };
 })();

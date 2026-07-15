@@ -1,6 +1,6 @@
 {
   "name": "gsuite",
-  "version": "0.1.76",
+  "version": "0.1.75",
   "description": "GSuite - A web-based suite of tools for development.",
   "main": "anieditor.js",
   "packageManager": "pnpm@10.14.0",

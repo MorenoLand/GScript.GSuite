@@ -23,6 +23,8 @@
 <script src="js/tiletypes.js"></script>
 <script src="js/mnglib.js"></script>
 <script src="js/gmonaco.js"></script>
+<script src="js/particleexport.js"></script>
+<script src="js/particleapng.js"></script>
 <link rel="stylesheet" href="css/global.css">
 <style>
 #tbParticleEmuBtn img, #tbLevelGenBtn img, #tbShapesBtn img { width:20px !important; height:20px !important; display:block; image-rendering:pixelated; }
@@ -439,6 +441,27 @@
     }
 
     window.refreshUtilityToolTheme = function() {
+        const colors = window.levelEditor?._schemeColors;
+        document.getElementById('utilityToolTheme')?.remove();
+        if (colors) {
+            const button = colors.button || colors.panel, buttonText = colors.buttonText || colors.text, buttonHover = colors.buttonHover || colors.hover, input = colors.inputBg || colors.bg;
+            const style = document.createElement('style'); style.id = 'utilityToolTheme';
+            style.textContent = `
+                #levelgenRoot, #levelgenRoot .main-container, #levelgenRoot .content-area, #levelgenRoot .levelgen-workspace, #particleemuRoot, #particleemuRoot .container, #particleemuRoot .left, #particleemuRoot .right, #particleemuRoot .editor-shell, #particleemuRoot #outputPanel, #particleemuRoot .editor-section, #particleemuRoot .modifier-list { background:${colors.bg} !important; color:${colors.text} !important; border-color:${colors.border} !important; }
+                #levelgenRoot button, #particleemuRoot button { background:${button} !important; color:${buttonText} !important; border-color:${colors.border} !important; }
+                #levelgenRoot button:hover, #particleemuRoot button:hover { background:${buttonHover} !important; }
+                #levelgenRoot [data-lg="palette"] button, #levelgenRoot [data-lg="palette"] button:hover { background:var(--levelgen-palette-color) !important; }
+                #levelgenRoot .main-container > div:not([data-lg="viewport"]):not([data-lg="docsModal"]):not([data-lg="generateModal"]), #levelgenRoot [data-lg="docsModal"] > div, #levelgenRoot [data-lg="generateModal"] > div { background:${colors.panel} !important; color:${colors.text} !important; border-color:${colors.border} !important; }
+                #levelgenRoot [data-lg="docsModal"] > div > div:first-child, #levelgenRoot [data-lg="generateModal"] > div > div:first-child { background:${colors.hover} !important; color:${colors.text} !important; border-color:${colors.border} !important; }
+                #levelgenRoot [data-lg="viewport"] { background:${colors.bg} !important; }
+                #levelgenRoot input, #levelgenRoot select, #particleemuRoot input, #particleemuRoot select, #particleemuRoot textarea, #particleemuRoot .field input, #particleemuRoot .field select { background:${input} !important; color:${colors.text} !important; border-color:${colors.border} !important; }
+                #particleemuRoot .topbar, #levelgenRoot div:has(> [data-lg="newBtn"]) { background:${colors.panel} !important; border-color:${colors.border} !important; }
+                #particleemuRoot .viewport-hint, #particleemuRoot .modifier-empty, #particleemuRoot .modifier-row { color:${colors.text} !important; }
+                #particleemuRoot .modifier-row:hover { background:${colors.hover} !important; }
+                #particleemuRoot .modifier-row.active { background:${buttonHover} !important; }
+            `;
+            document.head.appendChild(style);
+        }
         window.BeautifyTool?.applyTheme?.();
         window.BeautifyTool?._inputEditor?.layout?.();
         window.BeautifyTool?._outputEditor?.layout?.();
@@ -446,6 +469,8 @@
         window.__setshapeEditorInstance?._render?.();
         window.LevelGenEditor?._instance?._render?.();
         window.ParticleEmuRuntime?.resizeViewport?.();
+        window.refreshCustomCSSLayer?.();
+        window.ParticleEmuExport?.applyTheme?.();
     };
 
     function switchToTab(type) {
@@ -575,6 +600,8 @@
         if (!workspace || workspace.querySelector('.particleemu-splitter')) return;
         const left = workspace.querySelector(':scope > .left'), right = workspace.querySelector(':scope > .right');
         if (!left || !right) return;
+        const savedWidth = Number(localStorage.getItem('gsuiteParticlePaneWidth'));
+        if (Number.isFinite(savedWidth) && savedWidth >= 280 && savedWidth <= workspace.clientWidth - 280) { left.style.flex = `0 0 ${savedWidth}px`; right.style.flex = '1 1 0'; }
         const splitter = document.createElement('div');
         splitter.className = 'particleemu-splitter';
         splitter.onpointerdown = event => {
@@ -583,7 +610,7 @@
             splitter.onpointermove = move => {
                 if (!splitter.hasPointerCapture(move.pointerId)) return;
                 const width = Math.max(280, Math.min(rect.width - 280, startWidth + move.clientX - startX));
-                left.style.flex = `0 0 ${width}px`; right.style.flex = '1 1 0'; window.ParticleEmuRuntime?.resizeViewport?.();
+                left.style.flex = `0 0 ${width}px`; right.style.flex = '1 1 0'; localStorage.setItem('gsuiteParticlePaneWidth', width); window.ParticleEmuRuntime?.resizeViewport?.();
             };
             splitter.onpointerup = up => { if (splitter.hasPointerCapture(up.pointerId)) splitter.releasePointerCapture(up.pointerId); splitter.onpointermove = null; splitter.onpointerup = null; };
         };
@@ -795,10 +822,12 @@
         if (!document.querySelector('script[src="js/particleemu.js"]')) {
             const pes = document.createElement('script');
             pes.src = 'js/particleemu.js';
-            pes.onload = () => ParticleEmuEditor.open();
+            pes.onload = () => { ParticleEmuEditor.open(); window.ParticleEmuExport?.install(); window.refreshCustomCSSLayer?.(); };
             document.head.appendChild(pes);
         } else if (typeof ParticleEmuEditor !== 'undefined') {
             ParticleEmuEditor.open();
+            window.ParticleEmuExport?.install();
+            window.refreshCustomCSSLayer?.();
         }
     }
     window.injectParticleEmu = injectParticleEmu;
@@ -1106,9 +1135,27 @@
                     <div class="color-scheme-item" data-scheme="dracula">Dracula</div>
                     <div style="height:1px;background:#404040;margin:4px 0;"></div>`;
     const _updateSVG = `<svg width="12" height="12" viewBox="0 0 512 512" fill="currentColor"><path d="M105.1 202.6c7.7-21.8 20.2-42.3 37.8-59.8c62.5-62.5 163.8-62.5 226.3 0L386.3 160H352c-17.7 0-32 14.3-32 32s14.3 32 32 32H463.5c0 0 0 0 0 0h.4c17.7 0 32-14.3 32-32V80c0-17.7-14.3-32-32-32s-32 14.3-32 32v35.2L414.4 97.6c-87.5-87.5-229.3-87.5-316.8 0C73.2 122 55.6 150.7 44.8 181.4c-5.9 16.7 2.9 34.9 19.5 40.8s34.9-2.9 40.8-19.5zM39 289.3c-5 1.5-9.8 4.2-13.7 8.2c-4 4-6.7 8.8-8.1 14c-.3 1.2-.6 2.5-.8 3.8c-.3 1.7-.4 3.4-.4 5.1V432c0 17.7 14.3 32 32 32s32-14.3 32-32V396.9l17.6 17.5 0 0c87.5 87.4 229.3 87.4 316.7 0c24.4-24.4 42.1-53.1 52.9-83.7c5.9-16.7-2.9-34.9-19.5-40.8s-34.9 2.9-40.8 19.5c-7.7 21.8-20.2 42.3-37.8 59.8c-62.5 62.5-163.8 62.5-226.3 0l-.1-.1L125.6 352H160c17.7 0 32-14.3 32-32s-14.3-32-32-32H48.4c-1.6 0-3.2 .1-4.8 .3s-3.1 .5-4.6 1z"/></svg>`;
+    window.refreshCustomCSSLayer = function(css = null) {
+        const value = css === null ? (localStorage.getItem('gsuite_customCSS') || '') : css;
+        ['customUserCSS', 'levelEditorCustomUserCSS'].forEach(id => document.getElementById(id)?.remove());
+        document.querySelectorAll('[data-gsuite-custom-css]').forEach(tag => tag.remove());
+        let tag = document.getElementById('gsuiteCustomUserCSS');
+        if (!value.trim()) { tag?.remove(); return; }
+        if (!tag) { tag = document.createElement('style'); tag.id = 'gsuiteCustomUserCSS'; }
+        tag.textContent = value;
+        document.head.appendChild(tag);
+        ['levelRoot', 'ganiRoot', 'beautifyRoot', 'setshapeRoot', 'levelgenRoot', 'particleemuRoot'].forEach(id => {
+            const host = document.getElementById(id);
+            if (!host?.children.length) return;
+            const scoped = document.createElement('style');
+            scoped.dataset.gsuiteCustomCss = id;
+            scoped.textContent = value;
+            host.appendChild(scoped);
+        });
+    };
     window.openSharedCustomCSSDialog = function(options = {}) {
-        const { styleTagId = 'customUserCSS', downloadName = 'custom-theme.css', fontFamily = "'chevyray', monospace", applyCurrentTheme = null, afterApply = null } = options;
-        const current = (document.getElementById(styleTagId) || {}).textContent || '';
+        const { styleTagId = 'gsuiteCustomUserCSS', downloadName = 'custom-theme.css', fontFamily = "'chevyray', monospace", applyCurrentTheme = null, afterApply = null } = options;
+        const current = (document.getElementById(styleTagId) || {}).textContent || localStorage.getItem('gsuite_customCSS') || '';
         const overlay = document.createElement('div');
         overlay.className = 'dialog-overlay';
         overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;display:flex;justify-content:center;align-items:center;';
@@ -1147,8 +1194,7 @@
         if (window.monacoReady) {
             window.monacoReady.then(mc => {
                 if (!mc) { mkFallback(); return; }
-                const monacoTheme = getComputedStyle(document.documentElement).getPropertyValue('--monaco-theme').trim() || 'graal-active';
-                ed = mc.editor.create(container, { value: current, language: 'css', theme: monacoTheme, minimap:{enabled:false}, scrollBeyondLastLine:false, fontSize:12, fontFamily:'monospace', automaticLayout:true });
+                ed = mc.editor.create(container, { value: current, language: 'css', theme: 'graal-default', minimap:{enabled:false}, scrollBeyondLastLine:false, fontSize:12, fontFamily:'monospace', automaticLayout:true });
             });
         } else {
             mkFallback();
@@ -1156,17 +1202,14 @@
         const applyCSS = () => {
             const css = getValue();
             if (!css.trim()) {
-                const tag = document.getElementById(styleTagId);
-                if (tag) tag.remove();
                 localStorage.removeItem('gsuite_customCSS');
+                window.refreshCustomCSSLayer('');
                 runApplyTheme();
                 runAfterApply();
                 return;
             }
-            let tag = document.getElementById(styleTagId);
-            if (!tag) { tag = document.createElement('style'); tag.id = styleTagId; document.head.appendChild(tag); }
-            tag.textContent = css;
             localStorage.setItem('gsuite_customCSS', css);
+            window.refreshCustomCSSLayer(css);
             runAfterApply();
         };
         overlay.querySelector('[data-css-apply]').onclick = applyCSS;
@@ -1260,7 +1303,7 @@
                     <div id="${p}btnCustomCSS" style="padding:8px;cursor:pointer;font-family:'chevyray',monospace;font-size:12px;color:#4a9eff;user-select:none;">Custom CSS...</div>
                 </div>
             </div>
-            <input type="color" id="${p}bgColorInput" class="tb-level-only" title="Canvas Background / Void Color" value="#000000" style="width:60px;height:35px;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;cursor:pointer;flex-shrink:0;padding:0;box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);">
+            <input type="color" id="${p}bgColorInput" class="tb-level-only" title="Canvas Background / Void Color" value="#000000" style="width:60px;height:32px;border:1px solid #0a0a0a;border-top:1px solid #404040;border-left:1px solid #404040;cursor:pointer;flex-shrink:0;padding:0;box-shadow:inset 0 1px 0 rgba(0,0,0,0.3);">
             <div class="tb-sep"></div>
             <button title="Close All" id="${p}btnCloseAll"><i class="fas fa-times"></i></button>
             <button title="Reset Editor" id="${p}btnReset"><i class="fas fa-recycle"></i></button>
@@ -1678,7 +1721,7 @@
                 <div class="object-library-panel">
                     <div class="left-panel-tabs">
                         <button class="left-tab" data-panel="workdir" style="display:none;">Workdir</button>
-                        <button class="left-tab active" data-panel="objects">Objects</button>
+                        <button class="left-tab active" data-panel="objects">Saved Objects</button>
                     </div>
                     <div class="left-panel-content" id="leftPanelWorkdir" style="display:none;">
                         <div class="object-library-header">
@@ -1738,7 +1781,7 @@
                     <div class="tab-bar">
                         <div class="tab active" data-tab="tileset">Tileset</div>
                         <div class="tab" data-tab="tileobjects">Tile Objects</div>
-                        <div class="tab" data-tab="objects">Objects</div>
+                        <div class="tab" data-tab="objects">Built-In Objects</div>
                         <div class="tab" data-tab="layers">Layers</div>
                     </div>
                     <div class="tab-content">

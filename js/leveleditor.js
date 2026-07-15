@@ -8726,7 +8726,7 @@ class LevelEditor {
             .object-library-header input { background: ${inp} !important; color: ${c.text} !important; border-color: ${c.border} !important; }
             .object-library-content { background: ${c.bg} !important; }
             #objectTree { background: ${c.bg} !important; border-color: ${c.border} !important; color: ${c.text} !important; }
-            #objectsList > div { background: ${c.panel} !important; border-color: ${c.border} !important; color: ${c.text} !important; }
+            #objectsList > div, #objectsList > div > span { background: ${c.panel} !important; border-color: ${c.border} !important; color: ${c.text} !important; }
             #objectsList > div:hover { background: ${c.hover} !important; }
             .status-bar, .status-info { background: ${c.panel} !important; border-color: ${c.border} !important; color: ${c.text} !important; }
             .status-info span { color: ${c.text} !important; }
@@ -8767,7 +8767,7 @@ class LevelEditor {
             #aboutClose:hover { background: ${bHov} !important; }
             .info-tab-btn { color: ${c.text} !important; border-color: ${c.border} !important; }
             .info-tab-btn.active { color: ${c.text} !important; background: ${c.panel} !important; }
-            #colorSchemeDropdown { background: ${c.panel} !important; border-color: ${c.border} !important; }
+            #colorSchemeDropdown, #level-colorSchemeDropdown { background: ${c.panel} !important; border-color: ${c.border} !important; }
             .color-scheme-item { color: ${c.text} !important; border-color: ${c.border} !important; }
             .color-scheme-item:hover { background: ${c.hover} !important; }
             .settings-group { background: ${c.panel} !important; border-color: ${c.border} !important; }
@@ -8792,6 +8792,7 @@ class LevelEditor {
             input[type="checkbox"] { accent-color: #4a9eff !important; }
             #tauriBar button:hover { background: ${c.hover} !important; }
             #tauriBar .tb-title span { color: ${c.text} !important; }
+            #tbBeautifyBtn img { filter: ${iconFilter} !important; }
             .tool-button.active { background: #4a9eff !important; color: #fff !important; border-color: #2a7eff !important; }
             .tool-button.active:hover { background: #5aaeff !important; }
             #layers-tab > div:first-child { background: ${c.hover} !important; border-color: ${c.border} !important; }
@@ -8904,7 +8905,7 @@ class LevelEditor {
                     'list.activeSelectionForeground': c.text, 'list.focusBackground': c.hover
                 }
             });
-            monaco.editor.setTheme('graal-active');
+            monaco.editor.setTheme(scheme === 'fusion-light' || scheme === 'light-style' ? 'graal-light' : 'graal-active');
         }
         this._schemeColors = c;
         localStorage.setItem('editorColorScheme', scheme);
