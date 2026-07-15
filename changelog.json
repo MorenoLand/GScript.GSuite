@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.1.80",
+    "date": "2026-07-15",
+    "tag": "GSuite",
+    "changes": [
+      "Fixed Particle Emulator loading bundled particle images and safely handling invalid GIF frames"
+    ]
+  },
+  {
     "version": "0.1.79",
     "date": "2026-07-15",
     "tag": "GSuite",

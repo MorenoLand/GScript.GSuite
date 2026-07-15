@@ -237,8 +237,9 @@ function decodeGif(arrayBuffer) {
 }
 
 function getGifFrame(image) {
+  if (!image?.frames?.length) return null;
   const t = performance.now() % image.duration;
-  return (image.frames.find(frame => t < frame.end) || image.frames[image.frames.length - 1]).canvas;
+  return (image.frames.find(frame => t < frame.end) || image.frames[image.frames.length - 1])?.canvas || null;
 }
 
 function getTintedSource(source, r, g, b, fastColor) {
@@ -278,11 +279,11 @@ function getParticleImageSource(image) {
 }
 
 function getParticleImageWidth(image, source) {
-  return image && image.animated ? image.width : source.naturalWidth || source.width || source.offsetWidth || 0;
+  return image && image.animated ? image.width : source?.naturalWidth || source?.width || source?.offsetWidth || 0;
 }
 
 function getParticleImageHeight(image, source) {
-  return image && image.animated ? image.height : source.naturalHeight || source.height || source.offsetHeight || 0;
+  return image && image.animated ? image.height : source?.naturalHeight || source?.height || source?.offsetHeight || 0;
 }
 
 function isTintedParticle(particle) {
@@ -522,6 +523,7 @@ class Particle {
       return;
     }
     const source = getParticleImageSource(img);
+    if (!source) return;
     const width = getParticleImageWidth(img, source);
     const height = getParticleImageHeight(img, source);
     if (width === 0 || height === 0) {
@@ -1572,7 +1574,9 @@ class ParticleSystem {
     if (/\.gif(?:$|\?)/i.test(filename)) {
       try {
         const response = await fetch(particleAssetUrl(this.assetBaseUrl, filename));
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const gif = decodeGif(await response.arrayBuffer());
+        if (!gif.frames?.length) throw new Error("GIF has no frames");
         gif.__particleFilename = filename;
         this.imageCache[filename] = gif;
         debugLog(`Loaded gif: ${filename}`, gif.width, gif.height, gif.frames.length);

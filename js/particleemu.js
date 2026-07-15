@@ -167,13 +167,16 @@ function installParticleImageResolver(system) {
   const loadImage = system.loadImage.bind(system);
   system.loadImage = async name => {
     if (system.imageCache[name]) return system.imageCache[name];
-    const source = await resolveWorkspaceParticleImage(name);
-    if (source) {
-      const image = await new Promise(resolve => { const img = new Image(); img.onload = () => resolve(img); img.onerror = () => resolve(null); img.src = source; });
-      if (image) { system.imageCache[name] = image; return image; }
+    const key = String(name).split(/[\\/]/).pop().toLowerCase();
+    if (!particleImages.includes(key)) {
+      const source = await resolveWorkspaceParticleImage(name);
+      if (source) {
+        const image = await new Promise(resolve => { const img = new Image(); img.onload = () => resolve(img); img.onerror = () => resolve(null); img.src = source; });
+        if (image) { system.imageCache[name] = image; return image; }
+      }
+      const assetBaseUrl = system.assetBaseUrl;
+      try { system.assetBaseUrl = 'images/'; const image = await loadImage(name); if (image) return image; } finally { system.assetBaseUrl = assetBaseUrl; }
     }
-    const assetBaseUrl = system.assetBaseUrl;
-    try { system.assetBaseUrl = 'images/'; const image = await loadImage(name); if (image) return image; } finally { system.assetBaseUrl = assetBaseUrl; }
     return loadImage(name);
   };
 }
