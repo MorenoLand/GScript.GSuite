@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.1.79",
+    "date": "2026-07-15",
+    "tag": "GSuite",
+    "changes": [
+      "Particle Emulator image picker now stays focused on particle assets while custom image names can use bundled and workspace images"
+    ]
+  },
+  {
     "version": "0.1.78",
     "date": "2026-07-15",
     "tag": "GSuite",

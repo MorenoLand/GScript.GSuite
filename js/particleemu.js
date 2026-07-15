@@ -144,15 +144,6 @@ function addGraphValueNode() { const id = `value-${Date.now()}`; graphValueNodes
 function editorRoot() { return window.ParticleEmuEditor?._content?.isConnected ? window.ParticleEmuEditor._content : document; }
 function editorElement(id) { return editorRoot().querySelector(`#${id}`) || document.getElementById(id); }
 const particleImages = ["aincrad_effect-smoke.gif","delt_aciddrop.png","delt_honeydrop.png","delt_overhead_dragon_particle2.png","era_kozzy-circle-2.png","fire.gif","g4_animation_fire.gif","g4_particle_bluelight.png","g4_particle_bluex.png","g4_particle_bubble.png","g4_particle_cloud.png","g4_particle_halo.png","g4_particle_leaf.png","g4_particle_minus.png","g4_particle_ring.png","g4_particle_sbubble.png","g4_particle_smoke.png","g4_particle_spark.png","g4_particle_spark3.png","g4_particle_spark3a.png","g4_particle_sun.png","g4_particle_tornado.png","g4_particle_whitespot.png","g4_particle_x.png","g4_particle_yellowlight.png","light2.png","light2s.png","light4.png","ol_whom-effect26-heartup4.gif","smoke.gif","smoke.png","smoke2.png","smoke3.png","tig-raindrop.gif"];
-let bundledParticleImages = [];
-const particleImagePattern = /\.(png|gif|jpe?g|webp|bmp)$/i;
-function availableParticleImages() {
-  const editor = window.levelEditor;
-  const cached = editor?.fileCache?.images instanceof Map ? [...editor.fileCache.images.keys()] : [];
-  const indexed = editor?._tauriPathIndex instanceof Map ? [...editor._tauriPathIndex.keys()] : [];
-  return [...new Set([...particleImages, ...bundledParticleImages, ...cached, ...indexed].filter(name => particleImagePattern.test(name)))].sort((a, b) => a.localeCompare(b));
-}
-fetch('images/particleemu-image-index.json').then(response => response.ok ? response.json() : []).then(images => { bundledParticleImages = Array.isArray(images) ? images : []; if (editorMode === 'visual' && window.ParticleEmuEditor?._content?.isConnected) renderVisualEditor(); }).catch(() => {});
 function workspaceParticleImage(name) {
   const cache = window.levelEditor?.fileCache?.images;
   if (!(cache instanceof Map)) return null;
@@ -355,7 +346,7 @@ function fieldHtml(path, label, value, type = 'text', choices = null) {
 }
 
 function imageSelectHtml(path, label, value) {
-  const images = availableParticleImages();
+  const images = particleImages;
   const custom = images.includes(value) ? '' : value;
   return `<label class="field"><span>${label}</span><select data-path="${path}">${images.map(v => `<option value="${v}"${value === v ? ' selected' : ''}>${v}</option>`).join('')}</select></label><label class="field"><span>custom image</span><input type="text" data-custom-image-path="${path}" value="${String(custom).replace(/"/g, '&quot;')}"></label>`;
 }
@@ -619,7 +610,7 @@ function openParticleGraphEditor(graph, info, node) {
   fields.forEach(([label, key, type, choices]) => {
     const row = document.createElement('label'); const name = document.createElement('span'); name.textContent = label;
     let input;
-    if (type === 'select') { input = document.createElement('select'); (choices || availableParticleImages()).forEach(value => input.add(new Option(value, value))); }
+    if (type === 'select') { input = document.createElement('select'); (choices || particleImages).forEach(value => input.add(new Option(value, value))); }
     else { input = document.createElement('input'); input.type = type; }
     if (type === 'checkbox') input.checked = !!target[key]; else input.value = target[key] ?? '';
     input.onchange = () => { target[key] = type === 'checkbox' ? input.checked : (type === 'number' ? Number(input.value) : input.value); syncCodeFromVisual(false); scheduleLivePreview(); recordParticleGraphHistory(); renderParticleGraph(); };
