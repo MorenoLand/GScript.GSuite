@@ -49,17 +49,7 @@ function updateTauriConfig(version) {
   writeJson('src-tauri/tauri.conf.json', config);
 }
 
-function updateChangelog(oldVersion, nextVersion) {
-  const changelog = readJson('changelog.json');
-  if (Array.isArray(changelog) && changelog[0]?.version === oldVersion) {
-    changelog[0].version = nextVersion;
-    changelog[0].date = new Date().toISOString().slice(0, 10);
-    writeJson('changelog.json', changelog);
-  }
-}
-
 const pkg = readJson('package.json');
-const oldVersion = pkg.version;
 const nextVersion = releaseType === 'set'
   ? (process.argv[3] || '').replace(/^v/i, '')
   : bumpVersion(pkg.version);
@@ -70,6 +60,5 @@ writeJson('package.json', pkg);
 updateCargoToml(nextVersion);
 updateCargoLock(nextVersion);
 updateTauriConfig(nextVersion);
-updateChangelog(oldVersion, nextVersion);
 
 console.log(nextVersion);

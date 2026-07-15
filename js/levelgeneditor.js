@@ -367,7 +367,10 @@ class LevelGenEditor {
 
     _showGenerate() {
         this._q('generateModal').style.display = 'flex';
-        this._q('generateStatus').textContent = `${this.width} x ${this.height} map: ${Math.ceil(this.width / 64)} x ${Math.ceil(this.height / 64)} levels`;
+        const desktop = typeof _isTauri !== 'undefined' && _isTauri && _tauri?.fs?.writeTextFile;
+        this._q('outputRow').style.display = desktop ? 'grid' : 'none';
+        this._q('confirmGenerateBtn').textContent = desktop ? 'Generate World' : 'Download World ZIP';
+        this._q('generateStatus').textContent = `${this.width} x ${this.height} map: ${Math.ceil(this.width / 64)} x ${Math.ceil(this.height / 64)} levels${desktop ? '' : ' - downloads as a ZIP.'}`;
     }
 
     async _chooseOutputFolder() {
@@ -551,14 +554,15 @@ class LevelGenEditor {
 
     async _generateWorld() {
         const status = this._q('generateStatus');
-        if (!(typeof _isTauri !== 'undefined' && _isTauri && _tauri?.fs?.writeTextFile)) { status.textContent = 'World generation requires the desktop app.'; return; }
         if (this.width % 64 || this.height % 64) { status.textContent = 'Map width and height must both be multiples of 64.'; return; }
         const output = this._q('outputFolderInput').value.trim(), prefix = this._q('prefixInput').value.trim();
-        if (!output || !prefix) { status.textContent = 'Choose an output folder and filename prefix.'; return; }
+        const desktop = typeof _isTauri !== 'undefined' && _isTauri && _tauri?.fs?.writeTextFile;
+        if (!prefix || desktop && !output) { status.textContent = desktop ? 'Choose an output folder and filename prefix.' : 'Enter a filename prefix.'; return; }
         const cols = this.width / 64, rows = this.height / 64, linksEnabled = this._q('linksInput').checked, button = this._q('confirmGenerateBtn');
         button.disabled = true; status.textContent = 'Generating world...';
         try {
             const levels = this._paintTerrain();
+            const files = [];
             for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) {
                 const name = this._levelName(col, row, cols, rows), links = [];
                 if (linksEnabled) {
@@ -567,12 +571,21 @@ class LevelGenEditor {
                     if (row > 0) links.push(`LINK ${this._levelStem(prefix, this._levelName(col, row - 1, cols, rows))}.nw 0 0 64 1 playerx 61`);
                     if (row + 1 < rows) links.push(`LINK ${this._levelStem(prefix, this._levelName(col, row + 1, cols, rows))}.nw 0 63 64 1 playerx 0`);
                 }
-                await _tauri.fs.writeTextFile(`${output}/${this._levelStem(prefix, name)}.nw`, this._writeGeneratedLevel(levels[row * cols + col], links));
+                files.push([`${this._levelStem(prefix, name)}.nw`, this._writeGeneratedLevel(levels[row * cols + col], links)]);
             }
             const gmapName = [...prefix].filter(c => /[a-z0-9]/i.test(c)).join('') || 'world';
             const names = Array.from({ length: rows }, (_, row) => Array.from({ length: cols }, (_, col) => `"${this._levelStem(prefix, this._levelName(col, row, cols, rows))}.nw"`).join(','));
-            await _tauri.fs.writeTextFile(`${output}/${gmapName}.gmap`, `GRMAP001\r\nWIDTH ${cols}\r\nHEIGHT ${rows}\r\nLEVELNAMES\r\n${names.join('\r\n')}\r\nLEVELNAMESEND\r\n`);
-            status.textContent = `Generated ${cols * rows} level${cols * rows === 1 ? '' : 's'} and ${gmapName}.gmap.`;
+            files.push([`${gmapName}.gmap`, `GRMAP001\r\nWIDTH ${cols}\r\nHEIGHT ${rows}\r\nLEVELNAMES\r\n${names.join('\r\n')}\r\nLEVELNAMESEND\r\n`]);
+            if (desktop) {
+                for (const [name, text] of files) await _tauri.fs.writeTextFile(`${output}/${name}`, text);
+                status.textContent = `Generated ${cols * rows} level${cols * rows === 1 ? '' : 's'} and ${gmapName}.gmap.`;
+            } else {
+                const { default: JSZip } = await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm'), zip = new JSZip();
+                for (const [name, text] of files) zip.file(name, text);
+                const url = URL.createObjectURL(await zip.generateAsync({ type: 'blob' })), link = Object.assign(document.createElement('a'), { href: url, download: `${gmapName}.zip` });
+                link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+                status.textContent = `Downloaded ${gmapName}.zip with ${cols * rows} level${cols * rows === 1 ? '' : 's'}.`;
+            }
         } catch (error) { status.textContent = `Could not generate world: ${error.message || error}`; }
         finally { button.disabled = false; }
     }
@@ -617,7 +630,7 @@ class LevelGenEditor {
             <div style="width:min(520px,92vw);background:#1e1e1e;border:1px solid #3a3a3a;color:#ddd;box-shadow:0 8px 32px rgba(0,0,0,0.8);">
                 <div style="display:flex;align-items:center;justify-content:space-between;background:#2a2a2a;border-bottom:1px solid #111;padding:8px 12px;"><span>Generate World</span><button data-lg="closeGenerateBtn" style="${btn}">Close</button></div>
                 <div style="padding:12px;display:grid;gap:10px;font-family:chevyray,monospace;font-size:12px;">
-                    <label style="display:grid;grid-template-columns:92px minmax(0,1fr) auto;gap:6px;align-items:center;"><span>Output folder:</span><input data-lg="outputFolderInput" style="min-width:0;background:#111;color:#ddd;border:1px solid #444;padding:5px;font:inherit;"><button data-lg="browseOutputBtn" style="${btn}">Browse</button></label>
+                    <label data-lg="outputRow" style="display:grid;grid-template-columns:92px minmax(0,1fr) auto;gap:6px;align-items:center;"><span>Output folder:</span><input data-lg="outputFolderInput" style="min-width:0;background:#111;color:#ddd;border:1px solid #444;padding:5px;font:inherit;"><button data-lg="browseOutputBtn" style="${btn}">Browse</button></label>
                     <label style="display:grid;grid-template-columns:92px minmax(0,1fr);gap:6px;align-items:center;"><span>Filename prefix:</span><input data-lg="prefixInput" value="myworld_" style="min-width:0;background:#111;color:#ddd;border:1px solid #444;padding:5px;font:inherit;"></label>
                     <label style="display:flex;align-items:center;gap:6px;"><input data-lg="linksInput" type="checkbox" checked> Create level links</label>
                     <div data-lg="generateStatus" style="color:#aaa;min-height:16px;"></div>
