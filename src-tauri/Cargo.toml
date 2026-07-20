@@ -1,6 +1,6 @@
 [package]
 name = "GSuite"
-version = "0.1.82"
+version = "0.1.83"
 description = "Open-source Graal editor suite for levels, animations, and maps"
 authors = ["Denveous"]
 license = "GPL-3.0"
@@ -13,13 +13,13 @@ name = "ganieditor_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.5.6", features = [] }
+tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.10.3", features = [] }
+tauri = { version = "2.11.5", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-single-instance = "2"

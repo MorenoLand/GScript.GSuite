@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.1.83",
+    "date": "2026-07-20",
+    "tag": "GSuite",
+    "changes": [
+      "Updated the Tauri runtime and patched the bundled random-number dependency"
+    ]
+  },
+  {
     "version": "0.1.82",
     "date": "2026-07-20",
     "tag": "GSuite",
