@@ -898,6 +898,7 @@
     _tooltipEl.id = 'floatingTooltip';
     document.body.appendChild(_tooltipEl);
     let _tooltipTarget = null;
+    function _hideTooltip() { _tooltipTarget = null; _tooltipEl.style.display = 'none'; }
 
     function _positionTooltip(mx, my) {
         _tooltipEl.style.left = '0';
@@ -947,10 +948,10 @@
         const el = e.target.closest('[data-title]');
         if (el && !el.hasAttribute('title')) { el.setAttribute('title', el.dataset.title); delete el.dataset.title; }
         if (_tooltipTarget && !_tooltipTarget.contains(e.relatedTarget)) {
-            _tooltipTarget = null;
-            _tooltipEl.style.display = 'none';
+            _hideTooltip();
         }
     }, true);
+    document.addEventListener('pointerdown', _hideTooltip, true);
 
     async function _tauriOpenFile(fp) {
         const name = fp.replace(/\\/g,'/').split('/').pop();

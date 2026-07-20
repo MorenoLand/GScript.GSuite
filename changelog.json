@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.1.82",
+    "date": "2026-07-20",
+    "tag": "GSuite",
+    "changes": [
+      "Toolbar tooltips now close when a tool is opened"
+    ]
+  },
+  {
     "version": "0.1.81",
     "date": "2026-07-19",
     "tag": "GSuite",
