@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.1.81",
+    "date": "2026-07-19",
+    "tag": "GSuite",
+    "changes": [
+      "Particle Emulator particle type selector is easier to scan and use"
+    ]
+  },
+  {
     "version": "0.1.80",
     "date": "2026-07-15",
     "tag": "GSuite",

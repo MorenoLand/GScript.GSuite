@@ -431,13 +431,34 @@ function renderVisualEditor() {
   selectedParticle = Math.min(selectedParticle, editorState.particles.length - 1);
   selectedModifier = Math.min(selectedModifier, Math.max(0, editorState.modifiers.length - 1));
   const particleTabs = root.querySelector('#particleTabs');
-  particleTabs.replaceChildren(...editorState.particles.length > 1 ? editorState.particles.map((p, i) => {
-    const button = document.createElement('button');
-    button.className = i === selectedParticle ? 'active' : '';
-    button.textContent = `Particle ${i + 1}`;
-    button.onclick = () => { selectedParticle = i; renderVisualEditor(); };
-    return button;
-  }) : []);
+  document.getElementById('particlePickerMenu')?.remove();
+  particleTabs.style.cssText = 'display:block !important; pointer-events:auto !important; width:100% !important; margin:6px 0 !important;';
+  particleTabs.replaceChildren(...editorState.particles.length > 1 ? [(() => {
+    const picker = document.createElement('div');
+    picker.style.cssText = 'position:relative !important; z-index:20 !important; pointer-events:auto !important; width:100% !important;';
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.style.cssText = 'display:flex !important; pointer-events:auto !important; width:100% !important; height:28px !important; min-height:28px !important; padding:0 8px !important; align-items:center !important; justify-content:space-between !important;';
+    const menu = document.createElement('div');
+    menu.id = 'particlePickerMenu';
+    menu.style.cssText = 'display:none; position:fixed; max-height:196px; overflow-y:auto; background:#202020; color:#e0e0e0; border:1px solid #0a0a0a; border-top-color:#404040; z-index:2147483646; box-shadow:0 3px 10px rgba(0,0,0,.55); pointer-events:auto; font:12px "chevyray",monospace;';
+    trigger.innerHTML = `<span>Particle ${selectedParticle + 1}</span><span aria-hidden="true">▼</span>`;
+    trigger.onpointerdown = event => { event.preventDefault(); event.stopImmediatePropagation(); if (menu.isConnected) { menu.remove(); return; } const rect = trigger.getBoundingClientRect(); menu.style.left = `${rect.left}px`; menu.style.top = `${rect.bottom + 2}px`; menu.style.width = `${rect.width}px`; document.body.appendChild(menu); menu.style.setProperty('display', 'block', 'important'); };
+    trigger.onclick = event => { event.preventDefault(); event.stopImmediatePropagation(); };
+    editorState.particles.forEach((p, i) => {
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.textContent = `Particle ${i + 1} - ${p.image || p.customImage || 'no image'}`;
+      const active = i === selectedParticle;
+      option.style.cssText = `display:block !important; width:100% !important; height:28px !important; min-height:28px !important; padding:0 8px !important; border:0 !important; border-bottom:1px solid #333 !important; text-align:left !important; color:#e0e0e0 !important; background:${active ? '#4472C4' : '#2b2b2b'} !important; font:12px "chevyray",monospace !important; cursor:pointer !important;`;
+      option.onmouseenter = () => { option.style.setProperty('background', active ? '#3a74a6' : '#404040', 'important'); };
+      option.onmouseleave = () => { option.style.setProperty('background', active ? '#4472C4' : '#2b2b2b', 'important'); };
+      option.onpointerdown = event => { event.preventDefault(); event.stopImmediatePropagation(); menu.remove(); selectedParticle = i; renderVisualEditor(); };
+      menu.appendChild(option);
+    });
+    picker.appendChild(trigger);
+    return picker;
+  })()] : []);
   particleTabs.style.display = editorState.particles.length > 1 ? '' : 'none';
   const p = editorState.particles[selectedParticle];
   root.querySelector('#particleFields').innerHTML = [
